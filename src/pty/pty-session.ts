@@ -1,5 +1,6 @@
 import type { ClientChannel } from 'ssh2';
 import { terminateChannel } from '../ssh/channel-signal.js';
+import { outputEndsWithPrompt } from '../devices/archives.js';
 import { PtyOutputBuffer } from './output-buffer.js';
 import type { PtyTranscript } from './transcript.js';
 
@@ -48,6 +49,7 @@ export class PtySession {
   private lastActivity = Date.now();
   private readonly buffer: PtyOutputBuffer;
   private transcript: PtyTranscript | null;
+  private promptPatterns: RegExp[] = [];
 
   constructor(
     readonly name: string,
@@ -84,6 +86,20 @@ export class PtySession {
    */
   setTranscript(transcript: PtyTranscript | null): void {
     this.transcript = transcript;
+  }
+
+  /** Prompt shapes from the profile's deviceType archive; empty for generic. */
+  setPromptPatterns(patterns: RegExp[]): void {
+    this.promptPatterns = patterns;
+  }
+
+  /**
+   * Whether the buffered tail ends in a device prompt — the network-device
+   * equivalent of "the command finished". Last non-empty line only, so a paging
+   * banner from screens ago cannot masquerade as readiness.
+   */
+  seesPrompt(): boolean {
+    return outputEndsWithPrompt(this.buffer.stats().cursor === 0 ? '' : this.buffer.readSince(0, this.buffer.totalBytes).output, this.promptPatterns);
   }
 
   touch(): void {

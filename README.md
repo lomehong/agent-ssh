@@ -189,6 +189,17 @@ audit log, capped at 10MB); and sessions die on their own after the idle bound
 (`ptySessionMaxLifetimeMs`, default 2h). Use a dedicated low-privilege account
 on the device — the transcript is a compensating control, not a permission.
 
+### Device archives (agent-ssh)
+
+`deviceType` on a profile (`huawei` | `h3c` | `cisco` | `ruijie` | `generic`)
+teaches a raw PTY session the vendor dialect: after the session opens, the
+archive's paging-off command is sent automatically (Huawei VRP
+`screen-length 0 temporary`, H3C `screen-length disable`, Cisco/Ruijie
+`terminal length 0`), and every `pty-read` reports whether the buffered tail
+ends in that vendor's prompt — the network-device equivalent of "the command
+finished". Encoding is UTF-8 today; legacy GB2312/GBK device output is a
+recorded gap in `src/devices/archives.ts`, not a latent assumption.
+
 ### Streaming file transfer
 
 `sftp-upload`/`sftp-download` move file *contents* through the model's context:

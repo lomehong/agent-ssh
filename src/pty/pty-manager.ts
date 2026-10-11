@@ -1,5 +1,6 @@
 import type { Client, ClientChannel } from 'ssh2';
 import { sanitizeSessionName } from '../guard/sanitizer.js';
+import { getDeviceArchive } from '../devices/archives.js';
 import type { Profile } from '../types.js';
 import { FilePtyTranscript, type PtyTranscript } from './transcript.js';
 import { PtySession, type PtyCloseReason, type PtySessionInfo } from './pty-session.js';
@@ -84,18 +85,22 @@ export class PtySessionManager {
     const session = new PtySession(name, this.opts.profile().name, channel, {
       maxBufferBytes: this.opts.maxBufferBytes ?? 1_048_576,
     });
+    // Vendor personality: prompt shapes for readiness detection, and the
+    // paging-off command sent through the SAME path a user write takes — so
+    // the transcript records it like any other input.
+    const archive = getDeviceArchive(this.opts.profile().deviceType);
+    session.setPromptPatterns(archive?.promptPatterns ?? []);
     this.sessions.set(name, session);
-    // Transcript open is async but the pump is not: the session starts with no
-    // transcript, then attaches when the file is ready. Pre-attach output stays
-    // in the buffer for readers; the transcript covers its own attach onward.
-    void transcript.then((t) => session.setTranscript(t));
+    const attached = await transcript;
+    session.setTranscript(attached);
+    if (archive?.disablePaging) session.write(archive.disablePaging + '\n');
     return session.toInfo();
   }
 
   read(name: string, cursor: number, maxChunk: number) {
     this.reapExpired();
     const session = this.mustGet(name);
-    return session.readSince(cursor, maxChunk);
+    return { ...session.readSince(cursor, maxChunk), promptDetected: session.seesPrompt() };
   }
 
   write(name: string, input: string) {
