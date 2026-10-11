@@ -12,6 +12,8 @@ export const RPC_ERROR = {
   INTERNAL: -32603,
   UNAUTHORIZED: -32001,
   FORBIDDEN: -32002,
+  /** host.hello 版本协商失败（§3.6：显式拒绝并附双方版本）。 */
+  VERSION_MISMATCH: -32000,
 } as const;
 
 export const RPC_PROTOCOL_VERSION = '0.2.0';
