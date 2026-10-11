@@ -269,6 +269,8 @@ export function defaultsFromArgv(argv: Record<string, string | null>): Defaults 
     // config file names a root.
     transferMaxBytes: 268_435_456,
     transferTimeoutMs: 300_000,
+    ptySessionIdleTimeoutMs: 600_000,
+    ptySessionMaxLifetimeMs: 7_200_000,
   };
 }
 

@@ -74,6 +74,10 @@ export interface Defaults {
   transferRoot?: string;
   transferMaxBytes: number;
   transferTimeoutMs: number;
+  /** Raw-PTY session idle bound (plan layer ③; U3 default 10min). */
+  ptySessionIdleTimeoutMs: number;
+  /** Raw-PTY session lifetime bound (plan layer ③; U3 default 2h). */
+  ptySessionMaxLifetimeMs: number;
 }
 
 /**

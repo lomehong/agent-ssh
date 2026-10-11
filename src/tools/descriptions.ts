@@ -15,6 +15,12 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   'sftp-upload-file': 'Upload a local file to the remote host over SFTP, streaming it without passing the contents through model context. The local file must be inside the transferRoot directory the operator configured; without that setting this tool refuses. Use this for binary or large files; use sftp-upload for short text you already have.',
   'sftp-download-file': 'Download a remote file to local disk over SFTP, streaming it without passing the contents through model context. The destination must be inside the transferRoot directory the operator configured; without that setting this tool refuses. Use this for binary or large files; use sftp-download when you need to read the contents.',
   'signal-process': 'Send a signal (INT, TERM, KILL) to a remote process by PID.',
+  'pty-open': 'Open a raw PTY (pseudo-terminal) session on a remote host and interact with its byte stream directly. Unlike open-session, there is no shell protocol: this works against ANY line-oriented CLI, including network devices (Huawei/H3C/Cisco/Ruijie) that reject POSIX shell sessions. Opening goes through the approval gate. Pair with pty-write to send input (include newlines yourself) and pty-read to collect output.',
+  'pty-read': 'Read new output from a raw PTY session since the last read (pass the cursor from the previous call). Output is capped per call; the response reports the cursor to pass next, plus any bytes dropped by the retention cap or skipped because the cursor fell behind.',
+  'pty-write': 'Send raw input to a raw PTY session — include your own newlines (e.g. "screen-length 0 temporary\\n"). Content inside a raw PTY cannot be command-classified, so the safety gate is at pty-open; every write is audited and transcripted.',
+  'pty-resize': 'Resize a raw PTY session (rows x cols). Useful when device output wraps or paging changes with terminal width.',
+  'pty-close': 'Close a raw PTY session. The shell is signalled (INT, then TERM, then KILL) before the channel is dropped; sessions also die on their own after the idle or lifetime bound.',
+  'pty-list': 'List raw PTY sessions for a profile with their status, cursors, and transcript size. Read-only.',
 };
 
 export function getToolHashes(): Record<string, string> {

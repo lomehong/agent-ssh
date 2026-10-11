@@ -594,7 +594,7 @@ const READ_ONLY_ALLOWLIST = new Set(
  * `sftp:upload`, `sftp:upload-file` and `sftp:download-file` stay out — the
  * first two write on the remote host, the third inside the transfer root.
  */
-const READ_ONLY_SYNTHETIC = new Set(['sftp:list', 'sftp:download']);
+const READ_ONLY_SYNTHETIC = new Set(['sftp:list', 'sftp:download', 'pty:read', 'pty:list']);
 
 /**
  * Commands that are never allowed, whatever the role or approval policy.
@@ -2181,6 +2181,11 @@ const SYNTHETIC_CLASSES: Record<string, CommandClass> = Object.assign(
     'sftp:upload-file': 'destructive',
     'sftp:download-file': 'destructive',
     'session:open': 'destructive',
+    // A raw PTY hands over an interactive byte stream the classifier cannot
+    // see into — the same authority argument as `session:open`, and the load-
+    // bearing half of the PTY safety plan's layer ① (owner-ratified U2): the
+    // human gate lives HERE, at open, because nothing after open is classifiable.
+    'pty:open': 'destructive',
   },
 );
 

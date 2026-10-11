@@ -4,6 +4,7 @@ import { resolveAlgorithms } from './algorithms.js';
 import { verifyHostKey, fingerprintPublicKey, type HostKeyMode } from './host-key.js';
 import type { Session, CloseOutcome } from './session.js';
 import { SessionManager } from './session-manager.js';
+import { PtySessionManager } from '../pty/pty-manager.js';
 import type { Span } from '@opentelemetry/api';
 import { tracer } from '../observability/tracer.js';
 import { redactText } from '../guard/redactor.js';
@@ -133,6 +134,7 @@ export class SSHConnection {
   private client: Client | null = null;
   private credentials: ResolvedCredentials;
   private readonly sessions: SessionManager;
+  private readonly ptySessions: PtySessionManager;
   private activeChannels = 0;
   private connecting: Promise<void> | null = null;
   /** Which connect() call currently owns `connecting`; see connect(). */
@@ -150,6 +152,8 @@ export class SSHConnection {
     knownHostsStore: Map<string, string>,
     hostKeyMode: HostKeyMode = 'tofu',
     bastionSock?: ClientChannel,
+    /** Raw-PTY session bounds from [defaults]; U3 values when omitted (tests). */
+    ptyBounds: { idleTimeoutMs: number; maxLifetimeMs: number } = { idleTimeoutMs: 600_000, maxLifetimeMs: 7_200_000 },
   ) {
     this.profile = profile;
     this.credentials = credentials;
@@ -194,6 +198,15 @@ export class SSHConnection {
       },
       onChannelOpened: () => { this.activeChannels++; },
       onChannelClosed: () => { this.activeChannels--; },
+    });
+
+    // Raw-PTY sessions (agent-ssh): same live-profile read as the SessionManager,
+    // plus the [defaults] idle/lifetime bounds the plan's layer ③ ratifies.
+    this.ptySessions = new PtySessionManager({
+      profile: () => this.profile,
+      getClient: () => this.getClient(),
+      idleTimeoutMs: ptyBounds.idleTimeoutMs,
+      maxLifetimeMs: ptyBounds.maxLifetimeMs,
     });
   }
 
@@ -580,11 +593,40 @@ export class SSHConnection {
   }
 
   async reapExpiredSessions(): Promise<void> {
+    this.ptySessions.reapExpired();
     return this.sessions.reapExpired();
+  }
+
+  // ─── Raw PTY sessions (agent-ssh) ─────────────────────────────────────
+
+  async openPtySession(req: { name: string; cols?: number; rows?: number; term?: string }) {
+    await this.ensureConnected();
+    return this.ptySessions.open(req);
+  }
+
+  readPtySession(name: string, cursor: number, maxChunk: number) {
+    return this.ptySessions.read(name, cursor, maxChunk);
+  }
+
+  writePtySession(name: string, input: string) {
+    return this.ptySessions.write(name, input);
+  }
+
+  resizePtySession(name: string, rows: number, cols: number): void {
+    return this.ptySessions.resize(name, rows, cols);
+  }
+
+  closePtySession(name: string) {
+    return this.ptySessions.close(name);
+  }
+
+  listPtySessions() {
+    return this.ptySessions.list();
   }
 
   async close(): Promise<void> {
     await this.sessions.closeAll();
+    await this.ptySessions.closeAll();
     if (this.client) {
       this.client.end();
       this.client = null;

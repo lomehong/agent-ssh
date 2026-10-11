@@ -15,7 +15,8 @@ describe('MCP tool surface', () => {
     const { tools } = await h.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       'close-session', 'list-connections', 'list-sessions', 'open-session',
-      'privileged-command', 'read-command', 'read-session-output',
+      'privileged-command', 'pty-close', 'pty-list', 'pty-open', 'pty-read',
+      'pty-resize', 'pty-write', 'read-command', 'read-session-output',
       'run-command', 'sftp-download', 'sftp-download-file', 'sftp-list',
       'sftp-upload', 'sftp-upload-file', 'signal-process',
     ]);
@@ -29,8 +30,12 @@ describe('MCP tool surface', () => {
     // sftp-list belongs here and sftp-download-file does not: listing reads a
     // remote directory, while the download writes a file on local disk, which
     // is the whole reason it is classified destructive.
+    // pty-read/pty-list belong here too: they read the session's own output
+    // buffer and registry state — nothing on the host is touched. The raw
+    // mutation surface is pty-write, which is deliberately un-hinted.
     expect(readOnly).toEqual([
-      'list-connections', 'list-sessions', 'read-command', 'read-session-output',
+      'list-connections', 'list-sessions', 'pty-list', 'pty-read',
+      'read-command', 'read-session-output',
       'sftp-download', 'sftp-list',
     ]);
   });

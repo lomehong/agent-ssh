@@ -181,6 +181,12 @@ export const defaultsSchema = z.object({
   // larger one to 1ms, so every step would fail immediately while quoting the
   // value the operator asked for.
   transferTimeoutMs: z.number().int().positive().max(2_147_483_647).default(300_000),
+  // Raw-PTY session bounds (the safety plan's layer ③, defaults ratified by the
+  // owner 2026-10-11): a raw shell the agent walked away from dies on its own —
+  // from idleness and from age. Capped like transferTimeoutMs because setTimeout
+  // clamps larger values to 1ms, which would make every session die instantly.
+  ptySessionIdleTimeoutMs: z.number().int().positive().max(2_147_483_647).default(600_000),
+  ptySessionMaxLifetimeMs: z.number().int().positive().max(2_147_483_647).default(7_200_000),
 }).strict();
 
 export const profileSchema = z.object({

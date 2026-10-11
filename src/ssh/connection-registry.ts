@@ -64,6 +64,11 @@ export class ConnectionRegistry {
             this.knownHostsStore,
             this.hostKeyMode,
             bastionSock,
+            // Raw-PTY session bounds come from [defaults] (plan layer ③).
+            {
+              idleTimeoutMs: this.config.defaults.ptySessionIdleTimeoutMs,
+              maxLifetimeMs: this.config.defaults.ptySessionMaxLifetimeMs,
+            },
           );
           this.connections.set(profile.name, conn);
         }

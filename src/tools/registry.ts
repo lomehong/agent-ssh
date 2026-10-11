@@ -7,6 +7,7 @@ import { registerSessionTools } from './session-tools.js';
 import { registerCommandTools } from './command-tools.js';
 import { registerFileTools } from './file-tools.js';
 import { registerTransferTools } from './transfer-tools.js';
+import { registerPtyTools } from './pty-tools.js';
 
 // Re-exported so existing importers keep a single entry point for the tool layer.
 export { TOOL_DESCRIPTIONS, getToolHashes } from './descriptions.js';
@@ -36,4 +37,5 @@ export function registerTools(
   registerCommandTools(deps, pipeline);
   registerFileTools(deps, pipeline);
   registerTransferTools(deps, pipeline);
+  registerPtyTools(deps, pipeline);
 }

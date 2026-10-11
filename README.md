@@ -143,7 +143,7 @@ claude mcp add --transport stdio ssh-mcp -- ssh-mcp
 
 ---
 
-## Tools (14)
+## Tools (20)
 
 | Tool | Purpose | readOnly | destructive |
 |------|---------|:--------:|:----------:|
@@ -161,6 +161,30 @@ claude mcp add --transport stdio ssh-mcp -- ssh-mcp
 | `sftp-upload-file` | Stream a local file to the remote host, never through model context | — | ✅ |
 | `sftp-download-file` | Stream a remote file to local disk, never through model context | — | ✅ |
 | `signal-process` | Send INT/TERM/KILL to a remote PID | — | ✅ |
+| `pty-open` | Open a raw PTY session — a true pseudo-terminal whose byte stream you read/write directly. Works against network-device CLIs (Huawei/H3C/Cisco/Ruijie) where POSIX marker sessions fail. Goes through the approval gate | — | ✅ |
+| `pty-read` | Read new PTY output since the last cursor (capped per call; reports dropped/skipped bytes) | ✅ | — |
+| `pty-write` | Send raw input to a PTY — include your own newlines. Content in a raw PTY cannot be classified: the gate is pty-open; every write is audited and transcripted | — | — |
+| `pty-resize` | Resize a PTY session (rows x cols) | — | — |
+| `pty-close` | Close a PTY session (signal ladder, then channel drop) | — | ✅ |
+| `pty-list` | List raw PTY sessions with status, cursors, transcript size | ✅ | — |
+
+### Raw PTY sessions (agent-ssh)
+
+`open-session`'s interactive mode frames every command in printf markers to
+recover exit codes and CWD — a protocol that needs a POSIX shell and fails
+immediately against a network-device CLI. The raw PTY tools are the answer:
+`pty-open` allocates a real pseudo-terminal (a true PTY, not the marker
+protocol) and hands you the byte stream. `pty-write` sends whatever you type
+(include your own newlines: `"screen-length 0 temporary\n"`), `pty-read`
+returns everything since your last cursor, capped at 32KB per call.
+
+Because a byte stream cannot be command-classified, the safety gate lives at
+**open**: `pty-open` classifies destructive and goes through the approval gate.
+Every write is audited; every session is transcripted (redacted, next to the
+audit log, capped at 10MB); and sessions die on their own after the idle bound
+(`ptySessionIdleTimeoutMs`, default 10min) or lifetime bound
+(`ptySessionMaxLifetimeMs`, default 2h). Use a dedicated low-privilege account
+on the device — the transcript is a compensating control, not a permission.
 
 ### Streaming file transfer
 
