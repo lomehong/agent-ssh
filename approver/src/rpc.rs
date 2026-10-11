@@ -107,10 +107,45 @@ impl RpcClient {
         Self::connect_with_version(addr, token, RPC_PROTOCOL_VERSION).await
     }
 
+    /// 指数退避重连（1s 起步逐次翻倍，封顶 30s）：Host 暂不可达时按
+    /// §3.5 退避重试，max_attempts 次全败后返回最后一次错误。
+    pub async fn connect_with_retry(
+        addr: &str,
+        token: &str,
+        max_attempts: u32,
+    ) -> Result<RpcClient, RpcError> {
+        let mut attempt = 0u32;
+        loop {
+            // 直接调用底层拨号+握手：握手 panic 语义在此路径外不适用，
+            // 拨号失败退避重试，握手失败（版本不匹配）立即返回。
+            match tokio::net::TcpStream::connect(addr).await {
+                Ok(stream) => {
+                    return Ok(Self::from_stream_and_handshake(stream, token, RPC_PROTOCOL_VERSION).await);
+                }
+                Err(e) => {
+                    attempt += 1;
+                    if attempt >= max_attempts {
+                        return Err(RpcError::Io(e.to_string()));
+                    }
+                    let delay = std::cmp::min(1_000u64 << (attempt - 1).min(16), 30_000);
+                    tokio::time::sleep(std::time::Duration::from_millis(delay)).await;
+                }
+            }
+        }
+    }
+
     pub async fn connect_with_version(addr: &str, token: &str, protocol_version: &str) -> RpcClient {
         let stream = TcpStream::connect(addr)
             .await
             .unwrap_or_else(|e| panic!("tcp connect {addr}: {e}"));
+        Self::from_stream_and_handshake(stream, token, protocol_version).await
+    }
+
+    async fn from_stream_and_handshake(
+        stream: TcpStream,
+        token: &str,
+        protocol_version: &str,
+    ) -> RpcClient {
         let (read_half, write_half) = stream.into_split();
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
 
