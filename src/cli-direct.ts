@@ -25,6 +25,15 @@ function auditDir(): string {
 }
 
 export async function runDirectCli(verb: 'run' | 'info', args: string[]): Promise<number> {
+  // Usage check BEFORE any config load: a malformed invocation must fail fast
+  // without touching the platform config path.
+  if (verb === 'run') {
+    const words = positionalsOf(args).join(' ').trim();
+    if (words.length === 0) {
+      console.error('Usage: agent-ssh run [--profile=<name>] <command> [words...]');
+      return 1;
+    }
+  }
   const flags = parseArgv(args);
   const config = await loadConfig(flags.config || undefined);
   const profileName = flags.profile || undefined;
@@ -57,14 +66,8 @@ export async function runDirectCli(verb: 'run' | 'info', args: string[]): Promis
       return connected ? 0 : 1;
     }
 
-    // run: the command is every positional word — index.ts already consumed
-    // the verb, so nothing is sliced here. Joining keeps `agent-ssh run dev
-    // ls -la /tmp` readable without a second layer of escapes.
+    // The command was validated before config load (see above).
     const command = positionalsOf(args).join(' ').trim();
-    if (command.length === 0) {
-      console.error('Usage: agent-ssh run [--profile=<name>] <command> [words...]');
-      return 1;
-    }
     const parsed = classifyCommand(command);
     const result = await conn.exec(command);
     if (result.stdout) process.stdout.write(result.stdout + (result.stdout.endsWith('\n') ? '' : '\n'));
