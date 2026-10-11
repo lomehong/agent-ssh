@@ -30,11 +30,11 @@ async function main() {
   // 起一个会把 shell 吊死的 stdio 服务器。
   const positionals = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   if (positionals[0] === 'approvals') {
-    const { runApprovalsCli } = await import('./cli.js');
+    const { runApprovalsCli } = await import('./cli-rpc.js');
     process.exit(await runApprovalsCli(process.argv.slice(2)));
   }
   if (positionals[0] === 'run' || positionals[0] === 'info') {
-    const { runDirectCli } = await import('./cli-direct.js');
+    const { runDirectCli } = await import('./cli-rpc.js');
     process.exit(await runDirectCli(positionals[0] as 'run' | 'info', process.argv.slice(3)));
   }
 

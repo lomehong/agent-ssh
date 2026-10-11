@@ -20,7 +20,7 @@ import type { AclFinding } from './config/windows-acl.js';
 import { HOST_GROUPS } from './policy/engine.js';
 import type { HostKeyMode } from './ssh/host-key.js';
 import type { AppConfig, Profile, Defaults } from './types.js';
-import { listPending, decideApproval, type PendingApproval } from './guard/approval-queue.js';
+
 
 /**
  * 运维是否要求了快速启动。
@@ -407,55 +407,5 @@ export function positionalsOf(args: string[]): string[] {
   return args.filter((a) => !a.startsWith('--'));
 }
 
-function formatPending(p: PendingApproval, now: Date): string {
-  const ageS = Math.max(0, Math.round((now.getTime() - Date.parse(p.createdAt)) / 1000));
-  const leftS = Math.max(0, Math.round((Date.parse(p.expiresAt) - now.getTime()) / 1000));
-  const status = p.status === 'pending' ? `expires in ${leftS}s` : p.status;
-  // 「完整上下文」承诺（审计 M8）：审批人看到的就是将被执行的完整命令，
-  // 不做截断——指纹核对也以全文为对象。
-  const command = p.command;
-  return `${p.id}  [${status}]  ${p.commandClass} on "${p.profile}" (age ${ageS}s)\n    ${command}\n    fingerprint ${p.fingerprint.slice(0, 16)}…`;
-}
-
-/**
- * agent-ssh approvals list|approve <id>|reject <id> [--dir=path]。
- *
- * 队列通道的决定面（计划 §2 R6）。子命令即同意：
- * 一个人运行了它，看到了判定上方打印的完整载荷，
- * 文件记录了谁运行的。没有 approve-all 也没有批处理——
- * 每个请求都被独立阅读和决定。
- */
-export async function runApprovalsCli(args: string[]): Promise<number> {
-  const [verb, id] = positionalsOf(args);
-  const flags = parseArgv(args);
-  const dir = flags.dir || undefined;
-  const now = new Date();
-
-  if (verb === 'list') {
-    const pending = await listPending({ dir });
-    if (pending.length === 0) {
-      console.log('No approval requests.');
-      return 0;
-    }
-    for (const p of pending) console.log(formatPending(p, now));
-    return 0;
-  }
-
-  if (verb === 'approve' || verb === 'reject') {
-    if (!id) {
-      console.error(`Usage: agent-ssh approvals ${verb} <id> [--dir=path]`);
-      return 1;
-    }
-    // 完整上下文在判定写入之前打印——只看 id 不看它指名什么
-    // 就做决定，正是批准被批量刷掉的方式。
-    const pending = await listPending({ dir });
-    const target = pending.find((p) => p.id === id);
-    if (target) console.log(formatPending(target, now));
-    const outcome = await decideApproval(id, verb === 'approve' ? 'approved' : 'rejected', { dir });
-    console.log(outcome.message);
-    return outcome.decided ? 0 : 1;
-  }
-
-  console.error('Usage: agent-ssh approvals list | approvals approve <id> | approvals reject <id> [--dir=path]');
-  return 1;
-}
+// T-15/T-17：approvals CLI 已迁 src/cli-rpc.ts（队列在 Host 机，经 RPC 决定；
+// formatPending 亦随迁）。本文件保留 argv/config 纯逻辑面。
