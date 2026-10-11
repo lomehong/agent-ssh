@@ -1,9 +1,11 @@
 id: T-17
 title: CLI 改造：approvals/run/info 经 RPC（口令→会话）
 level: L1
-status: 待执行
+status: 执行中
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:52:00
+claimedBy: digital-architect
+claimedAt: 2026-10-12 06:45:00
 blockedBy: [T-14]
 accept:
   - approvals list/approve/reject 经 RPC：口令→auth.session.start→会话；语义保持（全文展示/指纹校验/approver=cli:<用户> 审计）
