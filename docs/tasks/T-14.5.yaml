@@ -1,11 +1,12 @@
 id: T-14.5
 title: 垂直切片 + 双进程 harness（五件套+超时预算）
 level: L1
-status: 执行中
+status: 待确认
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:52:00
 claimedBy: digital-architect
 claimedAt: 2026-10-11 22:12:00
+reportedAt: 2026-10-11 22:36:00
 blockedBy: [T-14]
 accept:
   - 1-2 个工具经 stub→Host 真链路垂直切片（最小装配）
@@ -14,5 +15,6 @@ accept:
   - 新增单测全绿、基线不扩大；tsc 0 错
 source: 方案 §9/§11 T-14.5 行；评审记录 K9-⑤
 events:
+  - 2026-10-11 22:36:00 | report | by=digital-architect | 自报待主人 confirm。三提交：c601940 切片核心（server/client）/257d0c3 双进程 harness+子进程切片/0681098 前置台账。证据：rpc 目录 9 文件 68/68 绿 + 双进程切片 3/3 绿（echo 真链路 6.8s 含自动构建/无令牌拒/TLS pin 相符连通+不符拒连 HOST_PIN_MISMATCH，openssl 夹具实测可用）；tsc 0；全量终轮 29败/2154过/62跳（2245 总），失败文件同为 6 个既有环境族，失败集不扩大。未兑现项/边界：①「stub 透传」本票为 RpcClient→dev-host echo 的最小装配语义，真实 23 工具 manifest/透传归 T-15/T-16（票面允许：内存态最小装配）；②TLS 夹具依赖 openssl，缺失机器上该用例 SkipError 条件跳过（不算失败）；③per-file 复用 Host 优化是 T-18b 的 CI 预算项，本票 per-test 独立进程（用例仅 3 个，成本可接受）。诊断记录：重连竞态（陈旧 socket 迟到 close）以 socket 身份比对修复；开发中多次占位残瑕全部字节级扫描清零。
   - 2026-10-11 22:12:00 | claim | by=digital-architect | 接缝约定：server(RpcHostServer：帧循环+authorize+可注入 handlers+push 接线+审计 sink 回调)/client(RpcClient：连接纪律 assertClientConnectAllowed+TLS pin 校验+hello 协商+id 关联+超时+订阅+退避重连)/dev-host(最小可运行 Host 子进程入口：--port/--token，stderr 就绪行)/harness(五件套：端口 0+就绪行解析、进程树清理 win taskkill 兜底、就绪探测、per-test 隔离=独立令牌工厂、TLS 夹具=openssl 条件可用)+K9-⑤ 超时预算显式 30s；切片=host.ping+echo 工具真链路+FORBIDDEN 面+推送到达
   - 2026-10-11 20:52:00 | create | by=lome | level=L1 | blocked_by=T-14
