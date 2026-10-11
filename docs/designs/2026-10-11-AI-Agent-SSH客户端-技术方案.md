@@ -135,7 +135,7 @@ agent-ssh MCP Server ──► policy engine（分级/矩阵/denylist/配额）
 |---|---|---|
 | Unit 单测 | 审批队列状态机（含并发/过期/指纹校验）、deviceType 档案（分页命令生成/提示符匹配）、forward 管理器、config schema 扩展 | `npm run test:unit`（沿用上游 vitest 结构） |
 | Contract 契约 | MCP 工具 schema（新工具 input/output 契约快照）；CLI 子命令输出契约 | vitest 契约快照 + `@modelcontextprotocol/inspector` 手动核 |
-| Regression 回归 | **fork 第一票：上游测试套件全绿**（含其 docker compose 集成 fixtures：Debian/Alpine/Dropbear/Windows OpenSSH 矩阵中可本机执行部分）；补缺模块合入后重跑 | `npm test` + `docker compose --profile test up -d --build` |
+| Regression 回归 | **fork 第一票：上游测试套件基线跑通**——Windows 本机实测 1969 通过 / 32 失败，失败全部定性为平台/环境差（ACL×14、上游文档化 Windows 流式 SFTP 缺口×9、SIGTERM×1、proxy-jump 待深查×3；见 docs/reports/2026-10-11-T01），补缺模块合入后以「失败集不扩大」为回归判据，Linux CI 环境补全绿验证 | `npm test` + `docker compose --profile test up -d --build` |
 | Monitoring 监控 | 上游 OTel 继承；新增 span：pty.session.open/close、approval.request/decide、forward.open/close | `--otelEndpoint` 沿用 |
 | Rollback 回滚 | 纯新增系统停用即回滚；补缺模块独立 commit 序列可逐个 revert；上游基线 tag 永久可回 | git tag `upstream-v2.18.0-baseline` |
 
@@ -145,7 +145,7 @@ agent-ssh MCP Server ──► policy engine（分级/矩阵/denylist/配额）
 
 | # | 类型 | 描述 | 处置 |
 |---|---|---|---|
-| U1 | Unknown | 上游 profile `tty = false` 字段语义未核（可能已部分支持 PTY 通道） | fork 第一票源码核查；本方案按「上游无真 PTY 工具」推进（README 明确交互会话为 printf 模拟），核查后修正，不阻塞 |
+| U1 | Unknown | 上游 profile `tty = false` 字段语义未核（可能已部分支持 PTY 通道） | **已核查（T-01，2026-10-11）**：上游 tty=exec 通道一次性 PTY 分配（src/ssh/connection.ts:373、src/tools/command-tools.ts:41、src/config/schema.ts:173）；交互式多轮 PTY 会话不存在 → T-03/T-05 维持必要，exec PTY 管道可复用。证据：docs/reports/2026-10-11-T01-上游基线测试-Windows.md |
 | U2 | **Human Decision（决策门）** | PTY 会话内命令无法逐条过命令分类器（字节流本质，非 exec 通道）。缓解五层：①会话开启默认需人工审批（纳入破坏性类）；②会话输入输出全量审计+脱敏；③空闲+总时长双超时；④文档红线：设备接入用最小权限账号+设备侧 AAA 记账兜底；⑤P2 探索内容级正则告警 | **已裁决（2026-10-11 主人）：接受五层对策**，内容告警维持 P2 |
 | U3 | **Human Decision（决策门）** | 安全参数默认值：审批超时 10min（对齐上游 elicitation）、每日配额 200/主机（上游默认）、PTY 输出单次回读 32KB/总量 1MB、PTY 会话总时长上限 2h | **已裁决（2026-10-11 主人）：按方案默认值档落**，写入配置默认，运行时可调 |
 | U4 | Unknown | 三厂商具体型号/系统版本与 ssh2 的算法+PTY 实际兼容性 | spike 票：先对设备模拟器验证代码路径，实机抽验终验；主人待补型号清单（需求包待确认 #1） |
