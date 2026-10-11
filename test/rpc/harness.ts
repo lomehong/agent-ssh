@@ -10,18 +10,14 @@
  * K9-⑤：双进程用例默认 vitest 5s 不够——RPC_TEST_TIMEOUT_MS=30s，测试文件显式套用。
  */
 import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { generateAgentToken } from '../../src/rpc/auth.js';
 
 /** 双进程用例超时预算（K9-⑤）。 */
 export const RPC_TEST_TIMEOUT_MS = 30_000;
-
-/** 与 src/rpc generateAgentToken 同熵源：32 字节 base64url（≥256bit）。 */
-function newAgentToken(): string {
-  return randomBytes(32).toString('base64url');
-}
 
 const REPO_ROOT = resolve(import.meta.dirname ?? '.', '..', '..');
 const DEV_HOST_BUILD = join(REPO_ROOT, 'build', 'rpc', 'dev-host.js');
@@ -69,7 +65,7 @@ function newestSrcMtime(dir: string): number {
 export async function spawnDevHost(opts: { tlsCertPath?: string; tlsKeyPath?: string } = {}): Promise<HostProcess> {
   ensureBuilt();
   const workDir = mkdtempSync(join(tmpdir(), 'rpc-host-'));
-  const agentToken: string = newAgentToken();
+  const agentToken: string = generateAgentToken();
   const args = ['build/rpc/dev-host.js', '--port', '0', '--token', agentToken];
   if (opts.tlsCertPath !== undefined && opts.tlsKeyPath !== undefined) {
     args.push('--tls-cert', opts.tlsCertPath, '--tls-key', opts.tlsKeyPath);

@@ -204,16 +204,21 @@ export class RpcClient {
     this.failAllPending(new Error('RPC connection closed'));
     this.socket = undefined;
     if (this.stopping || this.opts.reconnect === false || !wasReady) return;
+    this.scheduleReconnect();
+  }
+
+  /**
+   * 退避重连调度（唯一入口）：connect() 的失败在此 catch 内续期，保证拒绝
+   * 永远有人接——Host 持续不可达时绝不产生 unhandled rejection（Node≥15 默认
+   * 因此崩进程，评审 T-14.5 标准轴硬伤 #1）。timer 在册时不重复调度。
+   */
+  private scheduleReconnect(): void {
+    if (this.stopping || this.opts.reconnect === false || this.reconnectTimer !== undefined) return;
     const delay = nextRetryDelayMs(this.attempt);
     this.attempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;
-      this.connect().catch(() => {
-        // 重连失败继续退避（onClose 在 connect 失败时不会触发——socket 未建立；此处显式续期）
-        if (this.stopping || this.opts.reconnect === false) return;
-        this.attempt++;
-        this.reconnectTimer = setTimeout(() => void this.connect(), nextRetryDelayMs(this.attempt));
-      });
+      this.connect().catch(() => this.scheduleReconnect());
     }, delay);
   }
 

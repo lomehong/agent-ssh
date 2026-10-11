@@ -9,7 +9,9 @@ accept:
   - 引擎迁入并继承 60s 回收器+停机梯（M6）
   - manifest：23 工具+resources 段+描述哈希（D3）；单连接内不可变
   - 审计新增 rpcCallerClass 字段；tracer 增 rpc.request span
-  - 【T-14 评审继承】audit sink 接口兑现：authorize 的 audit:true 事件（FORBIDDEN -32002/未认证 -32001）与帧 oversize fatal 落审计存储（T-14 仅有标记+可注入接缝）
+  - 【T-14.5 评审继承】dev-host/装配面令牌传递改 env 或 stdin，不走 argv（D6 同源纪律；argv 进程列表可窥，评审 T-14.5 jc3）
+  - 【T-14.5 评审继承】server 内建方法 if 链与 handlers 映射双轨分发的收敛评估（新增内建方法现需改两处，评审 jc2）
+  - 【T-14.5 评审继承】audit sink 接口兑现：authorize 的 audit:true 事件（FORBIDDEN -32002/未认证 -32001）与帧 oversize fatal 落审计存储（T-14 仅有标记+可注入接缝）
   - 【T-14 评审继承】operator 会话表惰性回收或条目上限（过期条目现留存至进程退出，防反复登录单调增长）
   - 【T-14 评审继承】agent/IM 令牌表接线用 tokenDigest 摘要键（防时序 hash-then-lookup）；host.admin.rotateToken 移除旧摘要
   - 队列决定按 id 串行化（K7，approval-queue.ts:257-276 非原子）+「并发双决定仅一生效」用例

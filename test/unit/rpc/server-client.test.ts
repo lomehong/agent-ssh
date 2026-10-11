@@ -44,6 +44,9 @@ async function startStack(): Promise<Stack> {
 }
 
 describe('垂直切片：stub 客户端 ↔ Host 服务端 真链路（T-14.5）', () => {
+  // 真实时钟用例（重连退避观察窗 6.5s）超出 vitest 默认 5s——文件级预算（K9-⑤ 同源）
+  vi.setConfig({ testTimeout: 12_000 });
+
   const cleanup: (() => Promise<void>)[] = [];
   afterEach(async () => {
     while (cleanup.length > 0) {
@@ -119,6 +122,20 @@ describe('垂直切片：stub 客户端 ↔ Host 服务端 真链路（T-14.5）
     await vi.waitFor(() => expect(client.isConnected()).toBe(true), { timeout: 10_000 });
     const result = await client.call<{ echoed: { ok: boolean } }>('tool.call', { ok: true });
     expect(result.echoed).toEqual({ ok: true });
+  });
+
+  it('Host 持续不可达：重连退避不产生 unhandled rejection，close 可停止重连链', async () => {
+    const stack = await startStack();
+    const client = new RpcClient(stack.clientOpts());
+    cleanup.push(() => client.close());
+    await client.connect();
+    // 彻底关停监听（非仅掐连接）：重连拨号将持续 ECONNREFUSED，触达退避续期分支
+    await stack.server.close();
+    // 观察窗覆盖前两档重试（1s 失败→4s 档触发于 5s）：旧实现在第二档 `void this.connect()`
+    // 处产生 unhandled rejection（vitest 记失败）——本用例即其回归测试
+    await new Promise((r) => setTimeout(r, 6_500));
+    await client.close();
+    expect(client.isConnected()).toBe(false);
   });
 
   it('close 后不再重连，服务端连接归零；close 后调用 fail-fast', async () => {
