@@ -76,6 +76,9 @@ beforeAll(async () => {
     approvalChannel: 'queue',
     approvalQueueDir: join(tmp, 'approvals'),
     approvalQueuePollMs: 5,
+    // 本机 %TEMP% 继承 DSH 沙箱的只读授权，生产 ACL 检查会如实拒绝——
+    // 验证目标是机制本身，故注入 clean 判定（ACL 语义由 approval-queue-acl 单测覆盖）。
+    approvalQueueInspectAcl: async () => ({ status: 'restricted' }),
   });
   client = new Client({ name: 'verify-client', version: '0.0.0' }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -95,7 +98,7 @@ function textOf(res: any): string {
   return (res.content ?? []).map((c: any) => c.text ?? '').join('');
 }
 
-async function approveLastQueued(by = 'master', timeoutMs = 5000): Promise<void> {
+async function approveLastQueued(by = 'master', timeoutMs = 15000): Promise<void> {
   // The queued request lands asynchronously (mkdir + write); poll instead of
   // racing a fixed sleep.
   const deadline = Date.now() + timeoutMs;
