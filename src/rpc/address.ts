@@ -163,3 +163,6 @@ function forwardedAddress(entry: string): string | undefined {
 function canonicalAddress(address: string): string {
   return address.startsWith('::ffff:') && isIP(address.slice(7)) === 4 ? address.slice(7) : address;
 }
+
+// T-14 扩导出：环回绑定判定（./transport-security）复用本归一实现（方案 §3.1）。
+export { canonicalAddress };

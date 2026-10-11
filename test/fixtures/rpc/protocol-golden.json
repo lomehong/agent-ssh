@@ -1,0 +1,29 @@
+{
+  "protocolVersion": "0.2.0",
+  "samples": [
+    {
+      "name": "hello.request",
+      "wire": "{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"host.hello\",\"params\":{\"protocolVersion\":\"0.2.0\"}}\n"
+    },
+    {
+      "name": "hello.result",
+      "wire": "{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"protocolVersion\":\"0.2.0\",\"certFingerprint\":\"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\"}}\n"
+    },
+    {
+      "name": "tool.call.request",
+      "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tool.call\",\"params\":{\"name\":\"exec\",\"arguments\":{\"command\":\"ls\"}}}\n"
+    },
+    {
+      "name": "tool.call.result",
+      "wire": "{\"jsonrpc\":\"2.0\",\"id\":2,\"result\":{\"content\":[{\"type\":\"text\",\"text\":\"file.txt\"}]}}\n"
+    },
+    {
+      "name": "error.forbidden",
+      "wire": "{\"jsonrpc\":\"2.0\",\"id\":3,\"error\":{\"code\":-32002,\"message\":\"Method approval.list is forbidden for agent credentials\"}}\n"
+    },
+    {
+      "name": "approval.pending.push",
+      "wire": "{\"jsonrpc\":\"2.0\",\"method\":\"approval.pending\",\"params\":{\"id\":\"ap-1\",\"profile\":\"web-1\",\"class\":\"destructive\",\"command\":\"rm -rf /tmp/x\",\"expiresAt\":1710000000000}}\n"
+    }
+  ]
+}
