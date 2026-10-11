@@ -23,7 +23,7 @@ function queueHarness() {
   dir = mkdtempSync(join(tmpdir(), 'approval-queue-pipeline-'));
   return createHarness(
     {},
-    { approvalChannel: 'queue', approvalQueueDir: dir, approvalQueuePollMs: 5 },
+    { approvalChannel: 'queue', approvalQueueDir: dir, approvalQueuePollMs: 5, approvalQueueInspectAcl: async () => ({ status: 'restricted' }) },
   );
 }
 
@@ -72,11 +72,31 @@ describe('approval queue channel (pipeline)', () => {
     expect(h.approvalPrompts()).toBe(0);
   });
 
+
+  it('队列目录 ACL 检查失败 → fail-closed（APPROVAL_UNAVAILABLE，T-11 强制）', async () => {
+    dir = mkdtempSync(join(tmpdir(), 'approval-queue-acl-'));
+    h = await createHarness(
+      {},
+      {
+        approvalChannel: 'queue',
+        approvalQueueDir: dir,
+        approvalQueuePollMs: 5,
+        approvalQueueInspectAcl: async () => { throw new Error('icacls exploded'); },
+      },
+    );
+    const res = await h.client.callTool({ name: 'run-command', arguments: { command: 'rm -rf /tmp/build' } }) as any;
+    expect(res.isError).toBe(true);
+    const text = (res.content ?? []).map((c: any) => c.text ?? '').join('');
+    expect(text).toContain('APPROVAL_UNAVAILABLE');
+    expect(text).toContain('privacy check');
+    // fail-closed：命令绝不能在检查失败的队列上等待或执行。
+    expect(h.execCalls).toHaveLength(0);
+  });
   it('a client decline is final — the queue is never consulted behind a no', async () => {
     dir = mkdtempSync(join(tmpdir(), 'approval-both-'));
     h = await createHarness(
       {},
-      { approvalChannel: 'both', approvalQueueDir: dir, approvalQueuePollMs: 5 },
+      { approvalChannel: 'both', approvalQueueDir: dir, approvalQueuePollMs: 5, approvalQueueInspectAcl: async () => ({ status: 'restricted' }) },
     );
     h.setApproval(false);
     const res = await h.client.callTool({ name: 'run-command', arguments: { command: 'rm -rf /tmp/build' } }) as Promise<any>;

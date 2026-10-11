@@ -2,6 +2,8 @@ import { mkdir, readFile, readdir, writeFile, chmod } from 'fs/promises';
 import { homedir, platform, userInfo } from 'os';
 import { join } from 'path';
 import { createHash } from 'crypto';
+import type { AclVerdict } from '../config/sddl.js';
+import { assertPrivateOnWindows } from '../config/windows-acl.js';
 
 /**
  * File-based approval queue — the human gate for hosts whose MCP client has no
@@ -79,6 +81,26 @@ function pendingPath(dir: string, id: string): string {
 
 function newId(now: Date): string {
   return `${now.getTime()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+export type QueueAclInspect = (path: string) => Promise<AclVerdict>;
+
+/**
+ * Windows-only enforcement for the queue directory (T-11, owner ruling
+ * 2026-10-11: the report-only leftover was not accepted).
+ *
+ * The human approves what the FILE says, so a directory another account can
+ * rewrite is an authorization bypass — forged approvals, not a privacy leak.
+ * That is the write-exposure half of the upstream ACL semantics: refuse, never
+ * report-and-continue. POSIX enforces the same property with the 0700 chmod
+ * taken at queue creation, so this check is a no-op there.
+ */
+export async function assertQueueDirPrivate(
+  dir: string,
+  inspect?: QueueAclInspect,
+): Promise<void> {
+  if (platform() !== 'win32') return;
+  await assertPrivateOnWindows(dir, {}, inspect);
 }
 
 function currentOSUser(): string {

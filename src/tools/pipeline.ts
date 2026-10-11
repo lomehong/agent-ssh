@@ -6,7 +6,9 @@ import type { AuditStore } from '../audit/store.js';
 import { sanitizeCommand } from '../guard/sanitizer.js';
 import { requestApproval, APPROVAL_TIMEOUT_MS, type ApprovalResult } from '../guard/elicitation.js';
 import {
+  assertQueueDirPrivate,
   createApprovalRequest,
+  getApprovalQueueDir,
   waitForDecision,
   type ApprovalChannel,
 } from '../guard/approval-queue.js';
@@ -63,6 +65,8 @@ export interface ToolDeps {
   approvalQueuePollMs?: number;
   /** Queue directory override; a test hook — production uses the platform default. */
   approvalQueueDir?: string;
+  /** Test hook: inject the Windows ACL inspection for the queue directory. */
+  approvalQueueInspectAcl?: import('../guard/approval-queue.js').QueueAclInspect;
   registry: ConnectionRegistry;
   policy: PolicyEngine;
   audit: AuditStore;
@@ -94,6 +98,7 @@ export function createPipeline({
   approvalChannel = 'both',
   approvalQueuePollMs,
   approvalQueueDir,
+  approvalQueueInspectAcl,
 }: ToolDeps) {
   const quota = new CommandQuota();
   const grants = new ApprovalGrants(approvalGrantTtlMs);
@@ -151,6 +156,20 @@ export function createPipeline({
           }
           // `both` + unavailable: this client cannot be asked — fall through to
           // the queue, which is the whole reason the channel exists.
+        }
+
+        // Queue-directory privacy gate (T-11): on Windows, a queue another
+        // account can rewrite means forged approvals. Enforced, not reported —
+        // the human's decision is only as trustworthy as the file it is
+        // written into. POSIX took its 0700 chmod at queue creation.
+        try {
+          await assertQueueDirPrivate(approvalQueueDir ?? getApprovalQueueDir(), approvalQueueInspectAcl);
+        } catch (err) {
+          throw new PolicyRefusedError(
+            `APPROVAL_UNAVAILABLE: approval queue directory failed the privacy check — ` +
+            `${err instanceof Error ? err.message : String(err)} The command was refused rather than left in a queue that could be tampered with.`,
+            evaluation,
+          );
         }
 
         const request = await createApprovalRequest({
