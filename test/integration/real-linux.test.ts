@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { connect as netConnect } from 'node:net';
+import { createAppConfig } from './fixtures.js';
 import { ConnectionRegistry } from '../../src/ssh/connection-registry.js';
 import { listPending, decideApproval } from '../../src/guard/approval-queue.js';
 import type { AppConfig, Profile } from '../../src/types.js';
@@ -27,7 +28,6 @@ const AUTH = (process.env.REAL_AUTH || 'password') as 'password' | 'key';
 
 const enabled = Boolean(HOST && USER && (process.env.REAL_PASSWORD || process.env.REAL_KEY_PATH));
 
-let env: ReturnType<typeof setupEnv>;
 let registry: ConnectionRegistry;
 let tmp: string;
 let client: import('@modelcontextprotocol/sdk/client/index.js').Client;
@@ -38,7 +38,6 @@ function mask(s: string | undefined): string {
 
 beforeAll(async () => {
   if (!enabled) return;
-  env = setupEnv();
   console.log(`real-linux: target=${HOST}:${PORT} user=${USER} auth=${AUTH} password=${mask(process.env.REAL_PASSWORD)} key=${mask(process.env.REAL_KEY_PATH)}`);
   tmp = mkdtempSync(join(tmpdir(), 'real-linux-'));
   if (process.env.REAL_PASSWORD) process.env.SSH_MCP_REAL_PASSWORD = process.env.REAL_PASSWORD;
@@ -86,7 +85,6 @@ beforeAll(async () => {
 afterAll(async () => {
   await client?.close();
   rmSync(tmp, { recursive: true, force: true });
-  env?.restore();
 });
 
 async function call(name: string, args: Record<string, unknown> = {}) {
@@ -97,8 +95,16 @@ function textOf(res: any): string {
   return (res.content ?? []).map((c: any) => c.text ?? '').join('');
 }
 
-async function approveLastQueued(by = 'master'): Promise<void> {
-  const pending = (await listPending({ dir: join(tmp, 'approvals') })).filter((p) => p.status === 'pending');
+async function approveLastQueued(by = 'master', timeoutMs = 5000): Promise<void> {
+  // The queued request lands asynchronously (mkdir + write); poll instead of
+  // racing a fixed sleep.
+  const deadline = Date.now() + timeoutMs;
+  let pending: Awaited<ReturnType<typeof listPending>> = [];
+  while (Date.now() < deadline) {
+    pending = (await listPending({ dir: join(tmp, 'approvals') })).filter((p) => p.status === 'pending');
+    if (pending.length > 0) break;
+    await new Promise((r) => setTimeout(r, 50));
+  }
   expect(pending.length).toBeGreaterThanOrEqual(1);
   const outcome = await decideApproval(pending[pending.length - 1].id, 'approved', { dir: join(tmp, 'approvals'), by });
   expect(outcome.decided).toBe(true);
@@ -106,7 +112,9 @@ async function approveLastQueued(by = 'master'): Promise<void> {
 
 describe.skipIf(!enabled)('T-07 修订验收：真实 Linux 服务器全链路', () => {
   it('① 连接 + 命令执行', async () => {
-    const res = await call('read-command', { command: 'whoami && uname -s' });
+    // read-command 的 allowlist 不保证含 whoami/uname；通用执行路径是
+    // run-command（destructive 依分类，此处 safe→直接放行）。
+    const res = await call('run-command', { command: 'whoami && uname -s' });
     expect(res.isError).toBeFalsy();
     const text = textOf(res);
     expect(text).toContain(USER!);
@@ -148,17 +156,25 @@ describe.skipIf(!enabled)('T-07 修订验收：真实 Linux 服务器全链路',
     const up = call('sftp-upload', { remotePath: `/tmp/${marker}.txt`, content: marker }) as Promise<any>;
     await new Promise((r) => setTimeout(r, 80));
     await approveLastQueued('master');
-    expect((await up).isError).toBeFalsy();
+    const upRes = await up;
+    expect(upRes.isError).toBeFalsy();
+    // 交叉验证：shell 视角确认文件真实落盘（不只 SFTP 会话自证）。
+    const probe = await call('run-command', { command: `ls -la /tmp/${marker}.txt` });
+    expect(textOf(probe)).toContain(marker);
+    expect(textOf(probe)).toContain(USER!);
 
-    const list = await call('sftp-list', { remotePath: '/tmp' });
-    expect(textOf(list)).toContain(`${marker}.txt`);
-    const down = await call('sftp-download', { remotePath: `/tmp/${marker}.txt` });
+    // /tmp 在该服务器有 2 万+ 条目：list 按 maxEntries 截断属正常行为，
+    // 文件存在性已由 upload 响应 + shell ls 探针证明；此处断言 bound 生效。
+    const list = await call('sftp-list', { remotePath: '/tmp', maxEntries: 500 });
+    const listText = textOf(list);
+    expect(listText.split('\n').length).toBeLessThanOrEqual(502); // 500 条 + truncated 注记
+    expect(listText).toContain('[truncated:');
+        const down = await call('sftp-download', { remotePath: `/tmp/${marker}.txt` });
     expect(textOf(down)).toContain(marker);
 
-    const cleanup = call('run-command', { command: `rm -f /tmp/${marker}.txt` }) as Promise<any>;
-    await new Promise((r) => setTimeout(r, 80));
-    await approveLastQueued('master');
-    expect((await cleanup).isError).toBeFalsy();
+    // rm -f（非 -r）分类为 safe：直接执行、不入审批队列——上游分类语义。
+    const cleanup = await call('run-command', { command: `rm -f /tmp/${marker}.txt` });
+    expect(cleanup.isError).toBeFalsy();
   }, 60000);
 
   it('⑤ 本地转发：读到服务器自身 sshd banner', async () => {
