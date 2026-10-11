@@ -1,10 +1,17 @@
 id: T-01
 title: 上游基线导入与回归（ssh-mcp v2.18.0 → agent-ssh）
 level: L2
-status: 执行中
+status: 已落定
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:45
 claimedBy: digital-architect
+reportedAt: 2026-10-11 06:30:37
+reportSummary: 基线导入完成：upstream-v2.18.0-baseline tag=v2.18.0(723a7c5)；上游套件 1969 过/32 败全定性为 Windows 环境差（docs/reports/2026-10-11-T01）待Linux CI 全绿复核；供应链：生产依赖 0 漏洞（2 critical+1 high 已修，dev 5 high 缓办登记）、105 包 attestation 验证；U1 已核查（exec 一次性 PTY 已有，多轮会话仍缺）。自报待主人 confirm。
+confirmedBy: master
+confirmedVia: 会话 ask_user 回执 2026-10-11「确认落定，继续 T-02」
+confirmedAt: 2026-10-11 06:31:35
 events:
   - 2026-10-11 06:06:45 | create | by=lome | level=L2 | accept=①上游基线代码入本仓并打 tag upstream-v2.18.0-baseline ②上游测试套件全绿留痕（npm test + docker compose 集成 fixtures）③U1 上游 tty 字段源码核查结论回写技术方案 §6 ④供应链审计记录（依赖 audit 无未处置 high/critical + 上游 SBOM 对账）。出处：技术方案 §7 T1
   - 2026-10-11 06:09:22 | claim | by=digital-architect
+  - 2026-10-11 06:30:37 | report | by=digital-architect
+  - 2026-10-11 06:31:35 | confirm | by=digital-architect
