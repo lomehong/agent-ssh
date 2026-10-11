@@ -27,6 +27,15 @@ async function main() {
   const argv = parseArgv();
   checkRemovedFlags(argv);
 
+  // The approvals CLI is a subcommand, not a flag surface: it shares nothing
+  // with the server boot path (no config, no keychain, no transport), and
+  // running it must not start a stdio server that would hang the shell.
+  const positionals = process.argv.slice(2).filter((a) => !a.startsWith('--'));
+  if (positionals[0] === 'approvals') {
+    const { runApprovalsCli } = await import('./cli.js');
+    process.exit(await runApprovalsCli(process.argv.slice(2)));
+  }
+
   if (argv.dumpToolHashes !== undefined) {
     console.log(JSON.stringify(getToolHashes(), null, 2));
     return;
@@ -79,6 +88,7 @@ async function main() {
     );
     registerTools(server, registry, policy, audit, {
       approvalGrantTtlMs: config.defaults.approvalGrantTtlMs,
+      approvalChannel: config.defaults.approvalChannel,
       localPath,
     });
     registerResources(server, registry);

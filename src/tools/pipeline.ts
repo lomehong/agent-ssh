@@ -4,7 +4,12 @@ import type { ConnectionRegistry } from '../ssh/connection-registry.js';
 import type { PolicyEngine, PolicyResource } from '../policy/engine.js';
 import type { AuditStore } from '../audit/store.js';
 import { sanitizeCommand } from '../guard/sanitizer.js';
-import { requestApproval } from '../guard/elicitation.js';
+import { requestApproval, APPROVAL_TIMEOUT_MS, type ApprovalResult } from '../guard/elicitation.js';
+import {
+  createApprovalRequest,
+  waitForDecision,
+  type ApprovalChannel,
+} from '../guard/approval-queue.js';
 import { commandOutput, type ToolResult } from './results.js';
 import { CommandQuota } from '../policy/quota.js';
 import { formatReadOnlyRejection } from '../policy/classifier.js';
@@ -48,6 +53,16 @@ export interface ToolDeps {
   server: McpServer;
   /** Lifetime of a just-in-time approval grant; 0 = always prompt. */
   approvalGrantTtlMs?: number;
+  /**
+   * Where a human approval is sought (agent-ssh): `elicitation` (upstream),
+   * `queue` (file queue + `approvals` CLI), or `both` — try the client first,
+   * fall to the queue when this client cannot be asked. Default `both`.
+   */
+  approvalChannel?: ApprovalChannel;
+  /** Queue poll interval; a test hook — production uses the 2s default. */
+  approvalQueuePollMs?: number;
+  /** Queue directory override; a test hook — production uses the platform default. */
+  approvalQueueDir?: string;
   registry: ConnectionRegistry;
   policy: PolicyEngine;
   audit: AuditStore;
@@ -70,7 +85,16 @@ export interface ToolDeps {
  * and audit store. Tool groups receive the result and never touch those four
  * directly, so there is exactly one path from caller input to a remote command.
  */
-export function createPipeline({ server, registry, policy, audit, approvalGrantTtlMs = 0 }: ToolDeps) {
+export function createPipeline({
+  server,
+  registry,
+  policy,
+  audit,
+  approvalGrantTtlMs = 0,
+  approvalChannel = 'both',
+  approvalQueuePollMs,
+  approvalQueueDir,
+}: ToolDeps) {
   const quota = new CommandQuota();
   const grants = new ApprovalGrants(approvalGrantTtlMs);
   async function resolveConn(profileName?: string) {
@@ -107,20 +131,61 @@ export function createPipeline({ server, registry, policy, audit, approvalGrantT
           return { conn, evaluation, approver: 'jit-grant' };
         }
 
-        const approval = await requestApproval(server, command, conn.profile.name, evaluation);
-        if (!approval.approved) {
-          // Two different failures used to share one message. "User did not
-          // approve" is true when the user declined and a lie when the client
-          // could not be asked, and the reader cannot tell which they got (#91).
+        const channel = approvalChannel ?? 'both';
+        let approval: ApprovalResult | null = null;
+        if (channel !== 'queue') {
+          approval = await requestApproval(server, command, conn.profile.name, evaluation);
+          if (approval.approved) {
+            grants.record(conn.profile.name, command, evaluation.commandClass);
+            return { conn, evaluation, approver: approval.approver };
+          }
+          // A human who was asked and said no is a final answer: queueing the
+          // same command behind their back would shop for a second opinion.
+          if (!approval.unavailable || channel === 'elicitation') {
+            throw new PolicyRefusedError(
+              approval.unavailable
+                ? `APPROVAL_UNAVAILABLE: ${approval.unavailable}`
+                : 'APPROVAL_DENIED: User did not approve this command',
+              evaluation,
+            );
+          }
+          // `both` + unavailable: this client cannot be asked — fall through to
+          // the queue, which is the whole reason the channel exists.
+        }
+
+        const request = await createApprovalRequest({
+          profile: conn.profile.name,
+          command,
+          commandClass: evaluation.commandClass,
+          binary: evaluation.binary,
+          timeoutMs: APPROVAL_TIMEOUT_MS,
+        }, { dir: approvalQueueDir });
+        span.setAttribute('policy.queuedApproval', request.id);
+        const decision = await waitForDecision(request.id, {
+          dir: approvalQueueDir,
+          fingerprint: request.fingerprint,
+          expiresAt: request.expiresAt,
+          pollMs: approvalQueuePollMs ?? 2_000,
+          onQueued: (id) => {
+            console.error(
+              `APPROVAL_QUEUED id=${id} — a ${evaluation.commandClass} command on "${conn.profile.name}" is waiting ` +
+              `for a human. Decide with: agent-ssh approvals approve ${id}   (or reject ${id}). ` +
+              `It expires ${request.expiresAt}.`,
+            );
+          },
+        });
+        if (!decision.approved) {
           throw new PolicyRefusedError(
-            approval.unavailable
-              ? `APPROVAL_UNAVAILABLE: ${approval.unavailable}`
-              : 'APPROVAL_DENIED: User did not approve this command',
+            decision.unavailable?.includes('expired')
+              ? `APPROVAL_EXPIRED: ${decision.unavailable}`
+              : decision.unavailable
+                ? `APPROVAL_UNAVAILABLE: ${decision.unavailable}`
+                : 'APPROVAL_DENIED: User did not approve this command (via approvals CLI)',
             evaluation,
           );
         }
         grants.record(conn.profile.name, command, evaluation.commandClass);
-        return { conn, evaluation, approver: approval.approver };
+        return { conn, evaluation, approver: decision.approver };
       }
 
       return { conn, evaluation, approver: undefined };

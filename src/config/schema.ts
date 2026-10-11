@@ -148,6 +148,11 @@ export const defaultsSchema = z.object({
   // it is opt-in rather than a default convenience.
   approvalGrantTtlMs: z.number().int().nonnegative().default(0),
   approvalMode: approvalModeSchema.default('ask-destructive'),
+  // Where a human approval is sought (agent-ssh): 'elicitation' = the MCP
+  // client's dialog only; 'queue' = the file queue + approvals CLI only;
+  // 'both' (default) = try the client, fall to the queue when it cannot be
+  // asked. A human decline is always final — only unavailability falls over.
+  approvalChannel: z.enum(['elicitation', 'queue', 'both']).default('both'),
   /**
    * Where the streaming SFTP file tools may read and write on this machine.
    *

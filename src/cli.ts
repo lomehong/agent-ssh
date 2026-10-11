@@ -20,6 +20,7 @@ import type { AclFinding } from './config/windows-acl.js';
 import { HOST_GROUPS } from './policy/engine.js';
 import type { HostKeyMode } from './ssh/host-key.js';
 import type { AppConfig, Profile, Defaults } from './types.js';
+import { listPending, decideApproval, type PendingApproval } from './guard/approval-queue.js';
 
 /**
  * Whether the operator asked for a quick start at all.
@@ -262,6 +263,7 @@ export function defaultsFromArgv(argv: Record<string, string | null>): Defaults 
     commandQuotaPerDay: parseInt(argv.commandQuota as string) || 0,
     approvalGrantTtlMs: parseInt(argv.approvalGrantTtl as string) || 0,
     approvalMode: 'ask-destructive',
+    approvalChannel: 'both',
     // No flag for transferRoot on purpose. It is the consent to touch local
     // disk, and the quick-start path exists for someone who passed a host and a
     // user on a command line — not a place to acquire that consent in passing.
@@ -388,4 +390,68 @@ export async function buildAppConfig(argv: Record<string, string | null>): Promi
   };
 
   return { defaults, profiles: [profile] };
+}
+
+// ─── approvals CLI (agent-ssh) ──────────────────────────────────────────────
+
+/**
+ * Positional (non-`--`) arguments, for the subcommand surface. Everything this
+ * file parsed before was flags, so positionals were noise; the approvals CLI
+ * is the first grammar that needs them. Values of space-separated flags would
+ * land here too — this file has never accepted that spelling, and the approvals
+ * grammar takes its flags only in the `--x=v` form for the same reason.
+ */
+export function positionalsOf(args: string[]): string[] {
+  return args.filter((a) => !a.startsWith('--'));
+}
+
+function formatPending(p: PendingApproval, now: Date): string {
+  const ageS = Math.max(0, Math.round((now.getTime() - Date.parse(p.createdAt)) / 1000));
+  const leftS = Math.max(0, Math.round((Date.parse(p.expiresAt) - now.getTime()) / 1000));
+  const status = p.status === 'pending' ? `expires in ${leftS}s` : p.status;
+  const command = p.command.length > 160 ? p.command.slice(0, 160) + '…' : p.command;
+  return `${p.id}  [${status}]  ${p.commandClass} on "${p.profile}" (age ${ageS}s)\n    ${command}\n    fingerprint ${p.fingerprint.slice(0, 16)}…`;
+}
+
+/**
+ * `agent-ssh approvals list|approve <id>|reject <id> [--dir=path]`.
+ *
+ * The decision surface of the queue channel (plan §2 R6). The subcommand IS
+ * the consent: a human ran it, saw the full payload printed above the verdict,
+ * and the file records who ran it. There is no approve-all and no batch form —
+ * each request is read and decided on its own.
+ */
+export async function runApprovalsCli(args: string[]): Promise<number> {
+  const [verb, id] = positionalsOf(args);
+  const flags = parseArgv(args);
+  const dir = flags.dir || undefined;
+  const now = new Date();
+
+  if (verb === 'list') {
+    const pending = await listPending({ dir });
+    if (pending.length === 0) {
+      console.log('No approval requests.');
+      return 0;
+    }
+    for (const p of pending) console.log(formatPending(p, now));
+    return 0;
+  }
+
+  if (verb === 'approve' || verb === 'reject') {
+    if (!id) {
+      console.error(`Usage: agent-ssh approvals ${verb} <id> [--dir=path]`);
+      return 1;
+    }
+    // The full context is printed before the verdict is written — deciding on
+    // an id alone, without seeing what it names, is how approvals get racked up.
+    const pending = await listPending({ dir });
+    const target = pending.find((p) => p.id === id);
+    if (target) console.log(formatPending(target, now));
+    const outcome = await decideApproval(id, verb === 'approve' ? 'approved' : 'rejected', { dir });
+    console.log(outcome.message);
+    return outcome.decided ? 0 : 1;
+  }
+
+  console.error('Usage: agent-ssh approvals list | approvals approve <id> | approvals reject <id> [--dir=path]');
+  return 1;
 }

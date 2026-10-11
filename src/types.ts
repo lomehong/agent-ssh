@@ -1,6 +1,7 @@
 // ─── Config Types ───────────────────────────────────────────────────────────
 
 import type { AlgorithmOverride } from './ssh/algorithms.js';
+import type { ApprovalChannel } from './guard/approval-queue.js';
 
 export type AuthMethod = 'agent' | 'key' | 'password' | 'keychain';
 export type ApprovalMode = 'auto' | 'ask-destructive' | 'ask-all' | 'deny';
@@ -67,6 +68,8 @@ export interface Defaults {
   /** Lifetime of a just-in-time approval grant; 0 = always prompt. */
   approvalGrantTtlMs: number;
   approvalMode: ApprovalMode;
+  /** Where a human approval is sought (elicitation / queue / both). */
+  approvalChannel: ApprovalChannel;
   /**
    * Local directory the streaming SFTP file tools are confined to. Absent means
    * those tools refuse — there is no "anywhere" setting.

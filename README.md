@@ -673,6 +673,43 @@ ready. If your client does not support elicitation at all, every destructive and
 privileged command is refused with `APPROVAL_UNAVAILABLE` naming that cause —
 approval fails closed by design.
 
+#### Approval queue (agent-ssh)
+
+Elicitation needs a client that supports it. The `approvalChannel` setting
+(default `both`) gives every other host a second gate with the same 10-minute
+budget:
+
+- `elicitation` — the client dialog only (upstream behavior).
+- `queue` — never ask the client; every destructive command waits in a file
+  queue for a human.
+- `both` — try the client's dialog; if this client cannot be asked at all, the
+  command waits in the queue instead of failing. A client that answers **no**
+  is a final answer — the queue is never consulted behind an explicit decline.
+
+The queue lives under the platform data directory (`…
+/agent-ssh/approvals/`, one JSON file per pending command, `0600` in a `0700`
+directory). The server prints the exact command on stderr:
+
+```bash
+APPROVAL_QUEUED id=173…-a1b2c3 — a destructive command on "prod-web-1" is waiting for a human.
+Decide with: agent-ssh approvals approve 173…-a1b2c3   (or reject 173…-a1b2c3).
+```
+
+```bash
+agent-ssh approvals list              # every pending request, with age and time left
+agent-ssh approvals approve <id>      # prints the full payload, then records the decision
+agent-ssh approvals reject <id>
+```
+
+Each decision records **who** ran the CLI; the audit log shows it as
+`approver: "cli:<user>"`, distinguishable from `mcp-client` and `jit-grant`.
+Past expiry the request is marked expired and refuses — fail-closed, like the
+elicitation timeout. The decision file carries a fingerprint of the payload it
+was shown; if the file's contents stop matching it, the server refuses rather
+than run something that was not approved. There is deliberately **no approve
+verb on the MCP tool surface** — the model can request, wait, and be refused,
+but only a human with shell access can let a destructive command through.
+
 ### Command Quota
 
 `commandQuotaPerDay` bounds how many commands a profile may run in a rolling
