@@ -14,4 +14,5 @@ accept:
   - 旧直连代码路径删除；tsc 0 错；相关单测全绿
 source: 方案 §2.1/§4.3/§11 T-17 行、§12 D1'/D4
 events:
+  - 2026-10-12 06:50:00 | claim | by=digital-architect | 接缝勘察完成，实现方案：①Host 侧（host/main.ts 增 handlers）：cli.run=复刻 cli-direct 语义（分类+禁止名单+redact+registry.exec+audit approver=cli-direct，无审批门——人即批准者，D4）；cli.info=连接/profile 信息；approval.list/decide=队列面（decide 已有）by=cli:<用户> 语义保持；auth.session.start/renew 会话引导（T-15 已有）②CLI 侧（新 src/cli-rpc.ts）：runApprovalsCli+runDirectCli 改 RPC 客户端（交互口令→auth.session.start（skipHello 引导）→会话；--session-token stdin 脚本场景明示风险）③旧直连删除：cli-direct.ts 进程内 SSH 路径+runApprovalsCli 文件队列直读路径（队列已归 Host）。测试：host 侧 handlers 单测（复用 main.test 模式）+CLI 侧经 startHost+RpcClient 端到端。
   - 2026-10-11 20:52:00 | create | by=lome | level=L1 | blocked_by=T-14
