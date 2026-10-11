@@ -246,6 +246,31 @@ export interface DecideOutcome {
   message: string;
 }
 
+/**
+ * K7：决定按 id 串行化（Host 单进程内互斥）。
+ *
+ * decideApproval 的读-判-写在无锁下是并发双写窗口（三审批面同时收到推送时
+ * 双决定真实化，评审 T-14 标准轴 K7）。按 `${dir}::${id}` 分键的 promise 链
+ * 使同 id 决定严格串行：后到者读到前者的落盘终态，收「已决定」而非双写。
+ * 不同 id 各自独立，互不阻塞。锁条目在落定后自清理，不随 id 数量增长。
+ */
+const decideLocks = new Map<string, Promise<void>>();
+
+async function withDecisionLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const prev = decideLocks.get(key) ?? Promise.resolve();
+  const run = prev.then(fn, fn);
+  const settled = run.then(
+    () => undefined,
+    () => undefined,
+  );
+  decideLocks.set(key, settled);
+  try {
+    return await run;
+  } finally {
+    if (decideLocks.get(key) === settled) decideLocks.delete(key);
+  }
+}
+
 /** CLI 侧决定。拒绝任何非待审或已过期的东西。 */
 export async function decideApproval(
   id: string,
@@ -253,26 +278,28 @@ export async function decideApproval(
   opts: { dir?: string; by?: string; now?: Date } = {},
 ): Promise<DecideOutcome> {
   const dir = opts.dir ?? getApprovalQueueDir();
-  const file = pendingPath(dir, id);
-  let stored: PendingApproval;
-  try {
-    stored = JSON.parse(await readFile(file, 'utf8')) as PendingApproval;
-  } catch {
-    return { decided: false, message: `No such approval request: ${id}` };
-  }
-  const now = opts.now ?? new Date();
-  if (stored.status !== 'pending') {
-    return { decided: false, message: `Request ${id} is already ${stored.status}${stored.decidedBy ? ` by ${stored.decidedBy}` : ''}.` };
-  }
-  if (now.getTime() >= Date.parse(stored.expiresAt)) {
-    stored.status = 'expired';
+  return withDecisionLock(`${dir}::${id}`, async () => {
+    const file = pendingPath(dir, id);
+    let stored: PendingApproval;
+    try {
+      stored = JSON.parse(await readFile(file, 'utf8')) as PendingApproval;
+    } catch {
+      return { decided: false, message: `No such approval request: ${id}` };
+    }
+    const now = opts.now ?? new Date();
+    if (stored.status !== 'pending') {
+      return { decided: false, message: `Request ${id} is already ${stored.status}${stored.decidedBy ? ` by ${stored.decidedBy}` : ''}.` };
+    }
+    if (now.getTime() >= Date.parse(stored.expiresAt)) {
+      stored.status = 'expired';
+      await writeFile(file, JSON.stringify(stored, null, 2) + '\n', 'utf8');
+      return { decided: false, message: `Request ${id} expired at ${stored.expiresAt}; it is marked expired and the server will refuse it.` };
+    }
+    stored.status = decision;
+    stored.decidedAt = now.toISOString();
+    stored.decidedBy = opts.by ?? currentOSUser();
+    stored.decisionFingerprint = fingerprintOf(stored);
     await writeFile(file, JSON.stringify(stored, null, 2) + '\n', 'utf8');
-    return { decided: false, message: `Request ${id} expired at ${stored.expiresAt}; it is marked expired and the server will refuse it.` };
-  }
-  stored.status = decision;
-  stored.decidedAt = now.toISOString();
-  stored.decidedBy = opts.by ?? currentOSUser();
-  stored.decisionFingerprint = fingerprintOf(stored);
-  await writeFile(file, JSON.stringify(stored, null, 2) + '\n', 'utf8');
-  return { decided: true, message: `${decision}: ${stored.commandClass} command on "${stored.profile}" — ${stored.command}` };
+    return { decided: true, message: `${decision}: ${stored.commandClass} command on "${stored.profile}" — ${stored.command}` };
+  });
 }

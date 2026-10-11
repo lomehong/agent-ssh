@@ -123,3 +123,32 @@ describe('queue directory default', () => {
     expect(p).toMatch(/approvals$/);
   });
 });
+
+describe('并发决定仲裁（K7：Host 侧按 id 串行化）', () => {
+  it('同 id 并发 approve+reject 恰好一生效，败者收「已决定」', async () => {
+    const req = await createApprovalRequest({ ...REQUEST, timeoutMs: 60_000 }, { dir });
+    const outcomes = await Promise.all([
+      decideApproval(req.id, 'approved', { dir, by: 'desktop' }),
+      decideApproval(req.id, 'rejected', { dir, by: 'cli' }),
+    ]);
+    expect(outcomes.filter((o) => o.decided)).toHaveLength(1);
+    const loser = outcomes.find((o) => !o.decided)!;
+    expect(loser.message).toMatch(/already (approved|rejected)/);
+    // 落盘终态与唯一胜者一致
+    const stored = JSON.parse(readFileSync(join(dir, 'pending', `${req.id}.json`), 'utf8'));
+    const winner = outcomes.find((o) => o.decided)!;
+    expect(stored.status).toBe(winner.message.startsWith('approved') ? 'approved' : 'rejected');
+    expect(stored.decidedBy).toBe(winner.message.startsWith('approved') ? 'desktop' : 'cli');
+  });
+
+  it('不同 id 并发决定互不阻塞（锁按 id 分键，双双生效）', async () => {
+    const r1 = await createApprovalRequest({ ...REQUEST, timeoutMs: 60_000 }, { dir });
+    const r2 = await createApprovalRequest({ ...REQUEST, timeoutMs: 60_000 }, { dir });
+    const [o1, o2] = await Promise.all([
+      decideApproval(r1.id, 'approved', { dir }),
+      decideApproval(r2.id, 'approved', { dir }),
+    ]);
+    expect(o1.decided).toBe(true);
+    expect(o2.decided).toBe(true);
+  });
+});
