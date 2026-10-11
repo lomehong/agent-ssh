@@ -16,8 +16,6 @@ import {
   buildAppConfig,
   checkRemovedFlags,
   flagEnabled,
-  parseFailureLimit,
-  parseHttpSessionTtl,
   parseOpaUrl,
   parseOpaTimeout,
   resolveHostKeyMode,
@@ -102,20 +100,17 @@ async function main() {
   const transportMode = argv.transport || 'stdio';
 
   if (transportMode === 'http') {
-    const { startHttpServer } = await import('./transport/http.js');
-    await startHttpServer(createMcpServer, {
-      port: parseInt(argv.httpPort as string) || 3000,
-      host: (argv.httpHost as string) || '127.0.0.1',
-      bearerToken: argv.bearerToken as string | undefined,
-      rateLimit: parseInt(argv.rateLimit as string) || 0,
-      sessionIdleTtlMs: parseHttpSessionTtl(argv.httpSessionTtl),
-      authFailureLimit: parseFailureLimit(argv.authFailureLimit),
-      trustProxy: flagEnabled(argv, 'trustProxy'),
-      trustedProxies: (argv.trustedProxies as string)?.split(',').map((h) => h.trim()).filter(Boolean),
-      allowedHosts: (argv.allowedHosts as string)?.split(',').map((h) => h.trim()).filter(Boolean),
-      registry,
-    });
-  } else {
+    // T-15（Host 分离架构 v2）：HTTP 传输整体废止——凭证与信任域分离后，
+    // Agent 侧不再有持凭证的长驻服务可暴露。审批走 Host 的 RPC 审批面
+    // （方案 §2.2/§6）；此处显式报错而非静默落到 stdio，避免运维以旧旗标
+    // 得到意料外的传输形态。旗标清理随 T-18a。
+    throw new OperatorError(
+      '--transport=http was removed: the HTTP transport is abolished in the Host 分离架构 (v2). ' +
+      'Run the MCP frontend on stdio (default) and start `agent-ssh host` for the credential-holding daemon.',
+    );
+  }
+
+  {
     const transport = new StdioServerTransport();
     await createMcpServer().connect(transport);
     console.error('SSH MCP Server v2 running on stdio');

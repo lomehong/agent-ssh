@@ -148,11 +148,9 @@ describe.skipIf(!serverBuilt)('E2E — packaging', () => {
     expect(dockerfile).not.toMatch(/--from=builder [^\n]*config\.default\.toml/);
   });
 
-  it('requires a bearer token for the HTTP transport', async () => {
-    await expect(
-      runIsolated([SERVER_ENTRY, '--host=x', '--user=y', '--transport=http']),
-    ).rejects.toMatchObject({ stderr: expect.stringContaining('bearerToken') });
-  }, 20000);
+  // T-15：bearerToken 断言随 HTTP 传输废止删除（评审 H5 点名的隐性依赖，
+  // 删测登记见 docs/tasks/T-15.yaml）。传输形态的门禁由 index.ts 的
+  // --transport=http 显式报错承担。
 });
 
 describe.skipIf(!serverBuilt || !pnpmAvailable)('E2E — strict dependency resolution', () => {
