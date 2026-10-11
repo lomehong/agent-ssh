@@ -85,6 +85,8 @@ export interface Defaults {
   ptySessionIdleTimeoutMs: number;
   /** 裸 PTY 会话生存期上限（计划第 ③ 层；U3 默认 2 小时）。 */
   ptySessionMaxLifetimeMs: number;
+  /** 裸 PTY 会话输出保留上限（字节；默认 1MB）。 */
+  ptySessionBufferBytes: number;
 }
 
 /**

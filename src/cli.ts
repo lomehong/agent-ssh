@@ -265,6 +265,7 @@ export function defaultsFromArgv(argv: Record<string, string | null>): Defaults 
     approvalMode: 'ask-destructive',
     approvalChannel: 'both',
     allowDynamicForwarding: false,
+    ptySessionBufferBytes: 1_048_576,
     // 刻意不为 transferRoot 提供标志。它是对触碰本地磁盘的同意，
     // 而快速启动路径是为在命令行传了主机和用户的人准备的——
     // 不是顺路获取同意的地方。流式文件工具因此在 --host/--user 下

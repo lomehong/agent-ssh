@@ -20,13 +20,13 @@ import { ApprovalGrants } from '../guard/approval-grants.js';
 import type { CommandResult, ToolContext, PolicyEvaluation, CommandClass } from '../types.js';
 
 /**
- * What we know about a request while it is being processed, so a failure can be
+ * 请求处理期间我们所知的信息，使失败可以被如实审计。
  * audited truthfully.
  *
- * The catch block of a tool handler is reached by two very different events: a
- * policy denial, and a failure *after* the command was allowed, approved and
- * executed. Recording both as `decision: 'deny'` told an auditor that commands
- * which actually ran on the host had been blocked.
+ * 工具处理器的 catch 块由两种截然不同的事件到达：策略拒绝，
+ * 与命令被允许、批准*并执行后*的失败。两者都记为 deny
+ * 告诉审计者实际在主机上跑过的命令被挡了。
+ *
  */
 export interface AuditState {
   /** Best-known command string: raw until sanitized, wrapped once wrapped. */
@@ -41,8 +41,8 @@ function rejectedEvaluation(commandClass: CommandClass): PolicyEvaluation {
 }
 
 /**
- * Carries the policy decision that caused a refusal, so the audit record shows
- * the real rule and class instead of a synthetic placeholder.
+ * 而非合成占位符。
+ *
  */
 export class PolicyRefusedError extends Error {
   constructor(message: string, readonly evaluation: PolicyEvaluation) {
@@ -56,9 +56,9 @@ export interface ToolDeps {
   /** Lifetime of a just-in-time approval grant; 0 = always prompt. */
   approvalGrantTtlMs?: number;
   /**
-   * Where a human approval is sought (agent-ssh): `elicitation` (upstream),
-   * `queue` (file queue + `approvals` CLI), or `both` — try the client first,
-   * fall to the queue when this client cannot be asked. Default `both`.
+    * 向人征求批准的位置（agent-ssh）：elicitation（上游）、
+    * queue（文件队列加 approvals CLI）或 both——先试客户端，
+    * 此客户端无法被问时落到队列。默认 both。
    */
   approvalChannel?: ApprovalChannel;
   /** Queue poll interval; a test hook — production uses the 2s default. */
@@ -71,23 +71,23 @@ export interface ToolDeps {
   policy: PolicyEngine;
   audit: AuditStore;
   /**
-   * Where the streaming SFTP file tools may touch local disk, and which
-   * directories they must stay clear of.
+    * 流式 SFTP 文件工具可触碰本地磁盘的位置，及必须避开的目录。
+    *
    *
-   * Optional so the tool layer can be built without it — an unconfigured server
-   * still has to answer `tools/list`. Absent, those tools register and refuse,
-   * which is the same answer a configured server with no `transferRoot` gives.
+    * 可选使工具层可以不带它构建——未配置的服务器仍要回答 tools/list。
+    * 缺席时那些工具注册并拒绝，与配置了但无 transferRoot 的服务器
+    * 给出的是同一个答案。
    */
   localPath?: LocalPathContext;
 }
 
 /**
- * Builds the audited execution pipeline every tool handler runs through.
+ * 构建每个工具处理器都要经过的经审计执行管线。
  *
- * A factory rather than free functions because the pipeline closes over the
- * server (approval prompts), registry (connections and profiles), policy engine
- * and audit store. Tool groups receive the result and never touch those four
- * directly, so there is exactly one path from caller input to a remote command.
+ * 用工厂而非自由函数，因为管线闭包引用服务器（审批提示）、
+ * 注册表（连接与 profile）、策略引擎和审计存储。工具组接收结果、
+ * 从不直接触碰那四者，调用方输入到远程命令因此恰好一条路径。
+ *
  */
 export function createPipeline({
   server,
@@ -130,7 +130,7 @@ export function createPipeline({
       }
 
       if (evaluation.decision === 'require-approval') {
-        // A live grant from an earlier explicit approval of this exact command.
+        // 来自更早对同一命令显式批准的活授权。
         if (grants.has(conn.profile.name, command, evaluation.commandClass)) {
           span.setAttribute('policy.grant', 'reused');
           return { conn, evaluation, approver: 'jit-grant' };
@@ -144,8 +144,8 @@ export function createPipeline({
             grants.record(conn.profile.name, command, evaluation.commandClass);
             return { conn, evaluation, approver: approval.approver };
           }
-          // A human who was asked and said no is a final answer: queueing the
-          // same command behind their back would shop for a second opinion.
+          // 被问了且说不的人是最终答案：背着他们把同一命令
+          // 排进队列等于货比三家找第二次同意。
           if (!approval.unavailable || channel === 'elicitation') {
             throw new PolicyRefusedError(
               approval.unavailable
@@ -154,14 +154,14 @@ export function createPipeline({
               evaluation,
             );
           }
-          // `both` + unavailable: this client cannot be asked — fall through to
-          // the queue, which is the whole reason the channel exists.
+          // both 加不可用：此客户端无法被问——落到队列，
+          // 这正是该通道存在的全部理由。
         }
 
-        // Queue-directory privacy gate (T-11): on Windows, a queue another
-        // account can rewrite means forged approvals. Enforced, not reported —
-        // the human's decision is only as trustworthy as the file it is
-        // written into. POSIX took its 0700 chmod at queue creation.
+        // 队列目录隐私门（T-11）：Windows 上另一账户可改写的队列
+        // 意味着伪造批准。强制执行而非仅报告——人的决定
+        // 只与其被写入的文件一样可信。POSIX 在队列创建时取其 0700。
+        //
         try {
           await assertQueueDirPrivate(approvalQueueDir ?? getApprovalQueueDir(), approvalQueueInspectAcl);
         } catch (err) {
@@ -180,6 +180,13 @@ export function createPipeline({
           timeoutMs: APPROVAL_TIMEOUT_MS,
         }, { dir: approvalQueueDir });
         span.setAttribute('policy.queuedApproval', request.id);
+        // OTel 审批链路 span（T-13/M1）：入队与裁决两个时刻各一条，
+        // 与 pty/forward 的生命周期 span 同粒度。
+        const approvalSpan = tracer.startSpan('approval.request');
+        approvalSpan.setAttribute('approval.id', request.id);
+        approvalSpan.setAttribute('approval.class', evaluation.commandClass);
+        approvalSpan.setAttribute('ssh.profile', conn.profile.name);
+        approvalSpan.end();
         const decision = await waitForDecision(request.id, {
           dir: approvalQueueDir,
           fingerprint: request.fingerprint,
@@ -193,6 +200,11 @@ export function createPipeline({
             );
           },
         });
+        const decideSpan = tracer.startSpan('approval.decide');
+        decideSpan.setAttribute('approval.id', request.id);
+        decideSpan.setAttribute('approval.approved', decision.approved);
+        if (decision.approver) decideSpan.setAttribute('approval.approver', decision.approver);
+        decideSpan.end();
         if (!decision.approved) {
           throw new PolicyRefusedError(
             decision.unavailable?.includes('expired')
@@ -224,11 +236,11 @@ export function createPipeline({
     await audit.record({
       mcpRequestId: ctx.requestId,
       profile: profileName,
-      // Looked up without throwing. This used to be `registry.getProfile(profileName).user`,
-      // which throws for exactly the reason the tool call is being audited as a failure —
-      // an unconfigured server, or a profile name that does not exist — and `auditFailure`
-      // swallows that by design. The record the operator most needs was the one record that
-      // could not be written.
+      // 查找而不抛出。这里曾是 registry.getProfile(profileName).user，
+      // 它恰在工具调用被审计为失败的原因上抛出——
+      // 未配置的服务器、或不存在的 profile 名——而 auditFailure
+      // 按设计吞掉它。运维最需要的那条记录恰恰是无法写入的那条。
+      //
       user: profileUser(profileName),
       command,
       commandClass: evaluation.commandClass,

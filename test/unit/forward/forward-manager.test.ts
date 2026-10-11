@@ -1,5 +1,5 @@
 import { describe, it, expect, afterEach } from 'vitest';
-import { createServer, connect, type Server } from 'node:net';
+import { connect, type Server } from 'node:net';
 import { Duplex } from 'node:stream';
 import { ForwardManager } from '../../../src/forward/forward-manager.js';
 

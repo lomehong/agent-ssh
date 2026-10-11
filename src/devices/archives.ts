@@ -13,10 +13,10 @@ import type { DeviceType } from '../types.js';
  * - 思科 IOS：`HOSTNAME>` / `HOSTNAME#`；`terminal length 0`。
  * - 锐捷 RGOS：类思科风格（`terminal length 0`、`HOSTNAME>`）。
  *
- * 编码按档案记录，但传输层目前一律按 UTF-8 解码：
- * 遗留的 GB2312/GBK 设备输出（老华为/华三固件上常见）需要一道解码工序，
- * 在真实设备证明必要之前刻意不做——在此登记，让缺口可见，
- * 而不是潜伏。
+ * 编码默认 UTF-8；profile 可用 `ptyEncoding: "gbk"` 覆盖
+ * （Node full-ICU TextDecoder 流式解码，agent-ssh T-10 已实现——
+ * 老华为/华三固件的 GB2312/GBK 输出不再是登记缺口）。
+ * 档案的 `encoding` 字段即管理器在 profile 未指定时的回退默认。
  */
 
 export interface DeviceArchive {

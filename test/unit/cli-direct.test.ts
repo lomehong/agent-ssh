@@ -1,7 +1,4 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join } from 'node:path';
 import { runDirectCli, DIRECT_VERBS } from '../../src/cli-direct.js';
 
 // run/info 直连面的纯逻辑面：动词表、无命令用法、禁止名单对人工同样拦截。

@@ -102,6 +102,7 @@ export function createAppConfig(): AppConfig {
     commandQuotaPerDay: 200,
     approvalChannel: 'both',
     allowDynamicForwarding: false,
+    ptySessionBufferBytes: 1_048_576,
     ptySessionIdleTimeoutMs: 60000,
     ptySessionMaxLifetimeMs: 7200000,
     transferMaxBytes: 268_435_456, transferTimeoutMs: 300_000,

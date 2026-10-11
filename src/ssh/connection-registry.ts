@@ -73,6 +73,7 @@ export class ConnectionRegistry {
             {
               idleTimeoutMs: this.config.defaults.ptySessionIdleTimeoutMs,
               maxLifetimeMs: this.config.defaults.ptySessionMaxLifetimeMs,
+              bufferBytes: this.config.defaults.ptySessionBufferBytes,
             },
             this.config.defaults.allowDynamicForwarding,
           );

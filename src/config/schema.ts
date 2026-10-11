@@ -194,6 +194,7 @@ export const defaultsSchema = z.object({
   // 批准）：被 agent 弃之不顾的裸 shell 自行死亡——因空闲与因年龄。
   // 与 transferTimeoutMs 同样设上限，因为 setTimeout 把更大的值
   // 钳到 1ms，那会让每个会话立即死。
+  ptySessionBufferBytes: z.number().int().positive().max(2_147_483_647).default(1_048_576),
   ptySessionIdleTimeoutMs: z.number().int().positive().max(2_147_483_647).default(600_000),
   ptySessionMaxLifetimeMs: z.number().int().positive().max(2_147_483_647).default(7_200_000),
 }).strict();

@@ -156,7 +156,7 @@ export class SSHConnection {
     hostKeyMode: HostKeyMode = 'tofu',
     bastionSock?: ClientChannel,
     /** Raw-PTY session bounds from [defaults]; U3 values when omitted (tests). */
-    ptyBounds: { idleTimeoutMs: number; maxLifetimeMs: number } = { idleTimeoutMs: 600_000, maxLifetimeMs: 7_200_000 },
+    ptyBounds: { idleTimeoutMs: number; maxLifetimeMs: number; bufferBytes: number } = { idleTimeoutMs: 600_000, maxLifetimeMs: 7_200_000, bufferBytes: 1_048_576 },
     /** Dynamic (SOCKS) forwarding switch from [defaults]; off when omitted. */
     allowDynamicForwarding = false,
   ) {
@@ -613,7 +613,14 @@ export class SSHConnection {
 
   async openPtySession(req: { name: string; cols?: number; rows?: number; term?: string }) {
     await this.ensureConnected();
-    return this.ptySessions.open(req);
+    const span = tracer.startSpan('pty.session.open');
+    span.setAttribute('pty.session', req.name);
+    span.setAttribute('ssh.profile', this.profile.name);
+    try {
+      return await this.ptySessions.open(req);
+    } finally {
+      span.end();
+    }
   }
 
   readPtySession(name: string, cursor: number, maxChunk: number) {
@@ -629,7 +636,14 @@ export class SSHConnection {
   }
 
   closePtySession(name: string) {
-    return this.ptySessions.close(name);
+    const span = tracer.startSpan('pty.session.close');
+    span.setAttribute('pty.session', name);
+    span.setAttribute('ssh.profile', this.profile.name);
+    try {
+      return this.ptySessions.close(name);
+    } finally {
+      span.end();
+    }
   }
 
   listPtySessions() {
@@ -639,19 +653,27 @@ export class SSHConnection {
   // ─── Port forwarding (agent-ssh) ──────────────────────────────────────
 
   openForward(req: { mode: 'local' | 'remote' | 'dynamic'; listenHost?: string; listenPort: number; targetHost?: string; targetPort?: number }) {
-    if (req.mode === 'local') {
-      return this.forwards.openLocal({
-        listenHost: req.listenHost, listenPort: req.listenPort,
-        targetHost: req.targetHost!, targetPort: req.targetPort!,
-      });
+    const span = tracer.startSpan('forward.open');
+    span.setAttribute('forward.mode', req.mode);
+    span.setAttribute('forward.listen', `${req.listenHost ?? '127.0.0.1'}:${req.listenPort}`);
+    span.setAttribute('ssh.profile', this.profile.name);
+    try {
+      if (req.mode === 'local') {
+        return this.forwards.openLocal({
+          listenHost: req.listenHost, listenPort: req.listenPort,
+          targetHost: req.targetHost!, targetPort: req.targetPort!,
+        });
+      }
+      if (req.mode === 'remote') {
+        return this.forwards.openRemote({
+          listenHost: req.listenHost, listenPort: req.listenPort,
+          targetHost: req.targetHost!, targetPort: req.targetPort!,
+        });
+      }
+      return this.forwards.openDynamic({ listenHost: req.listenHost, listenPort: req.listenPort });
+    } finally {
+      span.end();
     }
-    if (req.mode === 'remote') {
-      return this.forwards.openRemote({
-        listenHost: req.listenHost, listenPort: req.listenPort,
-        targetHost: req.targetHost!, targetPort: req.targetPort!,
-      });
-    }
-    return this.forwards.openDynamic({ listenHost: req.listenHost, listenPort: req.listenPort });
   }
 
   listForwards() {
