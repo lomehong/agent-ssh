@@ -14,6 +14,7 @@ import { encodeFrame, FrameReader } from './frame.js';
 import type { CallerClass } from './matrix.js';
 import { PushHub } from './push.js';
 import { RPC_ERROR, RPC_PROTOCOL_VERSION, negotiateHello } from './protocol.js';
+import { buildToolManifest } from './manifest.js';
 import { tracer } from '../observability/tracer.js';
 
 export interface RpcServerAuditEvent {
@@ -185,6 +186,14 @@ export class RpcHostServer {
     }
     if (req.method === 'host.ping') {
       this.respond(conn, req.id, { result: { pong: true } });
+      return;
+    }
+    if (req.method === 'host.toolManifest') {
+      // D3：单连接内 manifest 不可变——构建器为纯函数，装配在启动时缓存的结果
+      // 等价于每次构建同一输出（manifest.test 确定性用例钉死）。
+      this.respond(conn, req.id, {
+        result: buildToolManifest(this.opts.protocolVersion ?? RPC_PROTOCOL_VERSION),
+      });
       return;
     }
     if (req.method === 'approval.subscribe') {
