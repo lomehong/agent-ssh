@@ -243,6 +243,12 @@ export interface AuditRecord {
   durationMs?: number;
   approver?: string;
   error?: string;
+  /**
+   * 发起调用的凭据类别（Host 分离架构 v2，方案 §2.3）：agent/operator。
+   * T-15 过渡期管线仅由 stdio（agent 类）触达，恒 'agent'；T-16 stub/RPC
+   * 透传后由调用上下文传入真实类别。
+   */
+  rpcCallerClass?: 'agent' | 'operator';
 }
 
 // ─── Tool Types ─────────────────────────────────────────────────────────────

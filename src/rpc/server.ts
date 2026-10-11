@@ -14,6 +14,7 @@ import { encodeFrame, FrameReader } from './frame.js';
 import type { CallerClass } from './matrix.js';
 import { PushHub } from './push.js';
 import { RPC_ERROR, RPC_PROTOCOL_VERSION, negotiateHello } from './protocol.js';
+import { tracer } from '../observability/tracer.js';
 
 export interface RpcServerAuditEvent {
   kind: 'forbidden' | 'unauthorized' | 'frame-oversize';
@@ -159,6 +160,13 @@ export class RpcHostServer {
     const req = value as { jsonrpc: '2.0'; id: string | number; method: string; params?: unknown; auth?: unknown };
     const token = typeof req.auth === 'string' ? req.auth : undefined;
     const auth = authorize(req.method, token, this.opts.tables);
+    // rpc.request span（T-15 验收 3）：调度决策时刻——方法/调用类别/结果码。
+    // handler 执行时长由既有 tool 级面覆盖； denied 调用的类别按真实凭据判。
+    const span = tracer.startSpan('rpc.request');
+    span.setAttribute('rpc.method', req.method);
+    span.setAttribute('rpc.callerClass', auth.ok ? auth.callerClass : 'denied');
+    span.setAttribute('rpc.code', auth.ok ? 'ok' : String(auth.code));
+    span.end();
     if (!auth.ok) {
       if (auth.audit) {
         this.audit({

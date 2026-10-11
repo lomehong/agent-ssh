@@ -226,6 +226,9 @@ export function createPipeline({
   ) {
     await audit.record({
       mcpRequestId: ctx.requestId,
+      // rpcCallerClass（方案 §2.3）：T-15 过渡期管线仅由 stdio（agent 类）触达；
+      // T-16 stub/RPC 透传后由调用上下文传入真实类别（operator 面经 cli.run 时）。
+      rpcCallerClass: 'agent',
       profile: profileName,
       // 查找而不抛出。这里曾是 registry.getProfile(profileName).user，
       // 它恰在工具调用被审计为失败的原因上抛出——
