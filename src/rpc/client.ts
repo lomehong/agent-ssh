@@ -34,6 +34,8 @@ export interface RpcClientOpts {
    * 缺省 false（agent/会话客户端都应 hello）。
    */
   skipHello?: boolean;
+  /** 退避上限覆盖（stub 重连循环用它压短测试节奏）；缺省 30s。 */
+  reconnectMaxDelayMs?: number;
 }
 
 interface Pending {
@@ -55,6 +57,7 @@ export class RpcClient {
   private attempt = 0;
   private stopping = false;
   private reconnectTimer?: NodeJS.Timeout;
+  private readonly disconnectCallbacks: Array<() => void> = [];
   private ready = false;
 
   constructor(opts: RpcClientOpts) {
@@ -211,8 +214,18 @@ export class RpcClient {
     this.ready = false;
     this.failAllPending(new Error('RPC connection closed'));
     this.socket = undefined;
+    for (const cb of this.disconnectCallbacks) cb();
     if (this.stopping || this.opts.reconnect === false || !wasReady) return;
     this.scheduleReconnect();
+  }
+
+  /** 断线通知（当前连接的真实关闭；重连竞态过滤后）。返回退订函数。 */
+  onDisconnected(cb: () => void): () => void {
+    this.disconnectCallbacks.push(cb);
+    return () => {
+      const i = this.disconnectCallbacks.indexOf(cb);
+      if (i >= 0) this.disconnectCallbacks.splice(i, 1);
+    };
   }
 
   /**
@@ -222,7 +235,7 @@ export class RpcClient {
    */
   private scheduleReconnect(): void {
     if (this.stopping || this.opts.reconnect === false || this.reconnectTimer !== undefined) return;
-    const delay = nextRetryDelayMs(this.attempt);
+    const delay = nextRetryDelayMs(this.attempt, this.opts.reconnectMaxDelayMs);
     this.attempt++;
     this.reconnectTimer = setTimeout(() => {
       this.reconnectTimer = undefined;

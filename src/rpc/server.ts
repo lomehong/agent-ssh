@@ -212,7 +212,10 @@ export class RpcHostServer {
       this.respondError(conn, req.id, RPC_ERROR.METHOD_NOT_FOUND, `Method ${req.method} is not implemented on this host`);
       return;
     }
-    Promise.resolve(handler(req.params, { callerClass: auth.callerClass, connId: conn.id, presentedToken: token }))
+    // handler 同步抛错也必须应答：经 Promise.resolve().then 延迟执行，
+    // 同步异常转为 rejection 走同一条错误应答路径（否则调用方挂死）。
+    void Promise.resolve()
+      .then(() => handler(req.params, { callerClass: auth.callerClass, connId: conn.id, presentedToken: token }))
       .then((result) => this.respond(conn, req.id, { result }))
       .catch((err: unknown) =>
         this.respondError(conn, req.id, RPC_ERROR.INTERNAL, err instanceof Error ? err.message : String(err)),

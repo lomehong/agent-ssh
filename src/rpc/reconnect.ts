@@ -6,8 +6,8 @@
 export const RECONNECT_BASE_DELAY_MS = 1_000;
 export const RECONNECT_MAX_DELAY_MS = 30_000;
 
-/** 第 attempt 次重连前的等待：1s 起步逐次翻倍，封顶 30s。 */
-export function nextRetryDelayMs(attempt: number): number {
+/** 第 attempt 次重连前的等待：1s 起步逐次翻倍，封顶 maxDelay（缺省 30s）。 */
+export function nextRetryDelayMs(attempt: number, maxDelayMs = RECONNECT_MAX_DELAY_MS): number {
   const exponent = Math.max(0, attempt);
-  return Math.min(RECONNECT_BASE_DELAY_MS * 2 ** exponent, RECONNECT_MAX_DELAY_MS);
+  return Math.min(RECONNECT_BASE_DELAY_MS * 2 ** exponent, maxDelayMs);
 }

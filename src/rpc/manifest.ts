@@ -14,6 +14,11 @@ export interface ManifestTool {
   name: string;
   description: string;
   descriptionHash: string;
+  /**
+   * 工具入参 JSON Schema。T-16b 起 Host 侧产出真实 schema（从工具注册面
+   * 提取）；未提供时 stub 以空对象 schema 透传（tools/list 仍可见该工具）。
+   */
+  inputSchema?: Record<string, unknown>;
 }
 
 export interface ManifestResource {
