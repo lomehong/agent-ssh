@@ -1,0 +1,9 @@
+id: T-08
+title: 四厂商真实设备实机抽验（设备到位后补验）
+level: L2
+blockedBy: T-07
+status: 待执行
+root: E:\\Development\\Code\\nodejs\\agent-ssh
+createdAt: 2026-10-11 08:18:25
+events:
+  - 2026-10-11 08:18:25 | create | by=lome | level=L2 | blocked_by=T-07 | accept=①四厂商各≥1台真实设备按 DEVICE-ONBOARDING 模板建 profile ②连接→自动关分页→promptDetected→查询命令→退出 ③审计与转录核验——出处：T-07 验收③修订（2026-10-11 主人裁决：Linux 现验，设备拆票）
