@@ -1,67 +1,68 @@
-# Contributing to ssh-mcp
+# 为 ssh-mcp 做贡献
 
-Thank you for your interest in contributing to ssh-mcp! Your help is greatly appreciated. Please follow these guidelines to make the process smooth for everyone.
+感谢你有兴趣为 ssh-mcp 做贡献！非常欢迎你的帮助。请遵循以下指引，让整个流程对每个人都顺畅。
 
-## How to Contribute
+## 如何贡献
 
-1. **Fork the repository** and create your branch from `main`.
-2. **Clone your fork** to your local machine.
-3. **Create a descriptive branch name** (e.g., `feature/add-ssh-support` or `bugfix/fix-connection-issue`).
-4. **Make your changes** with clear, concise commits.
-5. **Test your changes** to ensure nothing is broken (see [Tests](#tests)).
-6. **Push to your fork** and submit a Pull Request (PR) to the `main` branch.
+1. **Fork 仓库**，并从 `main` 创建你的分支。
+2. **把你的 fork 克隆**到本地。
+3. **起一个描述性强的分支名**（例如 `feature/add-ssh-support` 或 `bugfix/fix-connection-issue`）。
+4. **进行修改**，提交信息清晰、简洁。
+5. **测试你的修改**，确保没有破坏任何东西（见[测试](#测试)）。
+6. **推送到你的 fork**，并向 `main` 分支提交 Pull Request（PR）。
 
-## Tests
+## 测试
 
-New functionality and bug fixes must come with automated tests that exercise them. Unit tests go under `test/unit/`; a change to how the server talks to an SSH host also needs an integration test under `test/integration/`. A fix should include a test that fails without it. A PR that adds or changes behaviour without a test will be asked for one before it is merged.
+新功能与缺陷修复必须附带覆盖它们的自动化测试。单元测试放在 `test/unit/` 下；凡改变服务器与 SSH 主机交互方式的修改，还需要在 `test/integration/` 下补集成测试。缺陷修复应包含一个「没有该修复就会失败」的测试。新增或改变行为却不带测试的 PR，在合并前会被要求补上。
 
-Run the suite with `npm test`. The integration tests need the Docker test servers; the [Testing section of the README](README.md#testing) shows how to start them.
+用 `npm test` 运行测试套件。集成测试依赖 Docker 测试服务器；启动方法见 [README 的测试一节](README.md#测试)。
 
-## Code Style
-- Follow the existing code style and conventions.
-- Write clear, descriptive commit messages.
-- Add comments where necessary for clarity.
+## 代码风格
+- 遵循现有的代码风格与约定。
+- 编写清晰、有描述性的提交信息。
+- 在有助于澄清的地方添加注释。
 
-## Issues and Bugs
-- If you find a bug, please open an issue with detailed steps to reproduce it.
-- If you want to work on an existing issue, comment on it to let others know.
+## Issue 与缺陷
+- 发现缺陷请提交 issue，并附上详细的复现步骤。
+- 想处理某个已有 issue，请在其中留言告知他人。
 
-## Feature Requests
-- Open an issue to discuss new features before submitting a PR.
-- Describe your proposed feature and its use case.
+## 功能请求
+- 提 PR 之前，先开 issue 讨论新功能。
+- 描述清楚你提议的功能及其使用场景。
 
-## Pull Requests
-- Ensure your PR is up to date with the latest `main` branch.
-- Include tests for any new or changed behaviour (see [Tests](#tests)).
-- Reference related issues in your PR description (e.g., `Closes #12`).
-- Be responsive to feedback and requested changes.
-- **Add a changeset:** Run `npm run changeset` before pushing. Select the bump type (patch/minor/major) and write a short changelog entry. This ensures your change appears in the release notes.
+## Pull Request
+- 确保你的 PR 与最新的 `main` 分支保持同步。
+- 为新增或变更的行为附带测试（见[测试](#测试)）。
+- 在 PR 描述中引用相关 issue（例如 `Closes #12`）。
+- 及时回应反馈和修改要求。
+- **添加 changeset：** 推送前运行 `npm run changeset`，选择版本类型（patch/minor/major）并写一段简短的 changelog 条目，确保你的修改出现在发布说明中。
 
-### Changeset Example
+### Changeset 示例
 
 ```bash
 npm run changeset
-# Select ssh-mcp
-# Select minor (for new features) or patch (for fixes)
-# Write: "Add ProxyJump support for bastion connections"
+# 选择 ssh-mcp
+# 新功能选 minor，修复选 patch
+# 填写示例："Add ProxyJump support for bastion connections"
 ```
 
-This creates a file in `.changeset/` — commit it with your PR. When the PR merges, the changesets bot opens a "Version Packages" PR that bumps the version, updates CHANGELOG.md, and publishes to npm. Publishing to npm also lists the new version on the [official MCP registry](https://registry.modelcontextprotocol.io).
+这会在 `.changeset/` 下生成一个文件——请随你的 PR 一起提交。PR 合并后，changesets 机器人会开一个 "Version Packages" PR，自动提升版本号、更新 CHANGELOG.md 并发布到 npm。发布到 npm 的同时，新版本也会同步上架[官方 MCP registry](https://registry.modelcontextprotocol.io)。
 
 ### server.json
 
-`server.json` is the MCP registry entry. Its two version fields — the listing's own `version`, and the npm version it points at — are written by `npm run version` from `package.json`, so they arrive already bumped in the "Version Packages" PR and should not be edited by hand. Everything else in the file is hand-maintained; if you change the `title` or `description`, note that the registry schema caps both at 100 characters, which `test/unit/sync-server-json.test.ts` asserts.
+`server.json` 是 MCP registry 的登记条目。其中两个版本字段——条目自身的 `version` 与它指向的 npm 版本——由 `npm run version` 从 `package.json` 写入，因此在 "Version Packages" PR 中已自动提升，不要手工编辑。文件中其余内容均为手工维护；如果你修改 `title` 或 `description`，注意 registry schema 对这两个字段都限制 100 字符，`test/unit/sync-server-json.test.ts` 对此有断言。
 
-## Review Criteria
+## 评审标准
 
-The `.review-pro/` directory holds the criteria this project's changes are reviewed against — `node/` for general Node.js server concerns (security, correctness, API contracts, tests, performance), and `ssh-mcp/` for signals specific to this codebase: progress and cancellation, OTEL, the HTTP rate limit, ProxyJump, CA certificates, and MCP resources.
+`.review-pro/` 目录存放本项目变更评审所依据的标准——`node/` 覆盖通用 Node.js 服务器关注点（安全、正确性、API 契约、测试、性能），`ssh-mcp/` 覆盖本代码库特有的信号：进度与取消、OTEL、HTTP 限流、ProxyJump、CA 证书以及 MCP resources。
 
-They are plain markdown. Reading the files relevant to your change is a useful checklist before you open a PR, and nothing needs to be installed to do that. Anything touching the policy engine, the audit chain, or host-key handling is worth checking against `.review-pro/ssh-mcp/security.md` in particular.
+它们都是纯 markdown。开 PR 前通读与你改动相关的文件，就是一份现成的检查清单，且无需安装任何东西。凡触及策略引擎（policy engine）、审计链（audit chain）或主机密钥（host-key）处理的改动，尤其值得对照 `.review-pro/ssh-mcp/security.md` 检查。
 
-Those same files are the rubric for [review-pro](https://github.com/tufantunc/review-pro) (`npx review-pro`), which runs them as an automated review. That tool is mine and lives in a separate repository; using it is entirely optional, CI does not run it, and no PR is held up for skipping it.
+这些文件同时也是 [review-pro](https://github.com/tufantunc/review-pro)（`npx review-pro`）的评审规则来源，该工具会按它们执行自动化评审。该工具由上游作者维护在另一个独立仓库；用与不用完全可选，CI 不会运行它，不用它也不会阻塞任何 PR。
 
-## Code of Conduct
-- Be respectful and inclusive in all interactions.
-- See the [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) if available.
+## 行为准则
+- 在所有互动中保持尊重与包容。
+- 如有需要，参见 [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)。
 
-Thank you for helping make ssh-mcp better! 
+感谢你帮助 ssh-mcp 变得更好！
+

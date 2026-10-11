@@ -1,13 +1,14 @@
-# Code of Conduct
+# 行为准则
 
-Welcome! To keep our community positive and productive, please follow these simple rules:
+欢迎！为了让我们的社区保持积极、高效，请遵守以下几条简单的规则：
 
-- Be respectful and considerate to everyone.
-- No harassment, discrimination, or personal attacks.
-- Give constructive feedback and accept it gracefully.
-- Keep discussions focused on the project.
-- Respect privacy—don't share others' private info.
+- 尊重并体谅每一位参与者。
+- 禁止骚扰、歧视或人身攻击。
+- 给出建设性反馈，并平和地接受反馈。
+- 让讨论始终聚焦于项目本身。
+- 尊重隐私——不要泄露他人的私人信息。
 
-If you see behavior that goes against these rules, please report it to the maintainers.
+如果你发现违反上述规则的行为，请向维护者报告。
 
-Let's build something great together! 
+让我们一起做出点好东西！
+
