@@ -6,6 +6,7 @@ root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:54:00
 claimedBy: digital-architect
 claimedAt: 2026-10-11 22:54:00
+progress: 验收 4/5/8 已完成（bf8bb60/a19863d），余 1/2/3/6/7/9/10 进行中
 blockedBy: [T-14.5]
 accept:
   - 引擎迁入并继承 60s 回收器+停机梯（M6）
@@ -25,4 +26,5 @@ accept:
   - tsc 0 错；失败集不扩大（删除项单列）
 source: 方案 §6/§7/§11 T-15 行；评审 K1/K7
 events:
+  - 2026-10-11 23:05:00 | progress | by=digital-architect | 三刀落地：①K7 队列决定按 id 串行化（bf8bb60，并发双决定红绿闭环）②K1 approvalSurfaces 值域迁移（a19863d，墓碑字段 z.unknown+refine+optional 显式拒绝+三映射指引——strict 未知键/z.undefined({error}) 两形实测否决记录在案）③elicitation 通道整体移除（管线分支删除+APPROVAL_TIMEOUT_MS 迁入队列模块+tools harness 改 queue 面+自动裁决泵+删测登记 elicitation.test/approval.e2e）。证据：tools 9 文件 110 过全绿；unit 全目录 19 败全属既有环境族零新增；full-chain 1/1；tsc 0。余：引擎迁入/manifest/审计字段/host init+pidfile/日志轮转/http.ts 删除+终轮对照。
   - 2026-10-11 20:54:00 | create | by=lome | level=L1 | blocked_by=T-14.5
