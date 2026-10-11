@@ -1,6 +1,5 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'http';
 import { randomUUID, timingSafeEqual } from 'crypto';
-import { isIP } from 'net';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { isInitializeRequest } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -8,7 +7,24 @@ import type { ConnectionRegistry } from '../ssh/connection-registry.js';
 import { SERVER_VERSION } from '../version.js';
 import { OperatorError } from '../errors.js';
 
-const MAX_BODY_SIZE = 1_048_576; // 1MB
+import {
+  AuthFailureLimiter,
+  ClientRateLimiter,
+  DEFAULT_AUTH_FAILURE_LIMIT,
+} from '../rpc/limiters.js';
+import { clientKey } from '../rpc/address.js';
+import { HTTP_BODY_LIMIT_BYTES as MAX_BODY_SIZE, SizeCappedText } from '../rpc/bounded-input.js';
+
+// T-13.5 预重构：限流器/地址键控/有界输入三件已物理迁入 src/rpc/（原样迁移，零行为变化）。
+// 下方 re-export 保持 http.js 既有导入面（test/unit/transport/http.test.ts 依赖）；
+// T-15 删除 http.ts 时，导入方改指 rpc/ 模块。
+export {
+  AuthFailureLimiter,
+  ClientRateLimiter,
+  DEFAULT_AUTH_FAILURE_LIMIT,
+  MAX_TRACKED_CLIENTS,
+} from '../rpc/limiters.js';
+export { clientKey } from '../rpc/address.js';
 /** Cap on concurrent MCP sessions, so unauthenticated-adjacent churn can't grow the map without bound. */
 const MAX_SESSIONS = 64;
 /**
@@ -16,345 +32,6 @@ const MAX_SESSIONS = 64;
  * 空闲服务器零成本，也没有需要清理的间隔。
  */
 export const DEFAULT_SESSION_IDLE_TTL_MS = 30 * 60_000;
-
-/** How many failed auth attempts one client may make per minute. 0 disables the check. */
-export const DEFAULT_AUTH_FAILURE_LIMIT = 10;
-
-/** Cap on tracked clients, for the reason `MAX_SESSIONS` exists: churn must not grow a map. */
-export const MAX_TRACKED_CLIENTS = 1024;
-
-const REFILL_INTERVAL_MS = 60_000;
-
-interface Bucket {
-  tokens: number;
-  lastRefill: number;
-}
-
-/** Whole tokens earned since `lastRefill`. Negative when the clock stepped back; callers clamp. */
-function tokensEarned(bucket: Bucket, maxTokens: number): number {
-  return Math.floor(((Date.now() - bucket.lastRefill) / REFILL_INTERVAL_MS) * maxTokens);
-}
-
-/** Tokens the bucket would hold if refilled now, without changing it. */
-function availableTokens(bucket: Bucket, maxTokens: number): number {
-  return Math.min(maxTokens, bucket.tokens + Math.max(tokensEarned(bucket, maxTokens), 0));
-}
-
-/**
- * 到此桶赚到下一个令牌的时长，用于 Retry-After。
- *
- * 精确值，替代过去固定的 REFILL_INTERVAL_MS / maxTokens。那是
- * 一个令牌所需的时间，因此在间隔中途被拒的客户端被告知等待
- * 两倍于必要的时间。两侧有界：下限一秒，因为 Retry-After 是
- * 整秒且 0 读作「立即重试」；上限为一个令牌的间隔，因为
- * 时钟回拨使 lastRefill 落在未来，原始差值会宣告任意长的等待。
- * 向上取整到毫秒：除不尽一分钟的限额给出分数间隔，
- * 向下取整会指向令牌尚未到达的时刻。
- *
- */
-function nextTokenWaitMs(bucket: Bucket, maxTokens: number): number {
-  const interval = REFILL_INTERVAL_MS / maxTokens;
-  return Math.max(1000, Math.ceil(Math.min(interval, bucket.lastRefill + interval - Date.now())));
-}
-
-/**
- * 补充后持有最多令牌的跟踪键：最不值得记住的条目，即要逐出的。
- *
- *
- * 用补充后的值而非存储值。停止发送的键永远保留存储计数，按 tokens
- * 排名会把一小时前花光的桶当成仍在花。曾经饱和一次的表
- * 就被永久判定为饱和——已实测。
- *
- * 表内线性，刻意保持：仅在新键到达满表时运行，
- * 在第一个满桶处提前停止。最坏情形——所有桶部分花费——
- * 在 1024 条目时每个新键约 46µs（Apple M4 Max, Node 24），
- * 两个限流器相同。
- */
-function fullestBucket(
-  buckets: Map<string, Bucket>,
-  maxTokens: number,
-): { key: string; available: number } | undefined {
-  let fullest: { key: string; available: number } | undefined;
-  for (const [key, bucket] of buckets) {
-    const available = availableTokens(bucket, maxTokens);
-    if (fullest === undefined || available > fullest.available) fullest = { key, available };
-    if (available === maxTokens) break;
-  }
-  return fullest;
-}
-
-/**
- * 一步令牌桶操作，两个限流器共享使补充运算只存在一份。
- *
- * 修改桶。按经过时间成比例补充而非计时器，
- * 空闲服务器零成本，也没有需要清理的间隔。
- */
-function consume(bucket: Bucket, maxTokens: number): { allowed: boolean; retryAfterMs: number } {
-  const refilled = tokensEarned(bucket, maxTokens);
-  if (refilled > 0) {
-    bucket.tokens = Math.min(maxTokens, bucket.tokens + refilled);
-    bucket.lastRefill += Math.round((refilled / maxTokens) * REFILL_INTERVAL_MS);
-  }
-
-  if (bucket.tokens > 0) {
-    bucket.tokens--;
-    return { allowed: true, retryAfterMs: 0 };
-  }
-
-  return { allowed: false, retryAfterMs: nextTokenWaitMs(bucket, maxTokens) };
-}
-
-/**
- * 每客户端一个请求桶，--rateLimit 意为每调用方每分钟 N 个请求。
- *
- * 之前是全进程一个桶：一个客户端为所有人花光 --rateLimit，
- * 未发送任何东西的客户端也被拒（#187，已实测）。以 clientKey() 为键，
- * 与失败预算同一键，且仅在令牌检查通过后计费，
- * 未认证流量无法创建条目或耗干他人预算。
- *
- * 有界如 AuthFailureLimiter，逐出最满桶的理由相同。
- * 差异：到达的键总是满启动，即使所有跟踪桶都已花光。
- * 饱和此表需要 1024 个持有令牌的地址，
- * 已有那么多地址的令牌持有者本来就有那么多预算。
- * 退款不开新口，而空启动会因他人流量拒绝
- * 合法客户端的第一个请求。
- */
-export class ClientRateLimiter {
-  private buckets = new Map<string, Bucket>();
-
-  constructor(private maxTokens: number) {}
-
-  tryConsume(key: string): { allowed: boolean; retryAfterMs: number } {
-    let bucket = this.buckets.get(key);
-    if (bucket === undefined) {
-      if (this.buckets.size >= MAX_TRACKED_CLIENTS) {
-        const fullest = fullestBucket(this.buckets, this.maxTokens);
-        if (fullest !== undefined) this.buckets.delete(fullest.key);
-      }
-      bucket = { tokens: this.maxTokens, lastRefill: Date.now() };
-      this.buckets.set(key, bucket);
-    }
-    return consume(bucket, this.maxTokens);
-  }
-}
-
-/**
- * 每客户端一个桶，用于限流认证失败。
- *
- * 刻意与请求限流器分离。认证检查先于请求限流器返回，
- * 错误 bearer 令牌不消耗任何东西，猜令牌以网络速度无退避运行——
- * 实测 --rateLimit=3 下 12 个 401、0 个 429。把请求限流器上移
- * 虽堵住此洞但开了更糟的：其 429 会在不评估猜测的情况下应答，
- * 且未认证流量到达请求桶可能以可伪造的键花掉受害者的预算。
- *
- *
- * 只有失败消耗令牌，正常客户端永不积累预算、
- * 也永远不会被自己的流量限流——这正是默认开启安全的原因。
- * 它不承诺正确令牌总是通过：地址一旦耗尽预算，
- * 来自该地址的一切都要等，正确令牌也不例外。
- * point. 在比较之后才计费会让猜测本身被评估，
- * 状态码仍会告诉攻击者哪个令牌是对的。
- */
-export class AuthFailureLimiter {
-  private buckets = new Map<string, Bucket>();
-
-  constructor(private maxTokens: number) {}
-
-  /** Whether this client may make another attempt. Does not consume. */
-  peek(key: string): { allowed: boolean; retryAfterMs: number } {
-    const bucket = this.buckets.get(key);
-    if (bucket === undefined) return { allowed: true, retryAfterMs: 0 };
-    if (availableTokens(bucket, this.maxTokens) > 0) return { allowed: true, retryAfterMs: 0 };
-    return { allowed: false, retryAfterMs: nextTokenWaitMs(bucket, this.maxTokens) };
-  }
-
-  /** Charge this client for a failed attempt. */
-  recordFailure(key: string): void {
-    let bucket = this.buckets.get(key);
-    if (bucket === undefined) {
-      bucket = { tokens: this.maxTokens, lastRefill: Date.now() };
-      if (this.buckets.size >= MAX_TRACKED_CLIENTS) {
-        // Evict the *fullest* entry, not the oldest. An exhausted bucket has the oldest
-        // `lastRefill` by construction, so evicting by age evicted the locked-out client
-        // 然后又给它的键一份新预算：铸造足够多的键清除了锁定，
-        // 端到端实测。满桶是唯一没有值得记住的东西的。
-        //
-        const fullest = fullestBucket(this.buckets, this.maxTokens);
-        if (fullest !== undefined) this.buckets.delete(fullest.key);
-        // 所有跟踪客户端都已花光，表本身就是信号，新键
-        // 不会拿到满预算。
-        //
-        // 代价在此声明因为是真实的且无法软化：表饱和时
-        // 到达的客户端只有一次尝试而非全部预算，
-        // 第一次笔误就让正确令牌等待。播种一个令牌而非零
-        // 看似有帮助实则没有——consume 立刻花掉它，
-        // peek 本就允许从未见过的键，第一次尝试免费
-        // 第二次被拒，两种播种结果相同。均已实测。
-        // 给到达键真实预算正是本规则要阻止的退款。
-        // 饱和需要 1024 个地址各自*最近*花光全部预算：
-        // fullestBucket 按补充后排rank，条件在补充后即结束。
-        if (fullest === undefined || fullest.available <= 0) bucket = { tokens: 0, lastRefill: Date.now() };
-      }
-      this.buckets.set(key, bucket);
-    }
-    consume(bucket, this.maxTokens);
-  }
-}
-
-/**
- * 一次尝试计费到哪个客户端：chargedAddress 解析出的地址，
- * 由 keyOf 分组成键。只在此分组一次，使 header 逻辑的
- * 任何路径都无法交回未分组的地址——信任在内部决定，
- * 基于确切对端，在任何分组发生之前。
- */
-export function clientKey(
-  req: IncomingMessage,
-  trustProxy: boolean,
-  trustedProxies?: string[],
-): { key: string; forwardedIgnored: boolean } {
-  const { address, forwardedIgnored } = chargedAddress(req, trustProxy, trustedProxies);
-  return { key: keyOf(address), forwardedIgnored };
-}
-
-/**
- * 一次尝试计费到的确切地址。
- *
- * 套接字的远程地址，直连时即真实客户端——本服务器的
- * 正常运行方式。X-Forwarded-For 仅在代理被显式信任时读取：
- * 无条件采信会让任何客户端伪造自己的键，
- * 从而完全绕开限制。
- *
- * 读取时取**最右**条目而非最左。代理追加它看到的地址，
- * 最右条目是最近受信代理观察到的，左侧全部来自客户端。
- * 读最左比没有限制更糟：发 X-Forwarded-For: 10.0.0.1 的客户端
- * 每次请求铸造新预算——实测九个错误令牌零 429——发受害者
- * 地址则烧*他们的*预算，锁死正确令牌。
- *
- *
- * 假定恰好一个受信代理在前，即 --trustProxy 的含义。两个的链
- * 需要倒数第二个，此处不猜深度。非 IP 地址一律丢弃
- * 而非用作映射键。
- */
-function chargedAddress(
-  req: IncomingMessage,
-  trustProxy: boolean,
-  trustedProxies?: string[],
-): { address: string; forwardedIgnored: boolean } {
-  const peer = canonicalAddress(req.socket.remoteAddress ?? 'unknown');
-  const forwarded = req.headers['x-forwarded-for'];
-  if (!trustProxy || forwarded === undefined) return { address: peer, forwardedIgnored: false };
-
-  // 最右条目是代理写的仅当代理确实追加了。头部本身
-  // 不说明是否如此，所以*对端*必须是代理——否则
-  // 直达监听器的客户端发送一条伪造条目，该条目即最右，
-  // 它自选键。此键控修复要阻止的两个攻击恰在该配置下复活。
-  //
-  if (!isTrustedPeer(peer, trustedProxies)) {
-    return { address: peer, forwardedIgnored: true };
-  }
-
-  const raw = Array.isArray(forwarded) ? forwarded.join(',') : forwarded;
-  const entries = raw.split(',').map((e) => e.trim()).filter(Boolean);
-  const nearest = entries[entries.length - 1];
-  const address = nearest === undefined ? undefined : forwardedAddress(nearest);
-  if (address === undefined) return { address: peer, forwardedIgnored: true };
-  return { address, forwardedIgnored: false };
-}
-
-/**
- * 地址计费到的键：IPv4 按自身，IPv6 按 /64。
- *
- * 用户通常至少分配一个 /64，/64 即客户端。提供商将多个客户
- * 放在同一 /64 时共享预算，如 IPv4 NAT 后的主机。
- *
- * 三个 IPv6 范围不是客户端自己的 /64 而是携带 IPv4 地址的方式，
- * 按那个地址键控：IPv4 映射 ::ffff:0:0/96 各种拼写、NAT64
- * 知名前缀 64:ff9b::/96 下转换部署看到的每个 IPv4 客户端、
- * 以及 IPv4 兼容 ::/96。按 /64 分组则每个都会把所有 IPv4
- * 客户端放到一个键上。使用自有前缀的转换器不被识别，
- * 其 IPv4 客户端共享该前缀的 /64。回环保持 ::1，无论拼写。
- */
-function keyOf(address: string): string {
-  if (isIP(address) !== 6) return address;
-  const g = ipv6Groups(address);
-  if (g.slice(0, 7).every((n) => n === 0) && g[7] === 1) return '::1';
-  const lowZero = g[2] === 0 && g[3] === 0 && g[4] === 0;
-  const carriesIpv4 = lowZero && (
-    (g[0] === 0 && g[1] === 0 && (g[5] === 0 || g[5] === 0xffff)) ||
-    (g[0] === 0x64 && g[1] === 0xff9b && g[5] === 0)
-  );
-  if (carriesIpv4) return `${g[6] >> 8}.${g[6] & 0xff}.${g[7] >> 8}.${g[7] & 0xff}`;
-  return `${g.slice(0, 4).map((n) => n.toString(16)).join(':')}::/64`;
-}
-
-/**
- * IPv6 地址为其八个 16 位组，不论拼写：区域丢弃、::
- * 展开、点分 IPv4 尾读作最后两组、大小写和前导零由
- * 按数值读每组消除。期望 net.isIP 已接受的地址。
- */
-function ipv6Groups(address: string): number[] {
-  const [head, tail] = address.split('%')[0].split('::');
-  const parse = (part: string | undefined): number[] =>
-    part === undefined || part === ''
-      ? []
-      : part.split(':').flatMap((group) => {
-        if (!group.includes('.')) return [parseInt(group, 16)];
-        const [a, b, c, d] = group.split('.').map(Number);
-        return [(a << 8) | b, (c << 8) | d];
-      });
-  const headGroups = parse(head);
-  const tailGroups = parse(tail);
-  if (tail === undefined) return headGroups;
-  return [...headGroups, ...Array(8 - headGroups.length - tailGroups.length).fill(0), ...tailGroups];
-}
-
-/**
- * 对端是否可以代表其他客户端说话。
- *
- * 裸 --trustProxy 意味着回环对端，即 README 要求的部署：
- * 服务器绑 127.0.0.1，同主机代理终结 TLS。别处的代理
- * 必须具名，因为「信任连接者」正是让头部可伪造的假设。
- *
- */
-function isTrustedPeer(peer: string, trustedProxies?: string[]): boolean {
-  if (trustedProxies !== undefined && trustedProxies.length > 0) {
-    return trustedProxies.includes(peer);
-  }
-  return peer === '127.0.0.1' || peer === '::1' || peer.startsWith('127.');
-}
-
-/**
- * 一条 X-Forwarded-For 条目作为地址，非地址则为 undefined。
- *
- * net.isIP 拒绝带括号和端口后缀的拼写，IPv6 在此头部
- * 通常是那样出现的——拒绝静默把所有客户端折叠到代理的键上，
- * 比不键控还糟。
- */
-function forwardedAddress(entry: string): string | undefined {
-  let candidate = entry;
-  const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(candidate);
-  if (bracketed) candidate = bracketed[1];
-  // 尾随 :port 仅当剩余部分不是 IPv6 字面量：::1 自有冒号，
-  // 不得截断。
-  else if (isIP(candidate) === 0 && /^[^:]+:\d+$/.test(candidate)) {
-    candidate = candidate.slice(0, candidate.lastIndexOf(':'));
-  }
-  candidate = canonicalAddress(candidate);
-  return isIP(candidate) === 0 ? undefined : candidate;
-}
-
-/**
- * ::ffff:127.0.0.1 和 127.0.0.1 是同一客户端；键控相同。
- *
- * 仅该拼写且后续为 IPv4 时：::ffff:c000:280 剥离为
- * c000:280 就不是地址了，请求回落到代理的键。映射地址
- * 其余拼写经 keyOf 按值到达 IPv4 键。
- * 大小写保留原样，因为这也是信任检查对照 --trustedProxies
- * 的对端——%WAN 这样的区域必须按写法匹配。
- */
-function canonicalAddress(address: string): string {
-  return address.startsWith('::ffff:') && isIP(address.slice(7)) === 4 ? address.slice(7) : address;
-}
 
 export interface HttpTransportOpts {
   port: number;
@@ -890,40 +567,33 @@ export async function startHttpServer(
     }
 
     if (req.method === 'POST' && url.pathname === '/') {
-      let body = '';
-      let bodyTooLarge = false;
-      req.on('data', (chunk) => {
-        body += chunk;
-        if (body.length > MAX_BODY_SIZE) {
-          if (!bodyTooLarge) {
-            bodyTooLarge = true;
-            // Connection: close 是承重的不是装饰。没有它 keep-alive
-            // 客户端（v19 起 Node 默认 agent）将套接字归还池，
-            // 下方 destroy 杀死池中的套接字——客户端*下一个*
-            // 请求以 EPIPE 失败。
-            res.writeHead(413, {
-              'Content-Type': 'application/json',
-              'Connection': 'close',
-            });
-            // 413 冲刷后才 destroy；立即 destroy 与响应竞速，
-            // 客户端看到裸连接重置而非告知原因的状态。
-            //
-            res.end(
-              JSON.stringify({
-                jsonrpc: '2.0',
-                error: { code: -32600, message: 'Request body too large (max 1MB)' },
-                id: null,
-              }),
-              () => req.destroy(),
-            );
-          }
-        }
+      const body = new SizeCappedText(MAX_BODY_SIZE, () => {
+        // Connection: close 是承重的不是装饰。没有它 keep-alive
+        // 客户端（v19 起 Node 默认 agent）将套接字归还池，
+        // 下方 destroy 杀死池中的套接字——客户端*下一个*
+        // 请求以 EPIPE 失败。
+        res.writeHead(413, {
+          'Content-Type': 'application/json',
+          'Connection': 'close',
+        });
+        // 413 冲刷后才 destroy；立即 destroy 与响应竞速，
+        // 客户端看到裸连接重置而非告知原因的状态。
+        //
+        res.end(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            error: { code: -32600, message: 'Request body too large (max 1MB)' },
+            id: null,
+          }),
+          () => req.destroy(),
+        );
       });
+      req.on('data', (chunk) => body.append(chunk));
       req.on('end', async () => {
-        if (bodyTooLarge) return;
+        if (body.overflow) return;
         let parsed: unknown;
         try {
-          parsed = JSON.parse(body);
+          parsed = JSON.parse(body.value);
         } catch {
           jsonRpcError(res, 400, -32700, 'Parse error: invalid JSON');
           return;
