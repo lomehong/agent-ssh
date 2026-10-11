@@ -6,6 +6,7 @@ root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:52:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 06:45:00
+progress: Host 侧 cli.run/cli.info 语义桥完成（da19c7f），余 CLI 侧 RPC 重写+旧直连删除
 blockedBy: [T-14]
 accept:
   - approvals list/approve/reject 经 RPC：口令→auth.session.start→会话；语义保持（全文展示/指纹校验/approver=cli:<用户> 审计）
