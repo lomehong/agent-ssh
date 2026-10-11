@@ -35,6 +35,10 @@ async function main() {
     const { runApprovalsCli } = await import('./cli.js');
     process.exit(await runApprovalsCli(process.argv.slice(2)));
   }
+  if (positionals[0] === 'run' || positionals[0] === 'info') {
+    const { runDirectCli } = await import('./cli-direct.js');
+    process.exit(await runDirectCli(positionals[0] as 'run' | 'info', process.argv.slice(3)));
+  }
 
   if (argv.dumpToolHashes !== undefined) {
     console.log(JSON.stringify(getToolHashes(), null, 2));
