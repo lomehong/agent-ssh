@@ -4,6 +4,41 @@ const authMethodSchema = z.enum(['agent', 'key', 'password', 'keychain']);
 const approvalModeSchema = z.enum(['auto', 'ask-destructive', 'ask-all', 'deny']);
 const commandClassSchema = z.enum(['read-only', 'safe', 'destructive', 'privileged']);
 
+// Network-device compatibility axis (agent-ssh T-02). The value-side categories
+// are exactly the keys FROZEN_ALGORITHMS owns: an unknown category would parse
+// cleanly and then do nothing, which is the "accepted by the schema but never
+// applied" shape this file exists to prevent.
+const algorithmNameSchema = z.string().trim().min(1);
+const algorithmListAdjustmentSchema = z
+  .object({
+    append: z.array(algorithmNameSchema).optional(),
+    prepend: z.array(algorithmNameSchema).optional(),
+    remove: z.array(algorithmNameSchema).optional(),
+  })
+  .strict();
+const algorithmCategoryValueSchema = z.union([
+  z.array(algorithmNameSchema).min(1),
+  algorithmListAdjustmentSchema,
+]);
+// Explicit object rather than z.record(algorithmCategorySchema, ...): in zod 4
+// a record keyed by an enum requires *every* enum key to be present, which
+// would have made a kex-only override a validation error. Strict still rejects
+// unknown categories — a typo'd `compression` must fail at load, not parse
+// cleanly and do nothing.
+const algorithmsOverrideSchema = z
+  .object({
+    kex: algorithmCategoryValueSchema.optional(),
+    cipher: algorithmCategoryValueSchema.optional(),
+    serverHostKey: algorithmCategoryValueSchema.optional(),
+    hmac: algorithmCategoryValueSchema.optional(),
+  })
+  .strict();
+
+// Device personality of the target host. Skeleton in T-02 (validated and carried
+// on the profile); the per-vendor paging/prompt behaviour lands with the device
+// archives. `generic` is the default behaviour and need not be written down.
+const deviceTypeSchema = z.enum(['generic', 'huawei', 'h3c', 'cisco', 'ruijie']);
+
 /**
  * Role and tier names, which are free strings so operators can define their own.
  *
@@ -171,6 +206,21 @@ export const profileSchema = z.object({
   // key with no hint as to why.
   trustedHostKey: z.string().trim().min(1, 'trustedHostKey cannot be empty').optional(),
   tty: z.boolean().default(false),
+  // Widens FROZEN_ALGORITHMS for this host only (exact list replaces a frozen
+  // category; {append,prepend,remove} adjusts it). Resolution happens against
+  // the frozen base in ssh/algorithms.ts — never passed through to ssh2, whose
+  // adjustment form would re-admit everything the frozen list refuses. Every
+  // override is announced as a load-time warning and carried on the command
+  // audit record, because a widened allowlist is a lowered transport floor.
+  algorithms: algorithmsOverrideSchema.optional(),
+  // Vendor personality (network-device compatibility). Validated here so a
+  // typo fails at startup rather than silently behaving as `generic`.
+  deviceType: deviceTypeSchema.optional(),
+  // Answer keyboard-interactive prompts with the resolved password. Some hosts
+  // (and many network devices) offer password auth only through the
+  // keyboard-interactive method; without this the password credential is
+  // unusable there. Prompts are answered blind — echoing is never requested.
+  keyboardInteractive: z.boolean().default(false),
   role: z.string().default('operator'),
   readOnly: z.boolean().default(false),
   cert: z.boolean().default(false),

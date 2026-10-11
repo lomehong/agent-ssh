@@ -314,6 +314,13 @@ group = "prod"                      # Policy tier: prod | staging | dev, or your
 workdir = "/var/www"
 trustedHostKey = "SHA256:..."       # Pin host key (optional)
 tty = false
+# agent-ssh: network-device compatibility (widens the frozen algorithm allowlist
+# for THIS host only — resolved against the frozen base, never ssh2's defaults).
+# Every override warns at load and marks its commands algorithmsOverride=true in
+# the audit log. Legacy names lower the transport floor; scope them tightly.
+# algorithms = { kex = { append = "diffie-hellman-group1-sha1" }, cipher = ["aes128-cbc", "3des-cbc"], serverHostKey = { append = "ssh-rsa" }, hmac = { append = "hmac-sha1" } }
+# deviceType = "huawei"               # generic | huawei | h3c | cisco | ruijie (paging/prompt personality)
+# keyboardInteractive = false         # answer keyboard-interactive prompts with the resolved password
 role = "operator"                   # viewer | operator | admin
 readOnly = false
 approvalPolicy = "ask-all"

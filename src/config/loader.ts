@@ -193,7 +193,30 @@ function normalizeConfig(raw: RawConfig): AppConfig {
   // Passed through untouched. mergePolicyRules() owns the layering over
   // DEFAULT_RULES, so the loader has no policy semantics of its own to get
   // wrong.
+  const overrideWarning = algorithmsOverrideWarning(profiles);
+  if (overrideWarning) console.error(overrideWarning);
   return { defaults, profiles, policy: raw.policy };
+}
+
+/**
+ * The load-time announcement for profiles that widen FROZEN_ALGORITHMS.
+ *
+ * Exported pure so the message is assertable without a subprocess. A widened
+ * allowlist is a lowered transport floor: the operator must see it at startup,
+ * by profile, with the categories touched — not discover it from a failure to
+ * negotiate the way they expected.
+ */
+export function algorithmsOverrideWarning(profiles: Profile[]): string | null {
+  const overridden = profiles.filter((p) => p.algorithms !== undefined);
+  if (overridden.length === 0) return null;
+  const described = overridden
+    .map((p) => `${p.name} [${Object.keys(p.algorithms!).join(', ')}]`)
+    .join(', ');
+  return (
+    `Warning: ${overridden.length} profile(s) override the frozen algorithm allowlist: ${described}. ` +
+    `Legacy algorithms lower the transport security floor; keep the override scoped to the hosts that need it. ` +
+    `Commands on these profiles are marked algorithmsOverride=true in the audit log.`
+  );
 }
 
 export function getProfile(config: AppConfig, name?: string): Profile {

@@ -14,6 +14,7 @@ const testProfile: Profile = {
   user: 'admin',
   auth: 'password',
   tty: false,
+  keyboardInteractive: false,
   timeout: 10000,
   maxChars: 5000,
   maxOutputBytes: 1048576,

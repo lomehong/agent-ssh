@@ -83,6 +83,16 @@ services:
     ports:
       - "2227:2222"
 
+  # Legacy-algorithms-only sshd (network-device compatibility axis): offers
+  # nothing the frozen allowlist accepts, so the default config must fail to
+  # negotiate and a profile.algorithms override must connect. See
+  # docker/legacy-sshd/Dockerfile for why the names are forced, not added.
+  ssh-legacy:
+    build: ./docker/legacy-sshd
+    profiles: ["test"]
+    ports:
+      - "2228:2222"
+
   # ─── SSH MCP Server v2 ────────────────────────────────────────────────────
   ssh-mcp:
     # Above the server's own 5s teardown budget (see SHUTDOWN_BUDGET_MS): closing a

@@ -17,6 +17,7 @@ const baseProfile: Omit<Profile, 'name' | 'host' | 'port' | 'user' | 'role'> = {
   // applies, since names like "admin"/"operator" say nothing about environment.
   group: 'dev',
   tty: false,
+  keyboardInteractive: false,
   timeout: 15000,
   maxChars: 5000,
   maxOutputBytes: 1048576,

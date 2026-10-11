@@ -151,6 +151,10 @@ export function createPipeline({ server, registry, policy, audit, approvalGrantT
       binary: evaluation.binary,
       decision: evaluation.decision,
       ruleId: evaluation.ruleId,
+      // Carried so an auditor can tell, per command, whether it ran over a
+      // widened algorithm allowlist. Undefined (and thus absent from the JSON
+      // line) when the profile keeps the frozen list untouched.
+      algorithmsOverride: profileHasAlgorithmsOverride(profileName),
       exitCode: 'exitCode' in result ? result.exitCode : undefined,
       durationMs: 'durationMs' in result ? result.durationMs : undefined,
       error: 'error' in result ? result.error : undefined,
@@ -195,6 +199,12 @@ export function createPipeline({ server, registry, policy, audit, approvalGrantT
   /** The profile's SSH user, or a placeholder — never throws, so an audit write cannot fail. */
   function profileUser(profileName: string): string {
     return registry.listAllProfiles().find((p) => p.name === profileName)?.user ?? '(unresolved)';
+  }
+
+  /** True only when the profile actually widens the frozen allowlist; otherwise undefined. */
+  function profileHasAlgorithmsOverride(profileName: string): boolean | undefined {
+    const profile = registry.listAllProfiles().find((p) => p.name === profileName);
+    return profile?.algorithms ? true : undefined;
   }
 
   function makeProgressSender(extra: any): ((bytes: number, tail: string) => void) | undefined {

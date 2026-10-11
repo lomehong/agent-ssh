@@ -1,6 +1,6 @@
 import { Client, type ClientChannel, type ConnectConfig, type ExecOptions } from 'ssh2';
 import type { ConnectionInfo, Profile, ResolvedCredentials, ExecOpts, CommandResult, SessionOpts } from '../types.js';
-import { FROZEN_ALGORITHMS } from './algorithms.js';
+import { resolveAlgorithms } from './algorithms.js';
 import { verifyHostKey, fingerprintPublicKey, type HostKeyMode } from './host-key.js';
 import type { Session, CloseOutcome } from './session.js';
 import { SessionManager } from './session-manager.js';
@@ -93,6 +93,39 @@ export function stopAndDescribe(
   // the same absent-attribute query.
   span.setAttribute('ssh.unstopped', !dispatched);
   return dispatched ? '' : COULD_NOT_SIGNAL;
+}
+
+type KeyboardInteractiveHandler = (
+  name: string,
+  instructions: string,
+  instructionsLang: string,
+  prompts: { prompt: string; echo: boolean }[],
+  finish: (answers: string[]) => void,
+) => void;
+
+/**
+ * Answers every keyboard-interactive prompt with the profile's password.
+ *
+ * Exported for direct unit testing: the ssh2 event fires mid-handshake inside
+ * connect(), where a test would otherwise need a live server that offers the
+ * method. Network devices commonly expose password auth *only* through
+ * keyboard-interactive, so the prompts are answered blind with the same
+ * credential `auth = "password"` would have used. With no password credential
+ * the answers are empty strings — the server then fails the authentication with
+ * its own message rather than this side inventing a different error.
+ */
+export function answerKeyboardInteractive(
+  password: string | undefined,
+): (
+  name: string,
+  instructions: string,
+  instructionsLang: string,
+  prompts: { prompt: string; echo: boolean }[],
+  finish: (answers: string[]) => void,
+) => void {
+  return (_name, _instructions, _instructionsLang, prompts, finish) => {
+    finish(prompts.map(() => password ?? ''));
+  };
 }
 
 export class SSHConnection {
@@ -278,7 +311,10 @@ export class SSHConnection {
         host: this.profile.host,
         port: this.profile.port,
         username: this.profile.user,
-        algorithms: FROZEN_ALGORITHMS as ConnectConfig['algorithms'],
+        // Resolved against FROZEN_ALGORITHMS here — never a passthrough of the
+        // profile's adjustment form, which ssh2 would apply against its own
+        // (much wider) defaults and silently bypass the frozen floor.
+        algorithms: resolveAlgorithms(this.profile.algorithms) as ConnectConfig['algorithms'],
         hostVerifier: (key: Buffer) => {
           // The pin used to be checked here, as a `return false` ahead of
           // verifyHostKey. That made it reject-only: a *matching* pin fell
@@ -318,6 +354,22 @@ export class SSHConnection {
         connectConfig.sock = this.bastionSock;
       }
 
+      // Some hosts — many network devices among them — offer password auth only
+      // through the keyboard-interactive method. ssh2 asks for the method with
+      // `tryKeyboard` and expects the answers on this event; attached before
+      // connect() so it is registered before the handshake can emit it.
+      if (this.profile.keyboardInteractive) {
+        connectConfig.tryKeyboard = true;
+        // ssh2's d.ts omits the client-side 'keyboard-interactive' event (it is
+        // present at runtime, in the upstream README, and typed only on the
+        // server-side Connection), so this goes through a minimal structural
+        // view rather than `any`.
+        const events = client as unknown as {
+          on(event: 'keyboard-interactive', listener: KeyboardInteractiveHandler): void;
+        };
+        events.on('keyboard-interactive', answerKeyboardInteractive(this.credentials.password));
+      }
+
       client.connect(connectConfig);
     });
   }
@@ -355,6 +407,10 @@ export class SSHConnection {
     span.setAttribute('ssh.host', this.profile.host);
     span.setAttribute('ssh.port', this.profile.port);
     span.setAttribute('ssh.command', redactText(command));
+    // Observable on the span for the same reason the audit record carries it:
+    // a widened allowlist is a lowered transport floor and must be visible on
+    // every command that ran under it.
+    span.setAttribute('ssh.algorithmsOverride', this.profile.algorithms !== undefined);
 
     return new Promise((resolve, reject) => {
       let activeStream: ClientChannel | null = null;

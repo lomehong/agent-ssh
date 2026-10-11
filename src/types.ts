@@ -1,7 +1,12 @@
 // ─── Config Types ───────────────────────────────────────────────────────────
 
+import type { AlgorithmOverride } from './ssh/algorithms.js';
+
 export type AuthMethod = 'agent' | 'key' | 'password' | 'keychain';
 export type ApprovalMode = 'auto' | 'ask-destructive' | 'ask-all' | 'deny';
+
+/** Vendor personality of a target host (drives paging/prompt handling). */
+export type DeviceType = 'generic' | 'huawei' | 'h3c' | 'cisco' | 'ruijie';
 
 export interface Profile {
   name: string;
@@ -17,6 +22,12 @@ export interface Profile {
   workdir?: string;
   trustedHostKey?: string;
   tty: boolean;
+  /** Widens FROZEN_ALGORITHMS for this host; resolved against the frozen base. */
+  algorithms?: AlgorithmOverride;
+  /** Vendor personality (network-device compatibility); absent = generic. */
+  deviceType?: DeviceType;
+  /** Answer keyboard-interactive prompts with the resolved password. */
+  keyboardInteractive: boolean;
   timeout: number;
   maxChars: number;
   maxOutputBytes: number;
@@ -211,6 +222,8 @@ export interface AuditRecord {
   decision: PolicyDecision;
   /** Which rule produced the decision (denylist, role-binding, approval-policy, ...). */
   ruleId?: string;
+  /** True when the command ran on a profile that widens FROZEN_ALGORITHMS. */
+  algorithmsOverride?: boolean;
   exitCode?: number;
   durationMs?: number;
   approver?: string;

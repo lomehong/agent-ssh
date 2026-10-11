@@ -365,6 +365,7 @@ export async function buildAppConfig(argv: Record<string, string | null>): Promi
     keyRef: argv.key || undefined,
     workdir: argv.workdir || undefined,
     tty: false,
+    keyboardInteractive: false,
     timeout: defaults.commandTimeoutMs,
     maxChars: defaults.commandMaxChars,
     maxOutputBytes: defaults.commandMaxOutputBytes,
