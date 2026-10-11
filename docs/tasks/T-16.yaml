@@ -1,9 +1,11 @@
 id: T-16
 title: stub 前端：fake-Host 启动机+真 Host 23 工具透传（纯单向，无 ssh2）
 level: L1
-status: 待执行
+status: 执行中
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:54:00
+claimedBy: digital-architect
+claimedAt: 2026-10-11 23:58:00
 blockedBy: [T-14.5]
 accept:
   - a：fake-Host hello→manifest→注册；§3.4 启动机（initialize 先行零工具→后台重试→注册+tools/list_changed）；窗口期空工具集诚实态
@@ -14,4 +16,5 @@ accept:
   - import type 豁免与传递依赖口径定义（K9-⑨）
 source: 方案 §2.1/§3.4/§6/§9 红线③/§11 T-16 行；评审 K9-⑨
 events:
+  - 2026-10-11 23:58:00 | claim | by=digital-architect | 接缝约定：src/stub/ 纯单向 MCP 前端——a①fake-Host 启动机测试（initialize 零工具→退避重试→manifest→注册+tools/list_changed）②断连 fail-closed ③无 ssh2 import 白名单断言（红线③，vitest 解析不引 dependency-cruiser）④env AGENT_SSH_HOST_ADDR/TOKEN+--host-addr+PIN（D6）；b（T-15 已落定）：真 Host 透传+单连接 manifest 不可变；import type 豁免与传递依赖口径（K9-⑨）随 a 落地
   - 2026-10-11 20:54:00 | create | by=lome | level=L1 | blocked_by=T-14.5（b 部分另需 T-15）

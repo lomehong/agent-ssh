@@ -1,12 +1,14 @@
 id: T-15
 title: Host 进程装配：引擎迁入/manifest/审计/队列串行化/cutover/http 删除
 level: L1
-status: 待确认
+status: 已落定
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:54:00
 claimedBy: digital-architect
 claimedAt: 2026-10-11 22:54:00
 reportedAt: 2026-10-11 23:45:00
+confirmedBy: lome
+confirmedVia: 会话内 ask 选项作答「确认落定，继续 T-16」，2026-10-11 23:57 前后
 progress: 验收 1/2/3/4/5/8/9 完成 + 6/7 核心完成（接线位已在 startHost，生产缺省随 T-16），10 终轮对照完成
 deletedTests:
   - guard/elicitation.test.ts（通道移除）
@@ -37,6 +39,7 @@ accept:
   - tsc 0 错；失败集不扩大（删除项单列）
 source: 方案 §6/§7/§11 T-15 行；评审 K1/K7
 events:
+  - 2026-10-11 23:57:00 | confirm | by=lome | 会话 ask 选项「确认落定，继续 T-16」——confirmedBy=lome
   - 2026-10-11 23:45:00 | report | by=digital-architect | 自报待主人 confirm。十二提交（bf8bb60→f5f9cf6，含 K7/K1/elicitation 移除/HTTP 废止/manifest/审计字段/pidfile/init/log/引擎迁入 startHost/评审收口两批）。证据：host/rpc/tools/e2e 16 文件 145 过/3 skip 全绿；tsc 0；全量终轮 29败/2090过/65跳（2184 总）失败文件精确回到 6 个既有环境族（e2e 两漏网已处置）。双轴评审：标准轴无硬违规（6 jc：jc1 pidfile 竞态硬化已修/jc2 令牌不落盘已修/jc3 结构化错误已修/jc4 skipHello 一次性语义已注释明确/jc5 文档残留登记 T-19/jc6 span 名实注释已声明）；规格轴 6 pass+6/7 fail(部分)——按评审建议以 wiringBoundary 显式降范围登记处置（CLI 包装/证书步骤随 T-16/T-18a；startHost 接线位本轮已落）。运行事件：平台默认审批队列曾积 23 条测试垃圾（跨轮 e2e/单测走默认目录）已清空并在 tools.e2e skip 防再发。
   - 2026-10-11 23:05:00 | progress | by=digital-architect | 三刀落地：①K7 队列决定按 id 串行化（bf8bb60，并发双决定红绿闭环）②K1 approvalSurfaces 值域迁移（a19863d，墓碑字段 z.unknown+refine+optional 显式拒绝+三映射指引——strict 未知键/z.undefined({error}) 两形实测否决记录在案）③elicitation 通道整体移除（管线分支删除+APPROVAL_TIMEOUT_MS 迁入队列模块+tools harness 改 queue 面+自动裁决泵+删测登记 elicitation.test/approval.e2e）。证据：tools 9 文件 110 过全绿；unit 全目录 19 败全属既有环境族零新增；full-chain 1/1；tsc 0。余：引擎迁入/manifest/审计字段/host init+pidfile/日志轮转/http.ts 删除+终轮对照。
   - 2026-10-11 20:54:00 | create | by=lome | level=L1 | blocked_by=T-14.5
