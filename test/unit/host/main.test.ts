@@ -138,7 +138,7 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
     expect(info.connected).toBe(false);
   });
 
-  it('cli.run 禁止名单先于一切：FORBIDDEN_PATTERN 拒绝且不触 SSH', async () => {
+  it('cli.run 禁止名单先于一切：FORBIDDEN_PATTERN 拒绝 + deny 审计留痕（评审 jc3）', async () => {
     const started = await start();
     const pre = client(started.port, '', { skipHello: true });
     await pre.connect();
@@ -146,6 +146,8 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
     const operator = client(started.port, session.sessionToken);
     await operator.connect();
     await expect(operator.call('cli.run', { command: 'rm -rf /' })).rejects.toThrow(/FORBIDDEN_PATTERN/);
+    const auditText = readFileSync(join(dir!, 'audit.log'), 'utf8');
+    expect(auditText).toContain('"ruleId":"cli-direct-forbidden"');
   });
 
   it('cli.run 目标不可达：deny 审计留痕（ruleId=cli-direct-error）+ 结构化拒绝', async () => {
