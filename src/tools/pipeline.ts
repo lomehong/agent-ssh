@@ -4,13 +4,13 @@ import type { ConnectionRegistry } from '../ssh/connection-registry.js';
 import type { PolicyEngine, PolicyResource } from '../policy/engine.js';
 import type { AuditStore } from '../audit/store.js';
 import { sanitizeCommand } from '../guard/sanitizer.js';
-import { requestApproval, APPROVAL_TIMEOUT_MS, type ApprovalResult } from '../guard/elicitation.js';
 import {
   assertQueueDirPrivate,
   createApprovalRequest,
   getApprovalQueueDir,
   waitForDecision,
-  type ApprovalChannel,
+  APPROVAL_TIMEOUT_MS,
+  type ApprovalSurface,
 } from '../guard/approval-queue.js';
 import { commandOutput, type ToolResult } from './results.js';
 import { CommandQuota } from '../policy/quota.js';
@@ -56,11 +56,11 @@ export interface ToolDeps {
   /** Lifetime of a just-in-time approval grant; 0 = always prompt. */
   approvalGrantTtlMs?: number;
   /**
-    * 向人征求批准的位置（agent-ssh）：elicitation（上游）、
-    * queue（文件队列加 approvals CLI）或 both——先试客户端，
-    * 此客户端无法被问时落到队列。默认 both。
+    * 人工审批的征求面集合（Host 分离架构 v2）：desktop（桌面审批端，
+    * T-17.5 接线）、im（飞书 bot，T-17.6 接线）、queue（文件队列 +
+    * approvals CLI，兜底面）。elicitation 通道已整体移除（H2 闭合手段）。
    */
-  approvalChannel?: ApprovalChannel;
+  approvalSurfaces?: ApprovalSurface[];
   /** Queue poll interval; a test hook — production uses the 2s default. */
   approvalQueuePollMs?: number;
   /** Queue directory override; a test hook — production uses the platform default. */
@@ -90,12 +90,11 @@ export interface ToolDeps {
  *
  */
 export function createPipeline({
-  server,
   registry,
   policy,
   audit,
   approvalGrantTtlMs = 0,
-  approvalChannel = 'both',
+  approvalSurfaces = ['desktop', 'queue'],
   approvalQueuePollMs,
   approvalQueueDir,
   approvalQueueInspectAcl,
@@ -136,26 +135,18 @@ export function createPipeline({
           return { conn, evaluation, approver: 'jit-grant' };
         }
 
-        const channel = approvalChannel ?? 'both';
-        let approval: ApprovalResult | null = null;
-        if (channel !== 'queue') {
-          approval = await requestApproval(server, command, conn.profile.name, evaluation);
-          if (approval.approved) {
-            grants.record(conn.profile.name, command, evaluation.commandClass);
-            return { conn, evaluation, approver: approval.approver };
-          }
-          // 被问了且说不的人是最终答案：背着他们把同一命令
-          // 排进队列等于货比三家找第二次同意。
-          if (!approval.unavailable || channel === 'elicitation') {
-            throw new PolicyRefusedError(
-              approval.unavailable
-                ? `APPROVAL_UNAVAILABLE: ${approval.unavailable}`
-                : 'APPROVAL_DENIED: User did not approve this command',
-              evaluation,
-            );
-          }
-          // both 加不可用：此客户端无法被问——落到队列，
-          // 这正是该通道存在的全部理由。
+        // 审批面集合（v2）：desktop/im 的 Host 推送端点在 T-17.5b/T-17.6
+        // 接线；接线前唯一可用面是 queue。面集合不含 queue 且无已接线
+        // 推送面 = 审批不可达——fail-closed 拒绝而非执行（零审批面配置
+        // 的静默行为在 README 明示，T-19 文档票）。elicitation 通道已移除：
+        // MCP 反向弹窗不再是可用的审批载体（H2 闭合手段，方案 §2.2）。
+        const surfaces = approvalSurfaces ?? ['desktop', 'queue'];
+        if (!surfaces.includes('queue')) {
+          throw new PolicyRefusedError(
+            'APPROVAL_UNAVAILABLE: no usable approval surface — approvalSurfaces has no "queue" ' +
+            'and the desktop/im push faces are not wired yet; the command is refused rather than executed unapproved',
+            evaluation,
+          );
         }
 
         // 队列目录隐私门（T-11）：Windows 上另一账户可改写的队列

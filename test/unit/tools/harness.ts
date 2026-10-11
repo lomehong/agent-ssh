@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { ElicitRequestSchema } from '@modelcontextprotocol/sdk/types.js';
 import { registerTools, registerResources } from '../../../src/tools/registry.js';
 import { PolicyEngine, DEFAULT_RULES, type PolicyRules } from '../../../src/policy/engine.js';
 import { AuditStore } from '../../../src/audit/store.js';
@@ -10,6 +9,10 @@ import type { CloseOutcome } from '../../../src/ssh/session.js';
 import { ConnectionRegistry } from '../../../src/ssh/connection-registry.js';
 import { defaultsFromArgv } from '../../../src/cli.js';
 import type { ToolDeps } from '../../../src/tools/pipeline.js';
+import { listPending, decideApproval } from '../../../src/guard/approval-queue.js';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 type ToolOpts = Omit<ToolDeps, 'server' | 'registry' | 'policy' | 'audit'>;
 
@@ -58,8 +61,10 @@ export interface Harness {
   setExecResult(result: Partial<CommandResult>): void;
   /** Whether the client approves elicitation prompts. */
   setApproval(approve: boolean): void;
-  /** How many times the client was actually prompted. */
+  /** How many times the client was actually prompted. elicitation 移除后恒 0（墓碑计数）。 */
   approvalPrompts(): number;
+  /** 队列面已作出的裁决数（自动裁决泵）—— elicitation 时代的 prompt 计数的等价观测量。 */
+  approvalDecisions(): number;
   /**
    * What `closeSession` reports; override per test.
    *
@@ -82,6 +87,7 @@ export async function createHarness(
   let approve = true;
   let closeOutcome: CloseOutcome = 'closed';
   let approvalPrompts = 0;
+  let approvalDecisions = 0;
   let execResult: Partial<CommandResult> = {};
 
   const makeResult = (command: string): CommandResult => ({
@@ -151,22 +157,48 @@ export async function createHarness(
   // Capture audit records instead of writing to disk.
   const audit = { record: async (r: any) => { auditRecords.push(r); } } as unknown as AuditStore;
 
+  // 审批面接线（T-15：elicitation 移除后）：调用方未显式管理队列时，harness
+  // 自持一个 queue 面目录 + 自动裁决泵——setApproval(true/false) 决定泵对
+  // 每个待审条目投 approve/reject，等价于旧 elicitation 时代「客户端按旗标
+  // 应答」的语义。调用方显式传 approvalQueueDir 即视为自行管理队列，泵不启动。
+  const ownsQueueDir = toolOpts.approvalQueueDir === undefined;
+  const queueDir = toolOpts.approvalQueueDir ?? mkdtempSync(join(tmpdir(), 'tools-harness-queue-'));
+  const effectiveToolOpts: ToolOpts = {
+    ...toolOpts,
+    approvalSurfaces: toolOpts.approvalSurfaces ?? ['queue'],
+    approvalQueueDir: queueDir,
+    approvalQueuePollMs: toolOpts.approvalQueuePollMs ?? 5,
+  };
+  let pumpTimer: NodeJS.Timeout | undefined;
+  const pump = async (): Promise<void> => {
+    try {
+      for (const p of await listPending({ dir: queueDir })) {
+        const outcome = await decideApproval(p.id, approve ? 'approved' : 'rejected', { dir: queueDir, by: 'harness-pump' });
+        // 只计生效裁决：同条目的重复泵询（竞态输家）不算人工决定次数。
+        if (outcome.decided) approvalDecisions++;
+      }
+    } catch {
+      // 队列瞬态（撕裂读等）下个 tick 重试；测试断言不依赖泵的静默失败。
+    }
+  };
+
   const server = new McpServer(
     { name: 'test', version: '0.0.0' },
     { capabilities: { tools: {}, resources: {} } },
   );
-  registerTools(server, registry, new PolicyEngine(rules), audit, toolOpts);
+  registerTools(server, registry, new PolicyEngine(rules), audit, effectiveToolOpts);
   registerResources(server, registry);
 
   const client = new Client(
     { name: 'test-client', version: '0.0.0' },
     { capabilities: { elicitation: {} } },
   );
-  // Stand in for the human at the approval prompt.
-  client.setRequestHandler(ElicitRequestSchema, async () => {
-    approvalPrompts++;
-    return approve ? { action: 'accept', content: { confirm: true } } : { action: 'decline' };
-  });
+  // elicitation 通道已随 H2 移除（T-15）：不注册任何 elicitation 处理器——
+  // 若有代码路径再发 elicitation 请求，SDK 会以未支持错误失败，测试即红
+  // （审批走 queue 面的自动裁决泵，approvalPrompts 计数恒 0）。
+  if (ownsQueueDir) {
+    pumpTimer = setInterval(() => { void pump(); }, 5);
+  }
 
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
   await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
@@ -180,7 +212,13 @@ export async function createHarness(
     setApproval(value) { approve = value; },
     setCloseOutcome(outcome) { closeOutcome = outcome; },
     approvalPrompts: () => approvalPrompts,
-    async close() { await client.close(); await server.close(); },
+    approvalDecisions: () => approvalDecisions,
+    async close() {
+      if (pumpTimer !== undefined) clearInterval(pumpTimer);
+      await client.close();
+      await server.close();
+      if (ownsQueueDir) rmSync(queueDir, { recursive: true, force: true });
+    },
   };
 }
 

@@ -4,6 +4,15 @@ const authMethodSchema = z.enum(['agent', 'key', 'password', 'keychain']);
 const approvalModeSchema = z.enum(['auto', 'ask-destructive', 'ask-all', 'deny']);
 const commandClassSchema = z.enum(['read-only', 'safe', 'destructive', 'privileged']);
 
+/**
+ * K1 迁移指引（cutover 值域迁移）：approvalChannel 墓碑字段的报错文案。
+ * 指引必须自带三 mapping，运维不改配置就该知道改成什么。
+ */
+const K1_APPROVAL_CHANNEL_REMOVED =
+  "Config key 'approvalChannel' was removed with the elicitation channel (Host 分离架构 v2). " +
+  "Rename it to 'approvalSurfaces' (array). Migration: 'both' → ['desktop','queue']; " +
+  "'queue' → ['queue']; 'elicitation' has no equivalent — the channel was removed.";
+
 // 网络设备兼容轴（agent-ssh T-02）。值侧类别恰为 FROZEN_ALGORITHMS 所有的键：
 // 未知类别会干净解析然后什么都不做——正是本文件要防止的
 // 「schema 接受但从不生效」形态。
@@ -148,11 +157,22 @@ export const defaultsSchema = z.object({
   // 因此是 opt-in 而非默认便利。
   approvalGrantTtlMs: z.number().int().nonnegative().default(0),
   approvalMode: approvalModeSchema.default('ask-destructive'),
-  // 人工审批的征求位置（agent-ssh）：'elicitation' = 仅 MCP
-  // 客户端对话框；'queue' = 仅文件队列 + approvals CLI；
-  // 'both'（默认）= 先试客户端，无法询问时落到队列。
-  // 人的拒绝永远是终局——只有不可用才会降级。
-  approvalChannel: z.enum(['elicitation', 'queue', 'both']).default('both'),
+  // 人工审批的征求面集合（Host 分离架构 v2）：'desktop' = 桌面审批端
+  // （Tauri，T-17.5）；'im' = 飞书 bot（T-17.6）；'queue' = 文件队列 +
+  // approvals CLI——人不在推送面旁时的兜底，审批不静默丢失。
+  // 旧键 approvalChannel（elicitation/queue/both）随 elicitation 通道
+  // 整体移除：墓碑字段（下方）显式拒绝并附迁移指引，绝不静默映射（K1）。
+  approvalSurfaces: z.array(z.enum(['desktop', 'im', 'queue'])).default(['desktop', 'queue']),
+  // K1 墓碑字段：旧键一旦出现即报迁移指引。不能靠 strict() 的未知键错误——
+  // 那条错误不带指引，运维只能看到「不认识的键」。也不能用
+  // z.undefined({ error })——本版 zod 对该形参报过载错、运行时吞掉自定义
+  // 文案，还把缺席键报成 requiredness 错误（三连实测）。unknown+refine：
+  // 缺席（undefined）自然通过，出现任何值报下面的指引。迁移测试钉死于
+  // test/unit/config/approval-surfaces-cutover.test.ts。
+  approvalChannel: z
+    .unknown()
+    .refine((v) => v === undefined, { message: K1_APPROVAL_CHANNEL_REMOVED })
+    .optional(),
   // dynamic（SOCKS）端口转发。默认关：开放的 SOCKS 监听
   // 是通用出网通道——其他隧道都指名目标、可被拒绝清单拦下，
   // 这个不能。opt-in，按部署开启。

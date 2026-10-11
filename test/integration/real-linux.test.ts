@@ -56,7 +56,7 @@ beforeAll(async () => {
   };
   const cfg: AppConfig = {
     ...base,
-    defaults: { ...base.defaults, approvalChannel: 'queue', allowDynamicForwarding: true },
+    defaults: { ...base.defaults, approvalSurfaces: ['queue'], allowDynamicForwarding: true },
     profiles: [profile],
   };
   const registryReal = new ConnectionRegistry(cfg, 'insecure');
@@ -73,7 +73,7 @@ beforeAll(async () => {
   const audit = new AuditStore(join(tmp, 'audit.log'));
   const server = new McpServer({ name: 'real-linux', version: '0.0.0' }, { capabilities: { tools: {}, resources: {} } });
   registerTools(server, registry, new PolicyEngine(), audit, {
-    approvalChannel: 'queue',
+    approvalSurfaces: ['queue'],
     approvalQueueDir: join(tmp, 'approvals'),
     approvalQueuePollMs: 5,
     // 本机 %TEMP% 继承 DSH 沙箱的只读授权，生产 ACL 检查会如实拒绝——

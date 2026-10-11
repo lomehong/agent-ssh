@@ -110,13 +110,15 @@ describe('the string is what an approval grant is keyed on', () => {
     h = await createHarness({}, { approvalGrantTtlMs: 60_000 });
     await upload({ remotePath: '/etc/crontab', content: '* * * * * /bin/true\n' });
     await upload({ remotePath: '/etc/crontab', content: '* * * * * /bin/evil\n' });
-    expect(h.approvalPrompts(), 'the second payload must be approved on its own').toBe(2);
+    // T-15 后 prompt 的等价观测量是队列裁决数。
+    expect(h.approvalDecisions(), 'the second payload must be approved on its own').toBe(2);
   });
 
   it('still lets one approval cover a byte-identical repeat', async () => {
     h = await createHarness({}, { approvalGrantTtlMs: 60_000 });
     await upload({ remotePath: '/etc/crontab', content: '* * * * * /bin/true\n' });
     await upload({ remotePath: '/etc/crontab', content: '* * * * * /bin/true\n' });
-    expect(h.approvalPrompts(), 'an identical repeat is the same operation').toBe(1);
+    // T-15 后 prompt 的等价观测量是队列裁决数。
+    expect(h.approvalDecisions(), 'an identical repeat is the same operation').toBe(1);
   });
 });

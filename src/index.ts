@@ -92,7 +92,7 @@ async function main() {
     );
     registerTools(server, registry, policy, audit, {
       approvalGrantTtlMs: config.defaults.approvalGrantTtlMs,
-      approvalChannel: config.defaults.approvalChannel,
+      approvalSurfaces: config.defaults.approvalSurfaces,
       localPath,
     });
     registerResources(server, registry);

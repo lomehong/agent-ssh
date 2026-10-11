@@ -100,7 +100,7 @@ export function createAppConfig(): AppConfig {
     commandMaxOutputBytes: 1048576,
     connectionIdleReapMs: 60000,
     commandQuotaPerDay: 200,
-    approvalChannel: 'both',
+    approvalSurfaces: ['desktop', 'queue'],
     allowDynamicForwarding: false,
     ptySessionBufferBytes: 1_048_576,
     ptySessionIdleTimeoutMs: 60000,

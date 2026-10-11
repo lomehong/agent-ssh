@@ -1,7 +1,7 @@
 // ─── Config Types ───────────────────────────────────────────────────────────
 
 import type { AlgorithmOverride } from './ssh/algorithms.js';
-import type { ApprovalChannel } from './guard/approval-queue.js';
+import type { ApprovalSurface } from './guard/approval-queue.js';
 
 export type AuthMethod = 'agent' | 'key' | 'password' | 'keychain';
 export type ApprovalMode = 'auto' | 'ask-destructive' | 'ask-all' | 'deny';
@@ -70,8 +70,8 @@ export interface Defaults {
   /** JIT 审批授权的寿命；0 = 每次都提示。 */
   approvalGrantTtlMs: number;
   approvalMode: ApprovalMode;
-  /** 人工审批的征求位置（elicitation / queue / both）。 */
-  approvalChannel: ApprovalChannel;
+  /** 人工审批的征求面集合（desktop / im / queue）。 */
+  approvalSurfaces: ApprovalSurface[];
   /** dynamic 转发的通用 SOCKS 出网；默认关闭。 */
   allowDynamicForwarding: boolean;
   /**

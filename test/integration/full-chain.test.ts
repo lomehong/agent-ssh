@@ -49,7 +49,7 @@ beforeAll(async () => {
     ...base,
     defaults: {
       ...base.defaults,
-      approvalChannel: 'queue' as const,
+      approvalSurfaces: ['queue'] as const,
       allowDynamicForwarding: true,
     },
     profiles: [profile],
@@ -59,7 +59,7 @@ beforeAll(async () => {
   const audit = new AuditStore(join(tmp, 'audit.log'));
   server = new McpServer({ name: 'full-chain', version: '0.0.0' }, { capabilities: { tools: {}, resources: {} } });
   registerTools(server, registry, new PolicyEngine(), audit, {
-    approvalChannel: 'queue',
+    approvalSurfaces: ['queue'],
     approvalQueueDir: join(tmp, 'approvals'),
     approvalQueuePollMs: 5,
     approvalQueueInspectAcl: async () => ({ status: 'restricted' }) as never,

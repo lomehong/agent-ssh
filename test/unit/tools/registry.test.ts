@@ -241,6 +241,7 @@ describe('audit records', () => {
 describe('just-in-time approval grants', () => {
   // Approving the same destructive command every few seconds trains the
   // operator to click through prompts, which is worse than a bounded grant.
+  // T-15 后审批走 queue 面：「prompt」的等价观测量是泵的队列裁决数。
   it('skips the prompt for an identical command within the grant window', async () => {
     h = await createHarness({}, { approvalGrantTtlMs: 60_000 });
     h.setApproval(true);
@@ -249,7 +250,7 @@ describe('just-in-time approval grants', () => {
     await call('run-command', { command: 'rm -rf /tmp/build' });
     await call('run-command', { command: 'rm -rf /tmp/build' });
 
-    expect(h.approvalPrompts()).toBe(1);
+    expect(h.approvalDecisions()).toBe(1);
     expect(h.execCalls).toHaveLength(3);
   });
 
@@ -261,7 +262,7 @@ describe('just-in-time approval grants', () => {
     await call('run-command', { command: 'rm -rf /tmp/build' });
     await call('run-command', { command: 'rm -rf /tmp/build-prod' });
 
-    expect(h.approvalPrompts()).toBe(2);
+    expect(h.approvalDecisions()).toBe(2);
   });
 
   it('records the grant as the approver in the audit log', async () => {
@@ -271,7 +272,8 @@ describe('just-in-time approval grants', () => {
     await call('run-command', { command: 'rm -rf /tmp/build' });
 
     // The second run is attributable to the grant, not to a fresh human answer.
-    expect(h.auditRecords.at(-2).approver).toBe('mcp-client');
+    // 泵裁决的审批人身份是 cli:harness-pump（cli:<裁决者> 纪律的测试实例）。
+    expect(h.auditRecords.at(-2).approver).toBe('cli:harness-pump');
     expect(h.auditRecords.at(-1).approver).toBe('jit-grant');
   });
 
@@ -282,7 +284,7 @@ describe('just-in-time approval grants', () => {
     h.setApproval(true);
     await call('run-command', { command: 'rm -rf /tmp/build' });
     await call('run-command', { command: 'rm -rf /tmp/build' });
-    expect(h.approvalPrompts()).toBe(2);
+    expect(h.approvalDecisions()).toBe(2);
   });
 
   it('does not grant anything when the client declines', async () => {
@@ -290,7 +292,7 @@ describe('just-in-time approval grants', () => {
     h.setApproval(false);
     await call('run-command', { command: 'rm -rf /tmp/build' });
     await call('run-command', { command: 'rm -rf /tmp/build' });
-    expect(h.approvalPrompts()).toBe(2);
+    expect(h.approvalDecisions()).toBe(2);
     expect(h.execCalls).toHaveLength(0);
   });
 });

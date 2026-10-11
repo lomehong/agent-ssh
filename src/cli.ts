@@ -263,7 +263,7 @@ export function defaultsFromArgv(argv: Record<string, string | null>): Defaults 
     commandQuotaPerDay: parseInt(argv.commandQuota as string) || 200,
     approvalGrantTtlMs: parseInt(argv.approvalGrantTtl as string) || 0,
     approvalMode: 'ask-destructive',
-    approvalChannel: 'both',
+    approvalSurfaces: ['desktop', 'queue'],
     allowDynamicForwarding: false,
     ptySessionBufferBytes: 1_048_576,
     // 刻意不为 transferRoot 提供标志。它是对触碰本地磁盘的同意，

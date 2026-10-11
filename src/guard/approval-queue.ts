@@ -23,7 +23,14 @@ import { assertPrivateOnWindows } from '../config/windows-acl.js';
  * can already rewrite the file.
  */
 
-export type ApprovalChannel = 'elicitation' | 'queue' | 'both';
+export type ApprovalSurface = 'desktop' | 'im' | 'queue';
+
+/**
+ * 审批窗口（U3 裁决维持 10min）：入队即计，过期 fail-closed——Agent 收到
+ * 结构化拒绝可重发。原定义在 guard/elicitation.ts（T-15 随通道移除迁入本文件，
+ * 队列语义的本职归属）。语义不变：墙钟仅用于展示，判定路径用单调钟（M4）。
+ */
+export const APPROVAL_TIMEOUT_MS = 600_000;
 
 export interface PendingApproval {
   id: string;
