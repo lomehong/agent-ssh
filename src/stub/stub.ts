@@ -31,8 +31,8 @@ export interface StubOpts {
   token: string;
   pin?: string;
   protocolVersion?: string;
-  /** 重连节奏上限覆盖（测试压短）；缺省 30s 退避封顶。 */
-  reconnectPollMs?: number;
+  /** 重连退避上限覆盖（测试压短）；缺省 30s 退避封顶。 */
+  reconnectMaxDelayMs?: number;
 }
 
 export interface StubHandle {
@@ -73,7 +73,7 @@ export async function startStub(opts: StubOpts): Promise<StubHandle> {
   });
 
   const hostPort = splitHostAddr(opts.hostAddr);
-  const cap = opts.reconnectPollMs ?? 30_000;
+  const cap = opts.reconnectMaxDelayMs ?? 30_000;
   let attempt = 0;
   let currentClient: RpcClient | undefined;
 
@@ -121,9 +121,10 @@ export async function startStub(opts: StubOpts): Promise<StubHandle> {
         ...(opts.pin !== undefined ? { tls: { pin: opts.pin } } : {}),
         reconnect: false,
         requestTimeoutMs: 10_000,
-        reconnectMaxDelayMs: cap,
       });
       currentClient = client;
+      // 竞态安全（评审 jc）：ready 翻牌后同一宏任务内同步注册断线监听——
+      // close 事件（宏任务）插不进队，race 等待期不漏断线信号。
       const offDisconnect = client.onDisconnected(() => {
         ready = false;
       });
@@ -139,11 +140,18 @@ export async function startStub(opts: StubOpts): Promise<StubHandle> {
         ready = true;
         attempt = 0;
         await Promise.race([
-          new Promise<void>((resolve) => client.onDisconnected(() => resolve())),
+          new Promise<void>((resolve) => {
+            const off = client.onDisconnected(() => {
+              off();
+              resolve();
+            });
+            void stopSignal.then(() => off());
+          }),
           stopSignal,
         ]);
-      } catch {
+      } catch (err) {
         ready = false;
+        console.error(`[stub-loop] connect failed (retrying): ${err instanceof Error ? err.message : String(err)}`);
       } finally {
         offDisconnect();
         await client.close().catch(() => {});

@@ -21,7 +21,7 @@ export async function stubMain(argv: string[] = process.argv.slice(2)): Promise<
 
   if (!hostAddr) {
     throw new OperatorError(
-      'AGENT_SSH_HOST_ADDR is required (env or --host-addr=host:port). The stub dials the host daemon; without an address it refuses to start.',
+      'AGENT_SSH_HOST_ADDR is required (env or --host-addr host:port). The stub dials the host daemon; without an address it refuses to start.',
     );
   }
   if (!token) {

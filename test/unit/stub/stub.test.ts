@@ -6,7 +6,9 @@ import { createServer as netCreateServer } from 'node:net';
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { existsSync } from 'node:fs';
 import { generateAgentToken, hashPassword, tokenDigest, OperatorSessionStore } from '../../../src/rpc/auth.js';
+import { TOOL_DESCRIPTIONS } from '../../../src/tools/descriptions.js';
 import { RpcHostServer } from '../../../src/rpc/server.js';
 import { startStub, type StubHandle } from '../../../src/stub/stub.js';
 
@@ -46,7 +48,7 @@ async function startStack(hostUp: boolean): Promise<Stack> {
     server: stubServer,
     hostAddr: `127.0.0.1:${port}`,
     token,
-    reconnectPollMs: 10,
+    reconnectMaxDelayMs: 10,
   });
 
   const client = new Client({ name: 'mcp-host', version: '0.0.0' });
@@ -71,6 +73,12 @@ async function startStack(hostUp: boolean): Promise<Stack> {
             const p = params as { name?: unknown };
             if (p.name === 'boom') throw new Error('handler exploded');
             return { content: [{ type: 'text', text: `echo:${String(p.name)}` }], isError: false };
+          },
+          'resource.read': (params) => {
+            const p = params as { uri?: unknown };
+            return {
+              contents: [{ uri: String(p.uri), mimeType: 'application/json', text: '{"via":"host"}' }],
+            };
           },
         },
       });
@@ -113,7 +121,10 @@ describe('stub 启动机（§3.4 诚实态）', () => {
     await stack.startHost();
     await vi.waitFor(async () => {
       const listed = await stack!.client.listTools();
-      expect(listed.tools.length).toBe(23);
+      // 与 host 注册面同源对齐（不硬编码计数，脆断防：数变即本测试随之变）。
+      expect(listed.tools.map((t) => t.name).sort()).toEqual(
+        Object.keys(TOOL_DESCRIPTIONS).sort(),
+      );
     }, { timeout: 10_000 });
   });
 
@@ -150,26 +161,88 @@ describe('stub 启动机（§3.4 诚实态）', () => {
       /handler exploded/,
     );
   });
+
+  it('resources 透传：list 回 manifest 三资源，read 经 RPC 到 Host（T-16 b 腿）', async () => {
+    stack = await startStack(true);
+    const listed = await stack.client.listResources();
+    expect(listed.resources.map((r) => r.uri).sort()).toEqual([
+      'ssh://connections',
+      'ssh://connections/{profile}',
+      'ssh://sessions/{profile}/{session}',
+    ]);
+    const read = await stack.client.readResource({ uri: 'ssh://connections' });
+    const first = read.contents[0] as { text: string };
+    expect(JSON.parse(first.text)).toEqual({ via: 'host' });
+  });
 });
 
-// ─── 红线③：stub 无 ssh2/无 fs/无子进程（import 白名单，K9-⑨ 口径落地）───
+// ─── 红线③：stub 无 ssh2/无 fs/无子进程（K9-⑨ 口径成文）───
+/**
+ * import 白名单口径（K9-⑨ 落地，票面第 6 项）：
+ * 1. 运行时 import（含动态 import()）必须匹配允许面：
+ *    a) @modelcontextprotocol/sdk/*（MCP 协议面）；
+ *    b) node:net / node:crypto / node:url（枚举式内置白名单——node:fs、
+ *       node:child_process 及其余内置一律禁止）；
+ *    c) 仓内相对导入 ./ 与 ../（其所指模块自身受「所属层无 ssh2 链」测试
+ *       约束——传递依赖以「每层各自无 ssh2 + stub 直系禁 ssh2」双保险闭合，
+ *       不做全图分析，不引 dependency-cruiser）。
+ * 2. `import type`（类型擦除、零运行时边）豁免上述 b) 的枚举限制，但仍禁
+ *    ssh2 类型面（类型依赖亦是供应链信号）。
+ * 3. 动态 import() / createRequire / eval / new Function 在 stub 内一律禁止
+ *    （按字节扫描，绕过静态正则的通道同被堵死）。
+ * 4. 扫描递归 src/stub/ 子目录。
+ */
 describe('红线③：stub import 白名单（不引 dependency-cruiser）', () => {
-  it('src/stub/*.ts 的 import 全部落在白名单内', () => {
-    const allowed = [
-      /^@modelcontextprotocol\//, // MCP SDK（协议面）
-      /^node:/, // node 内置（net/crypto/url——白名单形状由 forbidden 反向收紧）
-      /^\.{1,2}\//, // 仓内相对模块（./ 与 ../——rpc 层已受各自纪律约束）
-    ];
-    const forbidden = [/ssh2/, /node:fs/, /node:child_process/];
-    const files = readdirSync(STUB_DIR).filter((f) => f.endsWith('.ts'));
-    expect(files.length).toBeGreaterThan(0);
-    for (const file of files) {
-      const source = readFileSync(join(STUB_DIR, file), 'utf8');
-      const imports = [...source.matchAll(/from\s+['"]([^'"]+)['"]/g)].map((m) => m[1]!);
-      for (const spec of imports) {
-        const ok = allowed.some((re) => re.test(spec)) && !forbidden.some((re) => re.test(spec));
-        expect(ok, `${file} imports '${spec}' — outside stub whitelist`).toBe(true);
+  const forbiddenSpec = [/^ssh2/, /^node:fs/, /^node:child_process/];
+
+  function scanFile(path: string, source: string, depth: number): string[] {
+    const issues: string[] = [];
+    const dynamic = [...source.matchAll(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/g)].map((m) => m[1]!);
+    const statics = [...source.matchAll(/(?:^|\n)\s*(?:import(?:\s+type)?\s+(?:[^'"]*?\s+from\s+)?)['"]([^'"]+)['"]/g)].map((m) => m[1]!);
+    for (const spec of [...statics, ...dynamic]) {
+      const isTypeOnly = new RegExp(`import\\s+type\\s[^\\n]*['"]${spec}['"]`).test(source);
+      const allowed =
+        /^@modelcontextprotocol\//.test(spec) ||
+        /^node:(net|crypto|url)$/.test(spec) ||
+        /^\.{1,2}\//.test(spec);
+      if (forbiddenSpec.some((re) => re.test(spec))) issues.push(`${path}: forbidden '${spec}'`);
+      if (!allowed && !isTypeOnly) issues.push(`${path}: outside whitelist '${spec}'`);
+      // 传递依赖：仓内相对导入递归下钻（type 豁免不递归；深度由 visited 封顶）。
+      if (spec.startsWith('.') && !isTypeOnly && depth < 6) {
+        const base = join(dirname(path), spec);
+        for (const candidate of [base + '.ts', join(base, 'index.ts')]) {
+          if (existsSync(candidate) && !visited.has(candidate)) {
+            visited.add(candidate);
+            issues.push(...scanFile(candidate, readFileSync(candidate, 'utf8'), depth + 1));
+          }
+        }
       }
+    }
+    return issues;
+  }
+  const visited = new Set<string>();
+
+  it('src/stub/** 运行时 import 全落白名单，递归覆盖仓内相对依赖', () => {
+    visited.clear();
+    const files = readdirSync(STUB_DIR, { recursive: true } as never)
+      .map(String)
+      .filter((f) => f.endsWith('.ts'));
+    expect(files.length).toBeGreaterThan(0);
+    const issues: string[] = [];
+    for (const file of files) {
+      const full = join(STUB_DIR, file);
+      if (visited.has(full)) continue;
+      visited.add(full);
+      issues.push(...scanFile(full, readFileSync(full, 'utf8'), 0));
+    }
+    expect(issues, issues.join('\n')).toEqual([]);
+  });
+
+  it('动态 import 与 require 通道按字节禁止（口径第 3 条）', () => {
+    for (const file of readdirSync(STUB_DIR).filter((f) => f.endsWith('.ts'))) {
+      const source = readFileSync(join(STUB_DIR, file), 'utf8');
+      expect(/import\s*\(/.test(source), `${file} uses dynamic import()`).toBe(false);
+      expect(/createRequire|new Function|eval\(/.test(source), `${file} uses eval/createRequire`).toBe(false);
     }
   });
 });
