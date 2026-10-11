@@ -2,8 +2,10 @@ id: T-07
 title: 端到端验收+实机抽验+接入文档
 level: L2
 blockedBy: T-03,T-04,T-05,T-06
-status: 待执行
-root: E:\\Development\\Code\\nodejs\\agent-ssh
+status: 执行中
+root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
+claimedBy: digital-architect
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L2 | blocked_by=T-03,T-04,T-05,T-06 | accept=①容器全链路演示：执行→大输出→SFTP→PTY→CLI 审批闭环→转发 ②README/安全红线/设备接入指引（最小权限账号+AAA 记账兜底）③主人实机四厂商抽验通过（登录→关分页→查询命令→退出，审计核验）。出处：技术方案 §5 实机抽验、§7 T7
+  - 2026-10-11 07:55:59 | claim | by=digital-architect

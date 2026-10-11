@@ -2,10 +2,17 @@ id: T-05
 title: 网络设备 deviceType 档案（华为/华三/思科/锐捷）+ssh2-Server 模拟器
 level: L1
 blockedBy: T-03
-status: 执行中
+status: 已落定
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
 claimedBy: digital-architect
+reportedAt: 2026-10-11 07:55:02
+reportSummary: ①四厂商档案落地:huawei(screen-length 0 temporary)/h3c(screen-length disable)/cisco+ruijie(terminal length 0),提示符正则各厂商,GB2312 编码缺口显式登记于档案②四厂商 ssh2-Server 模拟器 E2E 4/4:连接→自动关分页(与用户写入同路径,入转录)→提示符识别→查询命令回显→quit 远端关闭③审计留痕:转录单测 2(红action默认规则脱敏+字节上限冻结)+E2E 全输入入转录;档案单测 8。全量 2066 过/29 败(=前轮最小集)。真机抽验归 T-07。待主人 confirm。
+confirmedBy: master
+confirmedVia: 会话 ask_user 回执 2026-10-11「确认，继续 T-07 本地部分」
+confirmedAt: 2026-10-11 07:55:59
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-03 | accept=①四厂商档案（关分页命令/提示符正则/编码）落地 ②四模拟器 E2E：连接→自动关分页→提示符识别→查询命令→回显→退出 ③全量审计留痕。出处：技术方案 §1 Do10、§7 T5
   - 2026-10-11 07:43:04 | claim | by=digital-architect
+  - 2026-10-11 07:55:02 | report | by=digital-architect
+  - 2026-10-11 07:55:59 | confirm | by=digital-architect
