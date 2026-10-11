@@ -5,6 +5,7 @@ import { verifyHostKey, fingerprintPublicKey, type HostKeyMode } from './host-ke
 import type { Session, CloseOutcome } from './session.js';
 import { SessionManager } from './session-manager.js';
 import { PtySessionManager } from '../pty/pty-manager.js';
+import { ForwardManager } from '../forward/forward-manager.js';
 import type { Span } from '@opentelemetry/api';
 import { tracer } from '../observability/tracer.js';
 import { redactText } from '../guard/redactor.js';
@@ -135,6 +136,8 @@ export class SSHConnection {
   private credentials: ResolvedCredentials;
   private readonly sessions: SessionManager;
   private readonly ptySessions: PtySessionManager;
+  private readonly forwards: ForwardManager;
+  private readonly allowDynamicForwarding: boolean;
   private activeChannels = 0;
   private connecting: Promise<void> | null = null;
   /** Which connect() call currently owns `connecting`; see connect(). */
@@ -154,12 +157,15 @@ export class SSHConnection {
     bastionSock?: ClientChannel,
     /** Raw-PTY session bounds from [defaults]; U3 values when omitted (tests). */
     ptyBounds: { idleTimeoutMs: number; maxLifetimeMs: number } = { idleTimeoutMs: 600_000, maxLifetimeMs: 7_200_000 },
+    /** Dynamic (SOCKS) forwarding switch from [defaults]; off when omitted. */
+    allowDynamicForwarding = false,
   ) {
     this.profile = profile;
     this.credentials = credentials;
     this.knownHostsStore = knownHostsStore;
     this.hostKeyMode = hostKeyMode;
     this.bastionSock = bastionSock ?? null;
+    this.allowDynamicForwarding = allowDynamicForwarding;
 
     this.sessions = new SessionManager({
       // Live read: the profile object can be replaced after construction.
@@ -207,6 +213,12 @@ export class SSHConnection {
       getClient: () => this.getClient(),
       idleTimeoutMs: ptyBounds.idleTimeoutMs,
       maxLifetimeMs: ptyBounds.maxLifetimeMs,
+    });
+
+    this.forwards = new ForwardManager({
+      profile: () => this.profile,
+      getClient: () => this.getClient(),
+      allowDynamic: () => this.allowDynamicForwarding,
     });
   }
 
@@ -624,9 +636,36 @@ export class SSHConnection {
     return this.ptySessions.list();
   }
 
+  // ─── Port forwarding (agent-ssh) ──────────────────────────────────────
+
+  openForward(req: { mode: 'local' | 'remote' | 'dynamic'; listenHost?: string; listenPort: number; targetHost?: string; targetPort?: number }) {
+    if (req.mode === 'local') {
+      return this.forwards.openLocal({
+        listenHost: req.listenHost, listenPort: req.listenPort,
+        targetHost: req.targetHost!, targetPort: req.targetPort!,
+      });
+    }
+    if (req.mode === 'remote') {
+      return this.forwards.openRemote({
+        listenHost: req.listenHost, listenPort: req.listenPort,
+        targetHost: req.targetHost!, targetPort: req.targetPort!,
+      });
+    }
+    return this.forwards.openDynamic({ listenHost: req.listenHost, listenPort: req.listenPort });
+  }
+
+  listForwards() {
+    return this.forwards.list();
+  }
+
+  closeForward(id: string) {
+    return this.forwards.close(id);
+  }
+
   async close(): Promise<void> {
     await this.sessions.closeAll();
     await this.ptySessions.closeAll();
+    await this.forwards.closeAll();
     if (this.client) {
       this.client.end();
       this.client = null;

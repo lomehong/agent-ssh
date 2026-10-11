@@ -70,6 +70,8 @@ export interface Defaults {
   approvalMode: ApprovalMode;
   /** Where a human approval is sought (elicitation / queue / both). */
   approvalChannel: ApprovalChannel;
+  /** Generic SOCKS egress for dynamic forwarding; off by default. */
+  allowDynamicForwarding: boolean;
   /**
    * Local directory the streaming SFTP file tools are confined to. Absent means
    * those tools refuse — there is no "anywhere" setting.

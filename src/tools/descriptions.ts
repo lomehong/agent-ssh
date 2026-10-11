@@ -21,6 +21,9 @@ export const TOOL_DESCRIPTIONS: Record<string, string> = {
   'pty-resize': 'Resize a raw PTY session (rows x cols). Useful when device output wraps or paging changes with terminal width.',
   'pty-close': 'Close a raw PTY session. The shell is signalled (INT, then TERM, then KILL) before the channel is dropped; sessions also die on their own after the idle or lifetime bound.',
   'pty-list': 'List raw PTY sessions for a profile with their status, cursors, and transcript size. Read-only.',
+  'forward-open': 'Open a port forward over SSH: mode="local" (listen here, reach targetHost:targetPort via the host), mode="remote" (the host listens, connections land on targetHost:targetPort from here), or mode="dynamic" (SOCKS5, disabled unless allowDynamicForwarding=true). Opening classifies destructive — role matrix and approval gate apply — and the full listen→target pair is denylist-matched.',
+  'forward-close': 'Close a named port forward and destroy its live connections.',
+  'forward-list': 'List active port forwards with mode, listen address, target, and live connection count. Read-only.',
 };
 
 export function getToolHashes(): Record<string, string> {

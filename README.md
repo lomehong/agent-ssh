@@ -143,7 +143,7 @@ claude mcp add --transport stdio ssh-mcp -- ssh-mcp
 
 ---
 
-## Tools (20)
+## Tools (23)
 
 | Tool | Purpose | readOnly | destructive |
 |------|---------|:--------:|:----------:|
@@ -167,6 +167,9 @@ claude mcp add --transport stdio ssh-mcp -- ssh-mcp
 | `pty-resize` | Resize a PTY session (rows x cols) | — | — |
 | `pty-close` | Close a PTY session (signal ladder, then channel drop) | — | ✅ |
 | `pty-list` | List raw PTY sessions with status, cursors, transcript size | ✅ | — |
+| `forward-open` | Open a port forward: local (listen here → reach target via the host), remote (host listens → connections land on target), dynamic (local SOCKS5, disabled unless allowDynamicForwarding=true). Destructive floor + denylist on the full listen→target pair | — | ✅ |
+| `forward-close` | Close a named forward and destroy its live connections | — | ✅ |
+| `forward-list` | List active forwards with mode, listen address, target, connection count | ✅ | — |
 
 ### Raw PTY sessions (agent-ssh)
 

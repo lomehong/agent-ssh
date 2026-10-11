@@ -153,6 +153,10 @@ export const defaultsSchema = z.object({
   // 'both' (default) = try the client, fall to the queue when it cannot be
   // asked. A human decline is always final — only unavailability falls over.
   approvalChannel: z.enum(['elicitation', 'queue', 'both']).default('both'),
+  // Dynamic (SOCKS) port forwarding. Off by default: an open SOCKS listener is
+  // a generic egress path — every other tunnel names its target and can be
+  // denylisted, this one cannot. Opt-in, per deployment.
+  allowDynamicForwarding: z.boolean().default(false),
   /**
    * Where the streaming SFTP file tools may read and write on this machine.
    *

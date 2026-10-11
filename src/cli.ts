@@ -264,6 +264,7 @@ export function defaultsFromArgv(argv: Record<string, string | null>): Defaults 
     approvalGrantTtlMs: parseInt(argv.approvalGrantTtl as string) || 0,
     approvalMode: 'ask-destructive',
     approvalChannel: 'both',
+    allowDynamicForwarding: false,
     // No flag for transferRoot on purpose. It is the consent to touch local
     // disk, and the quick-start path exists for someone who passed a host and a
     // user on a command line — not a place to acquire that consent in passing.

@@ -594,7 +594,7 @@ const READ_ONLY_ALLOWLIST = new Set(
  * `sftp:upload`, `sftp:upload-file` and `sftp:download-file` stay out — the
  * first two write on the remote host, the third inside the transfer root.
  */
-const READ_ONLY_SYNTHETIC = new Set(['sftp:list', 'sftp:download', 'pty:read', 'pty:list']);
+const READ_ONLY_SYNTHETIC = new Set(['sftp:list', 'sftp:download', 'pty:read', 'pty:list', 'forward:list']);
 
 /**
  * Commands that are never allowed, whatever the role or approval policy.
@@ -2186,6 +2186,11 @@ const SYNTHETIC_CLASSES: Record<string, CommandClass> = Object.assign(
     // bearing half of the PTY safety plan's layer ① (owner-ratified U2): the
     // human gate lives HERE, at open, because nothing after open is classifiable.
     'pty:open': 'destructive',
+    // A tunnel is an authority grant: whatever the operator can reach, the
+    // agent can now reach through the listener. The synthesized command embeds
+    // the full listen→target pair, so `[policy].denylist` rules written against
+    // a target (`internal-db:5432`) refuse the tunnel before it opens.
+    'forward:open': 'destructive',
   },
 );
 
