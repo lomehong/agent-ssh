@@ -2,10 +2,17 @@ id: T-02
 title: 配置扩展：algorithms/keyboardInteractive/deviceType 骨架
 level: L1
 blockedBy: T-01
-status: 执行中
+status: 已落定
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:45
 claimedBy: digital-architect
+reportedAt: 2026-10-11 06:44:37
+reportSummary: ①容器旧算法 sshd(ssh-legacy:2228,仅 dh-group1/CBC/ssh-rsa/hmac-sha1)默认配置拒绝、algorithms 覆盖后连通并执行命令(E2E)②非法 deviceType 与未知算法类别被 schema 拒绝(单测)③keyboardInteractive handler 单测+E2E 到 admin 容器。安全语义:覆盖以 FROZEN_ALGORITHMS 为基底解析(deny-wins),绝不透传 ssh2(其 append 形式会绕过冻结表);启动告警+命令审计 algorithmsOverride 字段+span 标记。新增 27 测试全绿,全量回归失败集不扩大。b9676a8 已推送。待主人 confirm。
+confirmedBy: master
+confirmedVia: 会话 ask_user 回执 2026-10-11「确认，继续 T-03」
+confirmedAt: 2026-10-11 06:45:37
 events:
   - 2026-10-11 06:06:45 | create | by=lome | level=L1 | blocked_by=T-01 | accept=①容器旧算法 sshd 默认配置连接失败、profile.algorithms 放宽后连通且审计 warning ②非法 deviceType 被校验拒绝（未知键报错纪律保持）③keyboardInteractive 透传单测。出处：技术方案 §1 Do7、§4 兼容
   - 2026-10-11 06:31:35 | claim | by=digital-architect
+  - 2026-10-11 06:44:37 | report | by=digital-architect
+  - 2026-10-11 06:45:37 | confirm | by=digital-architect

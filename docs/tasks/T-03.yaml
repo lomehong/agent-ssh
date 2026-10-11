@@ -2,8 +2,10 @@ id: T-03
 title: 真 PTY 会话（Linux/generic）五原语+大输出治理接入
 level: L1
 blockedBy: T-02
-status: 待执行
-root: E:\\Development\\Code\\nodejs\\agent-ssh
+status: 执行中
+root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
+claimedBy: digital-architect
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-02 | accept=①MCP 客户端对容器 Linux 开 PTY 会话交互执行且 CWD 持续 ②超阈值输出截断落盘+分页回读 ③会话开启未审批被拒（破坏性类）④双超时生效（U3 默认：单次回读 32KB/总量 1MB、会话上限 2h）⑤会话全量内容审计（脱敏）。出处：技术方案 §1 Do4、§6 U2/U3
+  - 2026-10-11 06:45:37 | claim | by=digital-architect
