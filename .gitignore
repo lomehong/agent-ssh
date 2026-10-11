@@ -161,3 +161,6 @@ sonar-project.properties
 
 # Agent worktrees, created by review tooling.
 .claude/worktrees/
+
+# Rust (approver/)
+approver/target/

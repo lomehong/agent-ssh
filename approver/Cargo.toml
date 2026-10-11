@@ -1,0 +1,19 @@
+[package]
+name = "approver"
+version = "0.1.0"
+edition = "2021"
+description = "agent-ssh 桌面审批端（Tauri 2 技术栈）——T-17.5a 骨架：RPC 客户端 + 契约对拍，无 UI"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[lib]
+name = "approver"
+path = "src/lib.rs"
+
+[[bin]]
+name = "approver"
+path = "src/main.rs"

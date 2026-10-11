@@ -1,0 +1,36 @@
+# T-17.5a：approver/ Rust 子项目 CI（契约对拍 + 测试 + 供应链检查）。
+# 契约单一事实源在 TS 侧（test/fixtures/rpc/protocol-golden.json）——
+# 夹具变更经 TS 测试提交，本 job 只消费对拍。
+
+name: approver-rust
+
+on:
+  push:
+    paths:
+      - 'approver/**'
+      - 'test/fixtures/rpc/**'
+      - '.github/workflows/approver-rust.yml'
+  pull_request:
+    paths:
+      - 'approver/**'
+      - 'test/fixtures/rpc/**'
+      - '.github/workflows/approver-rust.yml'
+
+jobs:
+  test-and-deny:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: approver
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: approver
+      - name: cargo test（含 golden 契约对拍）
+        run: cargo test --locked
+      - name: cargo-deny（供应链：许可证/advisories/来源）
+        uses: EmbarkStudios/cargo-deny-action@v1
+        with:
+          manifest-path: approver/Cargo.toml
