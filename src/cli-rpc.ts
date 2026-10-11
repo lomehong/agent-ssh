@@ -46,7 +46,7 @@ function resolveHostAddr(args: string[]): { host: string; port: number } {
   return { host, port };
 }
 
-/** TTY 隐藏回显读口令；非 TTY（管道）读一行明文。 */
+/** TTY 隐藏回显读口令；非 TTY（管道）读一行明文。Ctrl+C 恢复终端态。 */
 async function askPassword(prompt: string): Promise<string> {
   if (process.stdin.isTTY !== true) {
     const chunks: string[] = [];
@@ -57,25 +57,29 @@ async function askPassword(prompt: string): Promise<string> {
   process.stdin.setRawMode(true);
   process.stdin.resume();
   let out = '';
-  for await (const chunk of process.stdin) {
-    const s = String(chunk);
-    if (s === '\r' || s === '\n') {
-      process.stdout.write('\n');
-      break;
+  try {
+    for await (const chunk of process.stdin) {
+      const s = String(chunk);
+      if (s === '\r' || s === '\n') {
+        process.stdout.write('\n');
+        break;
+      }
+      if (s === '\u007f' || s === '\b') {
+        out = out.slice(0, -1);
+        continue;
+      }
+      if (s === '\u0003') {
+        process.stdout.write('\n');
+        throw new OperatorError('Cancelled.');
+      }
+      out += s;
+      process.stdout.write('*');
     }
-    if (s === '\u007f' || s === '\b') {
-      out = out.slice(0, -1);
-      continue;
-    }
-    if (s === '\u0003') {
-      process.stdout.write('\n');
-      throw new OperatorError('Cancelled.');
-    }
-    out += s;
-    process.stdout.write('*');
+  } finally {
+    // Ctrl+C 抛错路径也必须恢复终端态（评审 T-17 jc4）。
+    process.stdin.setRawMode(false);
+    process.stdin.pause();
   }
-  process.stdin.setRawMode(false);
-  process.stdin.pause();
   return out;
 }
 
@@ -110,6 +114,7 @@ async function operatorClient(args: string[]): Promise<RpcClient> {
       skipHello: true,
       reconnect: false,
       requestTimeoutMs: 10_000,
+      ...(pin !== undefined && pin !== '' ? { tls: { pin } } : {}),
     });
     try {
       await pre.connect();

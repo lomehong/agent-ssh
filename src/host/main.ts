@@ -204,8 +204,23 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       }
       const command = p.command;
       // 禁止名单先于一切（T-13 High-1 整改语义随迁）：红线优先于配置与执行。
+      // 可审计点保留（评审 T-17 jc3）：Host 持有 AuditStore，拒绝亦留痕。
       const forbidden = findForbiddenMatch(command);
       if (forbidden !== null) {
+        await audit
+          .record({
+            mcpRequestId: 0,
+            profile: '(forbidden-before-profile)',
+            user: '(operator)',
+            command: redactText(command),
+            commandClass: 'safe',
+            binary: 'cli:run',
+            decision: 'deny',
+            ruleId: 'cli-direct-forbidden',
+            error: `forbidden pattern: ${forbidden}`,
+            approver: 'cli-direct',
+          })
+          .catch(() => {});
         throw new Error(`FORBIDDEN_PATTERN: ${forbidden} — 禁止名单对人工与模型一视同仁；确需此类操作请在服务器 shell 上自行评估执行。`);
       }
       const profileName = typeof p.profile === 'string' ? p.profile : undefined;
