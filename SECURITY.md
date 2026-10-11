@@ -1,144 +1,89 @@
-# Security Policy
+# 安全政策
 
-## Reporting a Vulnerability
+## 报告漏洞
 
-If you discover a security vulnerability in SSH MCP Server, please report it responsibly:
+如果你在 SSH MCP Server 中发现安全漏洞，请负责任地报告：
 
-1. **DO NOT** open a public GitHub issue.
-2. Report it privately, either way:
-   - [Open a private security advisory](https://github.com/tufantunc/ssh-mcp/security/advisories/new) — preferred, since it keeps the report, the fix and the CVE in one thread; or
-   - email <tufan.tunc.91@gmail.com>.
-3. Include:
-   - Description of the vulnerability
-   - Steps to reproduce
-   - Affected versions
-   - Potential impact
+1. **不要**开公开的 GitHub issue。
+2. 私下报告，任选其一：
+   - [发起私有安全通告](https://github.com/tufantunc/ssh-mcp/security/advisories/new)——推荐，报告、修复与 CVE 会保持在同一线索内；或
+   - 发邮件至 <tufan.tunc.91@gmail.com>。
+3. 请包含：
+   - 漏洞描述
+   - 复现步骤
+   - 受影响版本
+   - 潜在影响
 
-### Disclosure timeline
+### 披露时间线
 
-| When | What |
+| 时间 | 内容 |
 |---|---|
-| Within 72 hours | Acknowledgement that the report arrived, and whether it is reproducible |
-| Within 7 days | An assessment: affected versions, severity, and whether a fix is planned |
-| Within 90 days | Coordinated public disclosure, or sooner once a fixed release is published |
+| 72 小时内 | 确认收到报告，以及是否可复现 |
+| 7 天内 | 给出评估：受影响版本、严重程度、是否计划修复 |
+| 90 天内 | 协调式公开披露；修复版本发布后可提前 |
 
-Please keep the vulnerability private until a fixed release is out, or until the 90 days
-elapse — whichever comes first. Reporters are credited in the advisory unless they ask not
-to be.
+在修复版本发布之前、或 90 天期满之前（以先到者为准），请对漏洞保密。除非报告者另有要求，会在安全通告中署名致谢。
 
-## Threat Model
+## 威胁模型
 
-SSH MCP Server gives LLM agents the ability to execute shell commands on remote hosts via SSH. This creates a **"Lethal Trifecta"** risk (Simon Willison's framework):
+SSH MCP Server 让 LLM 智能体能够经 SSH 在远程主机上执行 shell 命令。这带来 **「Lethal Trifecta（致命三要素）」** 风险（Simon Willison 的框架）：
 
-1. **Access to private data** — the SSH session reaches the target host's filesystem
-2. **Exposure to untrusted content** — the LLM may have ingested prompt-injected data via tool results
-3. **Ability to communicate outward** — the SSH session has network access for data exfiltration
+1. **能访问私密数据** —— SSH 会话可达目标主机的文件系统
+2. **暴露于不可信内容** —— LLM 可能已通过工具结果摄入提示注入的数据
+3. **能向外通信** —— SSH 会话具备网络访问能力，可外传数据
 
-### v2 Mitigations
+### v2 的缓解措施
 
-| Risk | Mitigation |
+| 风险 | 缓解 |
 |------|------------|
-| Prompt injection via tool output | Command classifier + policy engine + human-in-the-loop approval for commands classified `destructive` or `privileged` — a narrower set than it sounds, see the `ask-destructive` note below |
-| Credential leakage via CLI args (CWE-214) | Credentials loaded from env vars / config files / SSH agent — never CLI args |
-| Sudo password in process list (CWE-522) | Sudo password piped via SSH channel stdin, not command-line `printf` |
-| Command injection via metadata | Sanitizer strips CR/LF/NUL from all metadata; `description` feature removed |
-| MITM attacks | TOFU host key verification by default, **for the life of one process** — see "Host key trust does not survive a restart" below. `trustedHostKey` on the profile is the only control here that outlives a restart |
-| Weak SSH algorithms | Frozen algorithm allow-list per RFC 9142 (no SHA-1, no CBC, no ssh-rsa) |
-| PTY session leaks (MaxSessions) | Interactive sessions are bounded, not absent: `sessionMaxPerConnection` (default 5), `sessionIdleTimeoutMs` (10 min), `sessionBackgroundMaxMs` (1 h), and a reaper that sweeps expired sessions every 60s. One-shot commands use `exec()` and hold no channel. No persistent `su` shells |
-| Unbounded agent actions | Per-profile RBAC, rate limits, denylist, approval modes |
-| Bearer token guessing | `--authFailureLimit` — a per-client budget spent only on failed auth, on by default |
+| 经工具输出的提示注入 | 命令分类器 + 策略引擎 + 对归类为 `destructive` 或 `privileged` 的命令做人工审批——实际范围比听起来窄，见下文 `ask-destructive` 的说明 |
+| 经 CLI 参数泄露凭据（CWE-214） | 凭据从环境变量/配置文件/SSH agent 加载——绝不走 CLI 参数 |
+| sudo 密码进入进程列表（CWE-522） | sudo 密码经 SSH 通道 stdin 管道传入，不用命令行 `printf` |
+| 经元数据的命令注入 | 净化器从所有元数据剥离 CR/LF/NUL；`description` 功能已移除 |
+| MITM 攻击 | 默认 TOFU 主机密钥验证，**仅限单进程存续期**——见下文「主机密钥信任不跨重启保留」。profile 上的 `trustedHostKey` 是此处唯一能跨重启保留的控制 |
+| 弱 SSH 算法 | 按 RFC 9142 冻结算法白名单（无 SHA-1、无 CBC、无 ssh-rsa） |
+| PTY 会话泄露（MaxSessions） | 交互式会话是有界的，不是不存在：`sessionMaxPerConnection`（默认 5）、`sessionIdleTimeoutMs`（10 分钟）、`sessionBackgroundMaxMs`（1 小时），并有回收器每 60 秒清扫过期会话。一次性命令走 `exec()`，不占用通道。没有持久的 `su` shell |
+| agent 行为无界 | 按 profile 的 RBAC、速率限制、拒绝清单、审批模式 |
+| Bearer 令牌猜测 | `--authFailureLimit`——按客户端计的预算，仅在认证失败时消耗，默认开启 |
 
-## Stopping a Command
+## 停止一条命令
 
-Six things stop a command, and they all escalate the same way on the exec channel —
-`SIGINT` immediately, `SIGTERM` after 1s, `SIGKILL` after 2s, then the channel is closed:
+有六种东西能停止一条命令，它们在 exec 通道上的升级方式全部相同——立即 `SIGINT`，1 秒后 `SIGTERM`，2 秒后 `SIGKILL`，然后关闭通道：
 
-| trigger | policy check | audit record |
+| 触发 | 策略检查 | 审计记录 |
 |---|---|---|
-| the command's timeout | no | the failed command's own record |
-| an MCP client cancelling the request | no | the failed command's own record |
-| a channel that arrives after the request already timed out | no | trace only (`ssh.exec.lateStop`) |
-| `close-session` on a background session | **no** | yes (`session:close …`, `ruleId session-release`) |
-| the session reaper (idle TTL, or `sessionBackgroundMaxMs`, 1h by default) | no | **no** |
-| connection teardown — shutdown, or the idle-connection reaper | no | **no** |
+| 命令自身的超时 | 无 | 失败命令自身的记录 |
+| MCP 客户端取消请求 | 无 | 失败命令自身的记录 |
+| 请求已超时后才到达的通道 | 无 | 仅 trace（`ssh.exec.lateStop`） |
+| 对后台会话执行 `close-session` | **无** | 有（`session:close …`，`ruleId session-release`） |
+| 会话回收器（空闲 TTL，或 `sessionBackgroundMaxMs`，默认 1 小时） | 无 | **无** |
+| 连接拆除——关机，或空闲连接回收器 | 无 | **无** |
 
-**Nothing on that list is policy-gated, and two of them leave no record.** The first four
-are the server stopping something policy already authorised when it started, which is
-strictly less authority than starting it. `close-session` is audited because it is
-caller-initiated, but it is deliberately *not* refusable: routing it through the policy
-engine meant a `readOnly` profile could open a background session and then be denied
-permission to close it, with no other way to stop the command for an hour. A control whose
-refusal mode is "the thing you asked me to stop keeps running" is worse than no control.
+**这份清单上没有任何一项经过策略门，其中两项不留任何记录。** 前四项是服务器在停止「策略在启动时已授权」的东西，其权限严格小于启动它的权限。`close-session` 被审计是因为它由调用方发起，但它被刻意设计为*不可拒绝*：若把它纳入策略引擎，一个 `readOnly` profile 可能打开一个后台会话，然后被拒绝关闭它的许可，而此后一小时内再无别的办法停掉那条命令。一个「拒绝的后果是你要停的东西继续跑」的控制，比没有控制更糟。
 
-The last two rows are the ones to weigh before pointing this at something that matters: a
-background `tail -f` that passes its TTL is `SIGKILL`ed by a timer, with no tool call, no
-policy check and no audit row. Set `sessionBackgroundMaxMs` and the idle TTL accordingly.
+最后两行是在把这个服务器指向重要东西之前需要掂量的：一个超出 TTL 的后台 `tail -f` 会被定时器 `SIGKILL`——没有工具调用、没有策略检查、没有审计行。请相应地设置 `sessionBackgroundMaxMs` 与空闲 TTL。
 
-### Host key trust does not survive a restart
+### 主机密钥信任不跨重启保留
 
-TOFU is real while the process lives and gone when it exits. The store behind it is a
-`Map` created per `ConnectionRegistry` (`src/ssh/connection-registry.ts`); nothing reads or
-writes it to disk, and nothing consults `~/.ssh/known_hosts`. So "accept on first connect,
-verify after" means verify *within this process*.
+TOFU 在进程存活期间真实存在，进程退出即消失。它背后的存储是每个 `ConnectionRegistry` 新建的一个 `Map`（`src/ssh/connection-registry.ts`）；没有任何东西把它读写到磁盘，也没有任何东西查询 `~/.ssh/known_hosts`。所以「首次连接接受、此后验证」的确切含义是*在本进程内*验证。
 
-That matters most in the deployment this server is usually in. A stdio MCP server starts
-and exits with the client, so a fresh accept happens every session, and an attacker
-positioned to intercept has to win once per start rather than once ever. The mismatch error
-that makes a swapped key visible only fires against a key this process already saw.
+这在服务器最常见的部署形态里最要紧。stdio MCP 服务器随客户端启动与退出，因此每个会话都会发生一次新的接受，能够在链路上拦截的攻击者必须在每次启动时赢一次，而不是一辈子赢一次。能让换钥显形的失配错误，只对进程已经见过的密钥触发。
 
-**`trustedHostKey` on the profile is the only control here that survives a restart.** Pin
-the fingerprint you expect. It is answered in `verifyHostKey` (`src/ssh/host-key.ts`) ahead
-of every other branch. It never *reads* the store, so an empty store does not weaken it and a
-stale entry cannot override it; it writes only under `tofu`, and only into an empty slot — see
-below, because that write is what an unpinned profile on the same host is judged against. Use it
-for anything that matters.
+**profile 上的 `trustedHostKey` 是唯一能跨重启保留的控制。** 把你期待的指纹固定下来。它在 `verifyHostKey`（`src/ssh/host-key.ts`）中先于所有其他分支被应答。它从不*读*存储，因此空存储不会削弱它，过期条目也不能覆盖它；它只在 `tofu` 下写入，且只写入空槽位——见下文，因为那次写入正是同主机上未固定 profile 被评判的基准。凡重要的东西都用它。
 
-Before 2.8.0 this section claimed the pin "is checked in `connection.ts` before the store is
-consulted at all, so an empty store does not weaken it". Under `strict` that was untrue, and in
-the direction that mattered: the pin was a reject-only gate, so it could refuse a wrong key but
-could not satisfy the store check that followed it. It is now the authority for the host it
-names, in every mode.
+2.8.0 之前，本节声称该固定「在 `connection.ts` 中、在任何存储查询之前检查，所以空存储不会削弱它」。在 `strict` 模式下这不成立，而且恰好在要紧的方向上：固定当时只是一道只拒不禁的门，它能拒绝错误的密钥，却不能满足其后的存储检查。如今在所有模式下，它都是它所命名主机的权威。
 
-A pinned profile does still record its key in the store under `tofu`, and only into an empty
-slot, so an unpinned profile on the same `host:port` is compared against a pin-verified
-fingerprint rather than trusting its own first use — and is never compared against a value some
-*other* pinned profile overwrote. Not recorded under `strict`: there the store is the only thing
-that can admit an unpinned profile, and seeding it from a pin would mean pinning one profile
-admitted every other. Not under `insecure` either, where the store decides nothing anyway.
+被固定的 profile 在 `tofu` 下仍会把密钥记入存储、且只写入空槽位，因此同一 `host:port` 上未固定的 profile 是在与「经固定验证的指纹」比较，而不是相信自己的首次使用——也绝不会与某个*其他*固定 profile 覆盖写入的值比较。`strict` 下不记录：那里存储是未固定 profile 获准的唯一途径，用固定值播种存储等于「固定一个 profile、放行其余全部」。`insecure` 下也不记录，那里存储本来就不起决定作用。
 
-The upshot is that nothing an unpinned profile experiences changed in 2.8.0. The mode and the
-pin decide only for the profile that carries them.
+结论：未固定的 profile 在 2.8.0 中的体验没有任何变化。模式与固定只对携带它们的 profile 生效。
 
-**`--hostKeyMode=strict` means "every host must be pinned".** Strict refuses any host whose
-key is not already trusted, and the store it consults is only ever written under `tofu`, by
-either write site — which strict, by definition, does not reach. Since the mode is fixed at startup, no earlier
-`tofu` connection can seed it either. So a pin is the only thing that satisfies strict, and
-strict is worth setting for exactly one reason: it turns a missing pin into a refusal instead
-of a first-use accept.
+**`--hostKeyMode=strict` 意味着「每台主机都必须被固定」。** strict 拒绝任何密钥尚未受信的主机，而它查询的存储只在 `tofu` 下被写入——两个写入点都是，而 strict 按定义到不了那里。由于模式在启动时固定，更早的 `tofu` 连接也无法为它播种。所以固定是满足 strict 的唯一途径，而 strict 值得设置的理由只有一个：它把「缺失固定」变成拒绝，而不是首次使用即接受。
 
-Before 2.8.0 that combination connected to nothing. Strict threw `HOST_KEY_UNKNOWN` for every
-host on every connection — measured, two consecutive connections with the store still at zero
-entries — and a matching `trustedHostKey` did not change it, because the pin never wrote to
-the store and its gate ran before the function that would have consulted it. The refusal's own
-advice, "pin the key with trustedHostKey", was the advice that did not work.
+2.8.0 之前，这个组合连不上任何主机。strict 曾对每次连接的每台主机抛 `HOST_KEY_UNKNOWN`——实测：存储保持零条目的情况下连续两次连接——而匹配的 `trustedHostKey` 也不起作用，因为固定从不写存储，它的门又跑在本来会查询存储的函数之前。拒绝消息自己的建议「用 trustedHostKey 固定密钥」，恰恰是那条不起作用的建议。
 
-A key that contradicts a pin is refused as `HOST_KEY_PIN_MISMATCH` in **every** mode,
-`insecure` included. That is deliberate and predates the fix — the old gate sat ahead of the
-mode check, and the ordering was preserved because losing it would have been a regression
-dressed as a cleanup. There is no mode that overrides a pin, and the refusal does not offer
-one.
+与固定矛盾的密钥在**所有**模式下都被拒绝为 `HOST_KEY_PIN_MISMATCH`，`insecure` 也不例外。这是刻意的，且早于那次修复——旧门位于模式检查之前，这个顺序被保留了下来，因为丢掉它就等于「把回归伪装成清理」。没有任何模式能覆盖固定，拒绝消息也不提供这种模式。
 
-**`ask-destructive` gates less than the name suggests, and `kill` is one example rather
-than the exception.** Outside the never-allowed list, five things produce the `destructive`
-class: the pattern `/rm\s+-rf?\s+\//`, a disqualifying argument on an otherwise allowlisted
-binary (`find … -delete`, `find … -exec`), a command word this process cannot resolve
-statically (`$VAR` as the command), a program handed to an interpreter this process cannot
-read (`python3 -c`, `perl -e`, `node -e`, `php -r`, and a program arriving on a pipe), and
-the two commands this server synthesises that act on the target (`sftp:upload`,
-`session:open`). **`awk` is not among them**: its program is read by none of this, so
-`awk 'BEGIN{system("...")}'` classifies `safe` exactly as it does on 2.5.1.
-Elevation classifies `privileged` rather than `destructive`; this mode gates both. Ordinary write verbs are in none of these. Measured against the shipped classifier, all of these are `safe`,
-and `safe` raises no prompt in this mode:
+**`ask-destructive` 拦截的比名字暗示的少，`kill` 是常态而不是例外。** 在「永不放行」清单之外，产生 `destructive` 类别的只有五件事：模式 `/rm\s+-rf?\s+\//`、在原本白名单的二进制上出现取消资格的参数（`find … -delete`、`find … -exec`）、本进程无法静态解析的命令词（`$VAR` 作为命令）、交给本进程读不懂的解释器的程序（`python3 -c`、`perl -e`、`node -e`、`php -r`，以及经管道到达的程序），以及本服务器合成的两条作用于目标机的命令（`sftp:upload`、`session:open`）。**`awk` 不在其中**：它的程序不被上述任何机制读取，因此 `awk 'BEGIN{system("...")}'` 的归类与 2.5.1 上完全一样是 `safe`。提权归类为 `privileged` 而非 `destructive`；本模式对两者都设门。普通的写动词不在以上任何一类。对照随版本发布的分类器实测，下面这些都是 `safe`，而 `safe` 在本模式下不触发提示：
 
 ```
 rm -f /etc/passwd          mv /etc/passwd /tmp/x       truncate -s0 /etc/passwd
@@ -146,36 +91,15 @@ rm -r -f /                 rm --recursive --force /    rm -rf ~
 shred /dev/sda             systemctl stop nginx        kill -9 <pid>
 ```
 
-So `ask-destructive` buys a prompt on elevation and on `rm -rf /path`. It does not buy one
-on writes, deletions spelled another way, service control, or signals. **`ask-all` is the
-mode that gates writes**, and it is the right default for a profile pointed at anything that
-matters. A `readOnly` profile, or a role whose bindings exclude `safe`, are the other two
-controls that actually cover this set — the command set, that is, not the threat-model rows
-near the top of this file.
+所以 `ask-destructive` 在提权和 `rm -rf /path` 上买到一次提示。在写操作、换拼法的删除、服务控制、信号上买不到。**`ask-all` 才是管住写操作的模式**，对指向重要东西的 profile，它才是正确的默认。`readOnly` profile，或绑定中不含 `safe` 的角色，是真正覆盖这组命令的另外两个控制——这里说的是命令集意义上的覆盖，不是本文件开头威胁模型表格意义上的。
 
-**The blast radius is the process group, not one process.** OpenSSH answers a `signal`
-channel request with `killpg()` on the command's group (`session.c`,
-`session_signal_req`), so an ordinary process tree does die — measured against 10.3p1, a
-shell and its child share one process group and both are gone after a single `SIGKILL`
-request. This is the server's behaviour rather than a protocol guarantee: RFC 4254 §6.9
-does not specify delivery semantics, sshd refuses signal requests for forced-command and
-subsystem sessions, and another server (this project also tests Dropbear) may differ.
+**爆炸半径是进程组，不是单个进程。** OpenSSH 以对命令进程组执行 `killpg()` 来响应 `signal` 通道请求（`session.c` 的 `session_signal_req`），因此普通的进程树确实会死——对照 10.3p1 实测：shell 及其子进程同属一个进程组，一次 `SIGKILL` 请求后两者都消失。这是本服务器的行为而非协议保证：RFC 4254 §6.9 未规定送达语义，sshd 对 forced-command 与 subsystem 会话拒绝信号请求，其他服务器（本项目也测试 Dropbear）可能不同。
 
-**Nothing acknowledges a signal request.** For `exec`, the absence of a warning in the
-error means the request was dispatched, not that the process died; when it could not be
-dispatched at all the error says so ("could not be signalled, so it may still be running on
-the host"). The `ssh.unstopped` span attribute carries the same fact for every `exec` stop
-that had a channel to signal — a timeout that fires before the channel exists records
-`ssh.stopDeferred` instead, and the outcome then lands on a separate `ssh.exec.lateStop`
-span. `close-session` reports its own outcome in the tool result and in the audit record's
-exit code rather than on a span: it distinguishes a confirmed close from a signal that was
-dispatched but never took, and from one that could not be dispatched at all.
+**没有任何东西确认信号请求已被送达。** 对 `exec` 而言，错误里没有告警只说明请求已派发，不说明进程已死；完全无法派发时错误会明说（「无法发送信号，进程可能仍在主机上运行」）。`ssh.unstopped` span 属性为每一次「有通道可发信号」的 `exec` 停止携带同一事实——通道尚不存在就触发的超时改记 `ssh.stopDeferred`，其结果落在单独的 `ssh.exec.lateStop` span 上。`close-session` 在工具结果与审计记录的退出码中报告自己的结局，而不是靠 span：它区分「确认关闭」「信号已派发但未生效」与「完全无法派发」三种情形。
 
-### An interactive session is outside name-based classification
+### 交互式会话在基于名称的分类之外
 
-`run-command` classifies each input on its own, but an interactive session is a persistent
-PTY shell that keeps whatever the previous input left behind. So a command word can be
-redefined by one call and used by the next, and both calls classify low:
+`run-command` 对每次输入单独分类，但交互式会话是一个持久的 PTY shell，保留上一条输入留下的状态。于是命令词可以被一次调用重定义、被下一次调用使用，而两次调用都归类为低危：
 
 ```
 alias ls='sudo id'              safe        allowed
@@ -187,159 +111,105 @@ cat /etc/hosts                  read-only   allowed — runs /tmp/mine/cat
 ls() { sudo id; }               safe        allowed
 ```
 
-The classifier already answers this for variables, but less strongly than "refused": `S=sudo`
-then `$S id` classifies `destructive`, because a command word containing `$` cannot be
-resolved statically. So it reaches the approval gate — prompted under
-`ask-destructive` or `ask-all`, refused outright under `deny` or where `destructive` is not
-bound for the role and tier, and allowed under `auto`. The alias,
-shell function and `PATH` cases do not even reach that: they classify `safe` or `read-only`,
-below the class that prompts, because the command word is an ordinary name and nothing about
-it looks wrong. That difference is the gap, and it is one class wide.
+分类器对变量已经有所回应，但达不到「拒绝」的强度：`S=sudo` 后执行 `$S id` 会归类为 `destructive`，因为含 `$` 的命令词无法静态解析，于是它会到达审批门——在 `ask-destructive` 或 `ask-all` 下提示，在 `deny` 或该角色/层级未绑定 `destructive` 之处直接拒绝，在 `auto` 下放行。而别名、shell 函数与 `PATH` 的情形连这一步都到不了：它们归类为 `safe` 或 `read-only`，低于触发提示的类别，因为命令词只是个普通名字，看不出任何不对劲。这个差别就是缺口，宽度正好一个类别。
 
-**This is not fixable by classifying harder.** The state lives in the remote shell, not in
-this server, and a name-based classifier cannot know what a name means on the other end.
-Treat the ability to open an interactive session as the privilege it is:
+**这不是靠更狠的分类能修好的。** 状态活在远程 shell 里，不在本服务器，基于名称的分类器不可能知道名字在另一端意味着什么。请把「能打开交互式会话」本身当作它实际是的那种特权来对待：
 
-- Opening one classifies `destructive` as of 2.6.0, so under the default rules `operator`
-  cannot open one on `prod` at all, and `admin` is prompted. Before 2.6.0 it was `safe`.
-- On a profile that grants `destructive`, `approvalPolicy = "ask-all"` is the control that
-  covers the second call as well as the first.
-- A `readOnly` profile is unaffected: it holds `read-only` only, so it cannot set the alias
-  in the first place.
+- 自 2.6.0 起，打开交互式会话归类为 `destructive`，因此默认规则下 `operator` 在 `prod` 上根本打不开，`admin` 会被提示。2.6.0 之前它是 `safe`。
+- 在授予 `destructive` 的 profile 上，`approvalPolicy = "ask-all"` 是同时覆盖第一次与第二次调用的控制。
+- `readOnly` profile 不受影响：它只持有 `read-only`，根本设置不了别名。
 
-### `read-only` is granted by grammar, not by binary name
+### `read-only` 由文法授予，不由二进制名授予
 
-A command classifies `read-only` only when every argument after the command word is
-provably data under a grammar declared for that binary (`src/policy/classifier.ts`
-`READERS`, `src/policy/reader-grammar.ts`) — not merely because the first word is on the
-allowlist. An option the grammar does not list, an abbreviation of one it does list, a
-short-option cluster containing an unlisted letter, an argument carrying an unquoted shell
-glob (`*`, `?`, `[`), or an operand shaped like something the
-binary would write to, all fall the whole command to `safe` instead of `read-only`.
+一条命令只有当命令词之后的每个参数都能在该二进制声明的文法下被证明是数据时（`src/policy/classifier.ts` 的 `READERS`、`src/policy/reader-grammar.ts`），才归类为 `read-only`——而不是因为第一个词在白名单上。文法未列出的选项、已列选项的缩写、含未列出字母的短选项簇、携带未加引号 shell 通配符（`*`、`?`、`[`）的参数，或形如该二进制会写入的目标的操作数——任一出现，整条命令都会降为 `safe` 而不是 `read-only`。
 
-`read-only` is the class a `readOnly` profile is confined to, the class `viewer` holds on
-prod and staging (on dev the viewer holds `safe` too), and the class `read-command`
-requires; all of these refuse `safe` except the viewer on dev. So a command
-that used to run under the old, name-only rule can now be refused under the same profile,
-role or tool. The refusal names the rejected word, so the caller sees which spelling of the
-same command would still qualify, rather than concluding the binary is forbidden outright.
+`read-only` 是 `readOnly` profile 被限制的类别，是 `viewer` 在 prod 与 staging 上持有的类别（dev 上的 viewer 还额外持有 `safe`），也是 `read-command` 要求的类别；除 dev 上的 viewer 外，这些场景都拒绝 `safe`。所以过去在旧的「只看名字」规则下能跑的命令，如今在同一个 profile、角色或工具下可能被拒绝。拒绝消息会指出被拒的词，调用方因此能看出同一命令的哪种写法仍然合格，而不是断定该二进制被整体封禁。
 
-`DISQUALIFYING_ARGS` is unaffected by this and still runs first: it can still raise a
-command above `safe` for every role, including `operator` and `admin`, regardless of what
-the reader's grammar accepts. The grammar only ever decides between `read-only` and `safe`.
+`DISQUALIFYING_ARGS` 不受此影响，仍然最先运行：无论 reader 文法接受什么，它仍然可以把命令抬到 `safe` 之上，并对所有角色生效，包括 `operator` 与 `admin`。文法只在 `read-only` 与 `safe` 之间做决定。
 
-**Residual risks, recorded rather than closed:**
+**残留风险，如实记录而非闭合：**
 
-- **DNS/ICMP egress.** `dig`, `nslookup`, `host`, `ping` and `traceroute` can leak small
-  amounts of data through the queries and probes they send. None of them can modify the
-  host, so they stay `read-only`; tighten them via profile policy (denylist, or omit the
-  role) if egress matters.
-- **UNC path operands on Windows.** An operand shaped like a UNC path (`\\host\share\x`)
-  passed to a reader such as `cat` or `sort` makes the Windows host authenticate to the
-  named SMB server, which can leak an NTLM credential. The host itself is not changed, so
-  this falls outside the `read-only` contract — that contract is about writes, not about an
-  outbound authentication attempt.
-- **`git status` may write to `.git/index`.** It can opportunistically refresh cached stat
-  data there when it is stale; it writes no tracked content, ref or config. A host that
-  wants to disable even that can set `GIT_OPTIONAL_LOCKS=0`.
-- **Glob characters beyond `*`, `?` and `[`.** The unquoted-glob check covers the
-  characters every POSIX shell expands. A remote login shell that is zsh with the
-  non-default `extendedglob` option set also treats `^`, `#` and `~` as glob operators, and
-  those are not checked. Keep `extendedglob` off for the account this server logs in as.
-- **The `'any'` grammar entries are unverified claims, not proofs.** No test can show a
-  binary has no write mode at all. The mitigation is that every `'any'` entry in `READERS`
-  carries a source comment naming what was checked and what was found, and an entry with no
-  such claim accepts no arguments.
+- **DNS/ICMP 出口。** `dig`、`nslookup`、`host`、`ping` 与 `traceroute` 能经它们发出的查询与探测泄露少量数据。它们都不能修改主机，所以保持 `read-only`；若出口是敏感点，请经 profile 策略收紧（denylist，或去掉该角色）。
+- **Windows 上的 UNC 路径操作数。** 形如 UNC 路径的操作数（`\\host\share\x`）传给 `cat`、`sort` 之类 reader 时，会让 Windows 主机向所指的 SMB 服务器认证，可能泄露 NTLM 凭据。主机本身未被更改，所以这落在 `read-only` 契约之外——该契约针对的是写入，不是向外的认证尝试。
+- **`git status` 可能写 `.git/index`。** 当缓存的 stat 数据过期时，它会顺手刷新；它不写任何被跟踪内容、引用或配置。想连这个也关掉的主机可设置 `GIT_OPTIONAL_LOCKS=0`。
+- **`*`、`?`、`[` 之外的 glob 字符。** 未加引号的 glob 检查覆盖每个 POSIX shell 都会展开的字符。若远程登录 shell 是 zsh 且开启了非默认的 `extendedglob` 选项，`^`、`#` 与 `~` 也会被当作 glob 操作符，而它们不被检查。请为本服务器登录所用的账户保持 `extendedglob` 关闭。
+- **`'any'` 文法条目是未经验证的断言，不是证明。** 没有测试能证明一个二进制完全不存在写模式。缓解在于 `READERS` 中每个 `'any'` 条目都带源码注释，写明查过什么、发现了什么；没有此类断言的条目不接受任何参数。
 
-## Safe Deployment Guidelines
+## 安全部署指南
 
-1. **Never run as root.** Create a dedicated low-privilege service account.
-2. **Use command-specific sudoers** instead of blanket `NOPASSWD: ALL`.
-3. **Enable `ask-all` approval mode** for production profiles. `ask-destructive` is the
-   shipped default but gates far less than its name suggests — see the note on it below
-   before choosing it for anything that matters.
-4. **Restrict network egress** on the target host (iptables/Cilium) to prevent data exfiltration.
-5. **Use read-only profiles** (`readOnly = true`) for monitoring/observer access.
-6. **Review audit logs** regularly — all commands are logged with redaction.
-7. **Restrict your config file** — `chmod 700` the directory and `chmod 600` the file; on
-   Linux and macOS the server refuses to start otherwise, and `chmod 600` alone does not
-   satisfy the directory check. On Windows there are no mode bits: the ACL should grant only
-   your account, `SYSTEM` and `Administrators`, which a config under `%APPDATA%` inherits
-   automatically. There the finding is reported rather than enforced — `--strictConfigAcl`
-   enforces it if you want that.
+1. **绝不用 root 运行。** 创建专用的低权限服务账户。
+2. **使用按命令限定的 sudoers**，而不是一刀切的 `NOPASSWD: ALL`。
+3. **为生产 profile 启用 `ask-all` 审批模式。** 随版本默认的 `ask-destructive` 拦截的远比名字暗示的少——在把它用于重要东西之前，先读下文关于它的说明。
+4. **限制目标主机的网络出口**（iptables/Cilium），防止数据外传。
+5. 监控/观察类访问使用**只读 profile**（`readOnly = true`）。
+6. 定期**复查审计日志**——所有命令都经脱敏后记录。
+7. **收紧配置文件权限**——目录 `chmod 700`、文件 `chmod 600`；在 Linux 与 macOS 上不满足则服务器拒绝启动，且只做 `chmod 600` 满足不了目录检查。Windows 没有模式位：ACL 应只授予你的账户、`SYSTEM` 与 `Administrators`，`%APPDATA%` 下的配置会自动继承这一点。该平台上此类发现是报告而非强制——需要强制请用 `--strictConfigAcl`。
 
-## Supported Versions
+## 支持的版本
 
-| Version | Supported |
+| 版本 | 支持状态 |
 |---------|-----------|
-| 2.x     | Yes       |
-| 1.x     | No (EOL)  |
+| 2.x     | 是       |
+| 1.x     | 否（已停止维护）  |
 
-## Security Checklist for Contributors
+## 贡献者安全检查清单
 
-- [ ] No secrets in CLI args, error messages, or logs
-- [ ] All user input sanitized (no CR/LF/NUL in shell-interfaced data)
-- [ ] Sudo passwords piped via stdin, not argv
-- [ ] Error messages use fixed strings, not `${buffer}` interpolations
-- [ ] New tools declare MCP annotations (`readOnlyHint`, `destructiveHint`)
-- [ ] Tests cover the security boundary (property tests for sanitizers)
+- [ ] CLI 参数、错误信息、日志中不出现机密
+- [ ] 所有用户输入经净化（与 shell 交互的数据中无 CR/LF/NUL）
+- [ ] sudo 密码经 stdin 管道传入，不走 argv
+- [ ] 错误消息使用固定字符串，不做 `${buffer}` 插值
+- [ ] 新工具声明 MCP 注解（`readOnlyHint`、`destructiveHint`）
+- [ ] 测试覆盖安全边界（净化器的 property 测试）
 
-## Compliance Mapping
+## 合规映射
 
-SSH MCP Server v2 implements controls that map to common security frameworks. This mapping documents which features support specific control requirements — it does **not** constitute formal certification. The **deployer** is responsible for the full deployment's compliance posture.
+SSH MCP Server v2 实现的控制项可映射到常见安全框架。本映射说明哪些特性支撑哪些具体控制要求——它**不**构成正式认证。完整部署的合规姿态由**部署方**负责。
 
-### Independent assessment
+### 独立评估
 
-Everything in the tables below is **self-assessed**. The one continuous outside reading is
-[OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tufantunc/ssh-mcp), which
-re-grades the repository weekly and on every change to `main` or to branch protection, and
-publishes the result. Findings also land in the repository's Security tab alongside CodeQL's.
+下表中的所有内容都是**自评估**。唯一持续的外部评读是 [OpenSSF Scorecard](https://scorecard.dev/viewer/?uri=github.com/tufantunc/ssh-mcp)：它每周、以及每当 `main` 或分支保护发生变更时重新评分并发布结果。发现项也会与 CodeQL 一起进入仓库的 Security 标签页。
 
-Read it for what it measures: the **supply chain and development process** — is there a
-security policy, are dependencies pinned and updated, is code scanning on, are releases
-signed, can history be rewritten. It says nothing about the runtime controls the tables
-below describe; no automated grader executes the policy engine. A high score means this
-project is built in a way that makes tampering hard to hide, not that a deployment of it
-is secure.
+请按它实际度量的东西来读它：**供应链与开发过程**——有没有安全政策、依赖是否固定并及时更新、代码扫描是否开启、发布是否签名、历史能否被重写。它对下表描述的运行时控制只字未提；没有任何自动化评分器会去执行策略引擎。高分意味着这个项目以「篡改难以隐藏」的方式构建，而不意味着某次部署是安全的。
 
-### SOC 2 (AICPA Trust Services Criteria)
+### SOC 2（AICPA 信任服务准则）
 
-| Control | Description | SSH MCP v2 Feature |
+| 控制项 | 说明 | SSH MCP v2 特性 |
 |---------|-------------|-------------------|
-| CC6.1 | Logical and physical access controls | Policy engine with RBAC (viewer/operator/admin), per-profile `readOnly` flag, denylist enforcement |
-| CC6.6 | Network access security | TOFU host key verification (per process; `trustedHostKey` to pin — see "Host key trust does not survive a restart"), RFC 9142 algorithm allow-list, `via` ProxyJump without agent forwarding |
-| CC7.1 | System monitoring | Audit log (JSONL + ECS fields), 3-layer output redaction (field/regex/entropy) |
-| CC7.2 | Detection of security events | Command classification (read-only/safe/destructive/privileged), policy denial logging |
-| CC8.1 | Change management | `approvalPolicy` modes (auto/ask-destructive/ask-all/deny), MCP elicitation for commands classified `destructive` or `privileged`; `ask-all` for every command |
-| CC9.1 | Risk mitigation | Credential cascade (agent > keychain > env, never CLI args), config file and directory permission checks (0600/0700), ACL check on Windows |
+| CC6.1 | 逻辑与物理访问控制 | 带 RBAC 的策略引擎（viewer/operator/admin）、按 profile 的 `readOnly` 标志、denylist 强制执行 |
+| CC6.6 | 网络访问安全 | TOFU 主机密钥验证（按进程；`trustedHostKey` 固定——见「主机密钥信任不跨重启保留」）、RFC 9142 算法白名单、无 agent 转发的 `via` ProxyJump |
+| CC7.1 | 系统监控 | 审计日志（JSONL + ECS 字段）、三层输出脱敏（字段/正则/熵） |
+| CC7.2 | 安全事件检测 | 命令分类（read-only/safe/destructive/privileged）、策略拒绝日志 |
+| CC8.1 | 变更管理 | `approvalPolicy` 模式（auto/ask-destructive/ask-all/deny）、对归类为 `destructive` 或 `privileged` 的命令做 MCP elicitation；`ask-all` 覆盖每条命令 |
+| CC9.1 | 风险缓解 | 凭据级联（agent > keychain > env，绝不 CLI 参数）、配置文件与目录权限检查（0600/0700）、Windows 上的 ACL 检查 |
 
 ### PCI-DSS v4.0
 
-| Requirement | Description | SSH MCP v2 Feature |
+| 要求 | 说明 | SSH MCP v2 特性 |
 |-------------|-------------|-------------------|
-| Req. 6.5 | Secure coding | Command sanitizer (CR/LF/NUL stripping), error message hygiene (no secret leakage), property tests |
-| Req. 7.2 | Least privilege | Per-profile RBAC, `readOnly` profiles, command-specific denylist |
-| Req. 8.3 | Authentication | SSH agent / key / keychain auth, SSH CA certificate support, no plaintext CLI credentials |
-| Req. 10.2 | Audit trails | Append-only JSONL audit log, MCP requestId correlation, optional tamper-evident hash-chain |
-| Req. 10.4 | Audit log protection | 3-layer redaction (field/regex/entropy), log rotation, audit file 0600 permissions |
+| Req. 6.5 | 安全编码 | 命令净化器（剥离 CR/LF/NUL）、错误消息卫生（不泄露机密）、property 测试 |
+| Req. 7.2 | 最小权限 | 按 profile 的 RBAC、`readOnly` profile、按命令的 denylist |
+| Req. 8.3 | 认证 | SSH agent / 密钥 / 密钥链认证、SSH CA 证书支持、无明文 CLI 凭据 |
+| Req. 10.2 | 审计轨迹 | 只追加的 JSONL 审计日志、MCP requestId 关联、可选的防篡改哈希链 |
+| Req. 10.4 | 审计日志保护 | 三层脱敏（字段/正则/熵）、日志轮转、审计文件 0600 权限 |
 
 ### ISO/IEC 27001:2022
 
-| Annex A Control | Description | SSH MCP v2 Feature |
+| 附录 A 控制项 | 说明 | SSH MCP v2 特性 |
 |-----------------|-------------|-------------------|
-| A.8.2 | Privileged access rights | RBAC roles, policy engine, approval modes, denylist |
-| A.8.5 | Secure authentication | Credential cascade, no CLI-arg secrets, keychain + SSH agent + CA cert support |
-| A.8.23 | Web filtering | `--transport http` requires bearer auth, per-client `--rateLimit` token bucket, `--allowedHosts` Host-header allow-list |
-| A.12.4 | Logging and monitoring | Audit log with ECS fields, hash-chain option, redaction |
-| A.13.1 | Network security controls | Host key verification, frozen algorithms, ProxyJump tunnel |
-| A.14.2 | Security in development | Property tests (fast-check), SAST (Semgrep), secret scanning (gitleaks), npm provenance |
+| A.8.2 | 特权访问权限 | RBAC 角色、策略引擎、审批模式、denylist |
+| A.8.5 | 安全认证 | 凭据级联、CLI 参数无机密、keychain + SSH agent + CA 证书支持 |
+| A.8.23 | 网页过滤 | `--transport http` 要求 bearer 认证、按客户端的 `--rateLimit` 令牌桶、`--allowedHosts` Host 头白名单 |
+| A.12.4 | 日志与监控 | 带 ECS 字段的审计日志、哈希链选项、脱敏 |
+| A.13.1 | 网络安全控制 | 主机密钥验证、冻结算法、ProxyJump 隧道 |
+| A.14.2 | 开发中的安全 | property 测试（fast-check）、SAST（Semgrep）、机密扫描（gitleaks）、npm 溯源 |
 
-### HIPAA (45 CFR §164.312)
+### HIPAA（45 CFR §164.312）
 
-| Requirement | Description | SSH MCP v2 Feature |
+| 要求 | 说明 | SSH MCP v2 特性 |
 |-------------|-------------|-------------------|
-| §164.312(a)(1) | Access control | Policy engine RBAC, per-profile readOnly, session limits |
-| §164.312(b) | Audit controls | JSONL audit log with command/user/host/decision, hash-chain tamper-evidence |
-| §164.312(c)(1) | Integrity | Redaction pipeline prevents PHI leakage in logs, error hygiene |
-| §164.312(d) | Person or entity authentication | Credential cascade (agent/keychain/key/CA cert), host key verification |
-| §164.312(e)(1) | Transmission security | SSH with RFC 9142 algorithms, TOFU host key verification (per process; `trustedHostKey` to pin), no agent forwarding |
+| §164.312(a)(1) | 访问控制 | 策略引擎 RBAC、按 profile 的 readOnly、会话限制 |
+| §164.312(b) | 审计控制 | 含命令/用户/主机/决策的 JSONL 审计日志、哈希链防篡改 |
+| §164.312(c)(1) | 完整性 | 脱敏管线防止日志中的 PHI 泄露、错误卫生 |
+| §164.312(d) | 人员或实体认证 | 凭据级联（agent/keychain/key/CA 证书）、主机密钥验证 |
+| §164.312(e)(1) | 传输安全 | 采用 RFC 9142 算法的 SSH、TOFU 主机密钥验证（按进程；`trustedHostKey` 固定）、无 agent 转发 |
+

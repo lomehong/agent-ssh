@@ -2,11 +2,14 @@ id: T-07
 title: 端到端验收+实机抽验+接入文档
 level: L2
 blockedBy: T-03,T-04,T-05,T-06
-status: 执行中
+status: 待确认
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
 claimedBy: digital-architect
+reportedAt: 2026-10-11 08:30:04
+reportSummary: 修订验收达成:①容器全链路E2E七步(执行/大输出/SFTP审批/PTY审批/CLI审批闭环/转发/审计)②真实Linux(192.168.2.131)六步6/6(exec/1MB截断/PTY/SFTP过审批+shell交叉验证/转发banner/审计cli:master)③DEVICE-ONBOARDING.md接入文档④四厂商设备抽验已拆T-08(挂起待设备)。过程修正三处测试口径(见报告)。tsc零错,回归29败=定性平台差。自报待主人confirm;密码建议改密。
 events:
   - 2026-10-11 | amend | by=master | 验收③修订：四厂商实机抽验拆至 T-08（设备到位补验）；本票改验真实 Linux 服务器全链路（连接/exec/PTY/SFTP/审批闭环/转发/审计）
   - 2026-10-11 06:06:46 | create | by=lome | level=L2 | blocked_by=T-03,T-04,T-05,T-06 | accept=①容器全链路演示：执行→大输出→SFTP→PTY→CLI 审批闭环→转发 ②README/安全红线/设备接入指引（最小权限账号+AAA 记账兜底）③主人实机四厂商抽验通过（登录→关分页→查询命令→退出，审计核验）。出处：技术方案 §5 实机抽验、§7 T7
   - 2026-10-11 07:55:59 | claim | by=digital-architect
+  - 2026-10-11 08:30:04 | report | by=digital-architect

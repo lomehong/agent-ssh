@@ -1,71 +1,71 @@
 import type { ClientChannel } from 'ssh2';
 
 /**
- * Stop a command running behind an exec channel — reliably, which ssh2's own
- * `signal()` is not once stdin has been closed.
+ * 停掉一条跑在 exec 通道后的命令——要可靠，而 ssh2 自带的 signal()
+ * 在 stdin 关闭后就不可靠了。
  *
- * `SSHConnection.exec()` closes stdin the moment the command is dispatched, because
- * a command that reads stdin would otherwise wait for input nobody is going to send.
- * ssh2 1.17's `Channel.signal()` (lib/Channel.js:237) writes the request only while
+ * SSHConnection.exec() 在命令派发后立即关闭 stdin，
+ * 否则读 stdin 的命令会等待永远不会到来的输入。ssh2 1.17 的
+ * Channel.signal()（lib/Channel.js:237）只在以下条件成立时写入请求：
  *
  *     this.type === 'session' && this.writable && this.outgoing.state === 'open'
  *
- * and `end()` clears the last two: it fires `prefinish`/`finish`, and ssh2's `onFinish`
- * listener (lib/Channel.js:268) calls `eof()` — moving the outgoing state to `'eof'` —
- * and sets `writable = false`. It does not throw or report anything — it simply
- * returns. So every signal sent to stop a timed-out command was discarded
- * inside ssh2, and the command ran to completion on the host while the caller was
- * told it had timed out (#146).
+ * 而 end() 清掉了后两个：触发 prefinish/finish，ssh2 的 onFinish
+ * 监听器（lib/Channel.js:268）调用 eof()——outgoing 状态变为 eof——
+ * 并设 writable = false。它不抛异常也不报告——只是返回。
+ * 于是每一条要停掉超时命令的信号都在 ssh2 内部被丢弃，
+ * 命令在主机上继续跑到完成，调用方却被「已超时」。
  *
- * Measured against OpenSSH 10.3p1, one channel per row, a 30s `sleep` as the victim:
  *
- *   end() then INT/TERM/close()          alive at +4s, alive at +9s
- *   no end(), INT/TERM                   gone by +4s
- *   end() then close() alone             alive at +9s
- *   eof() then INT/TERM                  alive at +9s
- *   end() then the protocol call below   gone by +4s
+ * 对照 OpenSSH 10.3p1 实测，每行一条通道，以 30 秒 sleep 为目标：
  *
- * Two things follow. A delivered signal is the *only* thing that stops a non-tty
- * command — closing the channel does not, which is the same reason killing a local
- * `ssh host 'sleep 30'` leaves the sleep running. And the reporter's proposed
- * `end()` → `eof()` change does nothing on its own, because `'eof'` fails ssh2's
- * gate exactly as `writable === false` does; it only works together with
+ *   end() 后 INT/TERM/close()          +4 秒仍活，+9 秒仍活
+ *   不 end()，INT/TERM                 +4 秒前消失
+ *   end() 后仅 close()                 +9 秒仍活
+ *   eof() 后 INT/TERM                  +9 秒仍活
+ *   end() 后走下方的协议调用            +4 秒前消失
+ *
+ * 由此得出两件事。送达的信号是停掉非 tty 命令的*唯一*手段——
+ * 关通道不行，与本机 ssh host sleep 30 杀掉后 sleep 仍跑同理。
+ * 而报告者提议的 end() 到 eof() 改动自身无效，eof 过不了
+ * ssh2 的门，跟 writable === false 一样；只有配合
+ * mscdex/ssh2#1510（放宽该门以接受 eof）才有效。
  * mscdex/ssh2#1510, which relaxes the gate to accept `'eof'`.
  *
- * Rather than wait for that (ssh2 releases roughly annually — 1.16.0 to 1.17.0 was
- * eleven months), this sends the request through the protocol object ssh2's own
- * method would have used. The SSH protocol allows a channel request after EOF: EOF
- * ends the data stream, not the channel. Only ssh2's bookkeeping objected.
+ * 与其等它（ssh2 约一年一版——1.16.0 到 1.17.0 用了十一个月），
+ * 本模块经 ssh2 自己的方法本会使用的协议对象发送请求。SSH 协议
+ * 允许 EOF 后的通道请求：EOF 结束的是数据流，不是通道。
+ * 反对的只有 ssh2 的簿记。
  *
- * Retiring this fallback is a code change, not something that happens by itself. The
- * public path is gated by `ssh2WillSend` below, which is a deliberate copy of ssh2
- * 1.17's condition — so even with mscdex/ssh2#1510 released, our own copy still refuses
- * and the fallback stays on the hot path until someone widens it. `ssh2WillSend` is the
- * one place to change, and the behavioural tripwire in channel-signal.test.ts fails the
- * moment ssh2 starts signalling after EOF, which is the signal to change it. An earlier
- * version of this comment claimed the fallback would stop being reached on its own; it
- * could not, and a plan that cannot fire is worse than no plan.
+ * 退役这条回退路径是一次代码变更，不会自动发生。公共路径由下方
+ * ssh2WillSend 把守——它刻意照抄 ssh2 1.17 的条件——所以即使
+ * mscdex/ssh2#1510 发布了，我们自己的副本仍然拒绝，回退路径
+ * 继续在热路径上，直到有人放宽它。ssh2WillSend 是唯一要改的
+ * 地方，channel-signal.test.ts 中的行为绊线会在 ssh2 开始在 EOF 后
+ * 送信号的那一刻失败——那就是该改的信号。本注释的更早版本声称
+ * 回退路径会自行不再被走到；它不会，一个永远打不响的计划
+ * 比没有计划更糟。
  *
- * What a delivered request achieves is the *server's* choice, not ours. OpenSSH answers a
- * `signal` channel request with `killpg()` on the command's process group
- * (session.c, `session_signal_req`), so an ordinary process tree does die — measured
- * against 10.3p1: `sh -c 'trap "" INT TERM; sleep N; true'` and its child share one pgid
- * and both are gone after a single KILL request.
+ * 送达的请求能达到什么效果是*服务器*的选择，不是我们的。OpenSSH
+ * 以对命令进程组执行 killpg() 来响应 signal 通道请求
+ *（session.c 的 session_signal_req），因此普通进程树确实会死——
+ * 对照 10.3p1 实测：sh -c trap INT TERM sleep N true 与其子进程
+ * 共享一个 pgid，一次 KILL 请求后两者都消失。
  *
- * An earlier version of this comment claimed the opposite — that the signal reached only
- * the session leader and orphaned children. That was wrong, and the "orphan" it cited was
- * debris leaked by an earlier experiment rather than a result. Recording the mistake
- * because it was asserted in SECURITY.md in the direction that *understates* the blast
- * radius, which is the worse way to be wrong about a SIGKILL.
+ * 本注释的更早版本声称相反——信号只到达会话首进程、子进程被遗留。
+ * 那是错的，所谓的「孤儿」是更早实验泄漏的残渣而非结果。
+ * 记录这个错误，因为它曾以*低估*爆炸半径的方向
+ * 写进 SECURITY.md——对 SIGKILL 而言，那是更糟的错法。
  *
- * None of that is ours to promise, though. RFC 4254 §6.9 does not specify the delivery
- * semantics, sshd refuses signal requests for forced-command and subsystem sessions, and
- * this project deliberately supports a second server implementation (Dropbear). Nothing
- * acknowledges the request either way — which is why the return value below is about
+ *
+ * 但这些都不是我们能承诺的。RFC 4254 §6.9 未规定送达语义，
+ * sshd 对 forced-command 与 subsystem 会话拒绝信号请求，
+ * 本项目刻意支持第二种服务器实现（Dropbear）。也没有任何东西
+ * 确认请求——所以下方返回值只关于派发，这里不声称进程已死。
  * dispatch and nothing here claims the process is gone.
  */
 
-/** The parts of a channel ssh2 does not put in its public typings. */
+/** ssh2 未放进公共类型定义的通道部件。 */
 type ChannelInternals = {
   type?: string;
   writable?: boolean;
@@ -77,18 +77,18 @@ type ChannelInternals = {
   };
 };
 
-/** The signals this module sends. Typed so a name ssh2 rejects is a compile error. */
+/** 本模块发送的信号。强类型化，ssh2 拒收的名字即编译错误。 */
 export type SignalName = 'INT' | 'TERM' | 'KILL';
 
-/** Outgoing states in which the far end still has a channel to receive a request. */
+/** 远端仍有通道可接收请求的 outgoing 状态。 */
 const OPEN_STATES = new Set(['open', 'eof']);
 
 /**
- * Whether ssh2's own `Channel.signal()` would put this request on the wire.
+ * ssh2 自己的 Channel.signal() 会不会把该请求送上线路？
  *
- * A deliberate copy of lib/Channel.js:241-243 in ssh2 1.17, and the single place to
- * update when that changes. Copying it is what lets us tell "ssh2 will handle this"
- * from "ssh2 will silently discard it" — the distinction the whole module exists for.
+ * 对 ssh2 1.17 lib/Channel.js:241-243 的刻意照抄，也是该处变化时
+ * 唯一要更新的地方。照抄它让我们能区分「ssh2 会处理」与
+ * 「ssh2 会静默丢弃」——正是本模块存在的意义。
  */
 function ssh2WillSend(ch: ClientChannel & ChannelInternals): boolean {
   return ch.type === 'session' && ch.writable === true && ch.outgoing?.state === 'open';
@@ -97,33 +97,33 @@ function ssh2WillSend(ch: ClientChannel & ChannelInternals): boolean {
 /**
  * Whether the transport can still carry a packet.
  *
- * ssh2 hands every packet to `onWrite`, which is `if (isWritable(sock)) sock.write(data)`
- * (lib/client.js:303) — an unwritable socket means the packet is dropped with no error
- * and no return value. Measured against 1.17.0: immediately after `client.end()`,
- * `sock.writable` is false while `outgoing.state` is still `'eof'`, so the state guard
- * below passes and the signal call returns without throwing. Reporting that as delivery
- * is #146 one layer down, and it is reachable whenever a connection is closed under a
- * running command — `SSHConnection.close()`, or the idle reaper, which does not consult
+ * ssh2 把每个包交给 onWrite，即 if (isWritable(sock)) sock.write(data)
+ *（lib/client.js:303）——不可写的套接字意味着包被丢弃，无错误
+ * 无返回值。对照 1.17.0 实测：client.end() 之后立刻，
+ * sock.writable 为 false 而 outgoing.state 仍是 eof，
+ * 下方状态守卫通过、信号调用不抛异常即返回。把它报告为已送达
+ * 就是 #146 往下一层，且只要连接在命令运行中被关闭就可触发——
+ * SSHConnection.close()，或不查 activeChannels 的空闲回收器。
  * `activeChannels`.
  *
- * All three of `isWritable`'s conjuncts, not just the first. The first version of this
- * checked `sock.writable` alone, and ssh2 added the other two for a reason
- * (nodejs/node#36029: `writable` stays true after the stream has ended). Measured:
+ * isWritable 的三个条件全用，不只第一个。第一版只查
+ * sock.writable，ssh2 加上另两个是有原因的
+ *（nodejs/node#36029：流结束后 writable 仍为 true）。实测：
  *
- *   allowHalfOpen=false, peer FIN -> writable=false, isWritable()=false   (agree)
- *   allowHalfOpen=true,  peer FIN -> writable=true,  isWritable()=false   (disagree)
+ *   allowHalfOpen=false, peer FIN -> writable=false, isWritable()=false   （一致）
+ *   allowHalfOpen=true,  peer FIN -> writable=true,  isWritable()=false   （不一致）
  *
- * and a ProxyJump connection's transport is exactly the second case — `connectConfig.sock`
- * is a `forwardOut` channel, and ssh2's channels default to `allowHalfOpen: true`
- * (lib/Channel.js:90). So the one-conjunct version was blind on the path that has its own
- * integration test. Mirroring the whole predicate is also what `ssh2WillSend` does, and
- * the asymmetry between the two was the actual defect.
+ * ProxyJump 连接的传输恰好是第二种——connectConfig.sock
+ * 是一条 forwardOut 通道，ssh2 的通道默认 allowHalfOpen: true
+ *（lib/Channel.js:90）。所以单条件版本在自己的集成测试所走的
+ * 路径上是瞎的。照抄整个判断也是 ssh2WillSend 的做法，
+ * 两者的不对称才是真正的缺陷。
  */
 function onTheWire(ch: ClientChannel & ChannelInternals): boolean {
   const sock = ch._client?._sock;
-  // Fail closed on a shape we cannot read: every other unknown in this module is reported
-  // as "not dispatched", and a guard whose job is to refuse when unsure must not be the
-  // one place that assumes the best.
+  // 对读不懂的形状 fail-closed：本模块中一切其他未知都报
+  // 「未派发」，职责是「不确定就拒」的守卫不能是
+  // 唯一往好处想的地方。
   if (sock === undefined || typeof sock.writable !== 'boolean') return false;
   return sock.writable && sock._readableState?.ended === false;
 }
@@ -131,11 +131,11 @@ function onTheWire(ch: ClientChannel & ChannelInternals): boolean {
 /**
  * Send `name` to the process behind `channel`.
  *
- * Returns whether the request was **dispatched to the wire** — not whether the command
- * stopped. Nothing in SSH acknowledges a signal request, the delivery semantics are the
- * server's choice rather than the protocol's, and a target may refuse it outright, so
- * "the process is gone" is not a fact this function can produce. What it can produce
- * honestly is "I could not even ask", which is what the caller warns about, because a
+ * 返回请求是否**已派发到线路**——不是命令是否停止。SSH 中
+ * 没有任何东西确认信号请求，送达语义是服务器而非协议的选择，
+ * 目标也可以直接拒绝，所以「进程已死」不是本函数能产出的事实。
+ * 它能诚实产出的是「我连问都没问成」——调用方正是就此告警，
+ * 因为报成功却哪儿也没到的信号，就是本模块要消灭的缺陷。
  * signal that goes nowhere while reporting success is the defect this module exists to
  * remove.
  */
@@ -143,17 +143,17 @@ export function signalChannel(channel: ClientChannel, name: SignalName): boolean
   const ch = channel as ClientChannel & ChannelInternals;
   const state = ch.outgoing?.state;
 
-  // Only session channels carry a process. ssh2 gates on this too, and a
-  // forwarded-tcpip channel has nothing to signal.
+  // 只有 session 通道承载进程。ssh2 也以此设门，
+  // forwarded-tcpip 通道没有可发信号的东西。
   if (ch.type !== undefined && ch.type !== 'session') return false;
-  // Already closing or closed: the request would have no channel to arrive on, and
-  // ssh2 may have handed the id to a new channel.
+  // 已在关闭或已关闭：请求没有可到达的通道，
+  // 且 ssh2 可能已把 id 分给新通道。
   if (state !== undefined && !OPEN_STATES.has(state)) return false;
-  // Nothing can be dispatched through a socket ssh2 will not write to, and it will not
-  // tell us — so this has to be asked before either path claims success.
+  // ssh2 不会写入的套接字上什么也派发不了，而且它不会告诉我们——
+  // 所以必须在任一路径声称成功之前先问这一步。
   if (!onTheWire(ch)) return false;
 
-  // The supported path, taken whenever ssh2 will actually write the request.
+  // 支持的路径：ssh2 确实会写入请求时走这条。
   if (ssh2WillSend(ch)) {
     try {
       channel.signal(name);
@@ -174,58 +174,58 @@ export function signalChannel(channel: ClientChannel, name: SignalName): boolean
     }
   }
 
-  // A shape we do not recognise. Ask ssh2 and report failure anyway: we cannot tell
-  // whether it sent anything, and claiming delivery we cannot verify is what made
-  // this bug invisible for so long. An unnecessary "may still be running" warning is
-  // the better way to be wrong.
+  // 不认识的形状。照样问 ssh2、照样报失败：我们无法分辨
+  // 它是否发了什么，声称无法验证的送达正是这个 bug
+  // 长期隐形的原因。多一句「可能仍在运行」的告警
+  // 是更好的错法。
   try { channel.signal(name); } catch { /* nothing left to try */ }
   return false;
 }
 
 /**
- * Appended when a stop request could not even be dispatched, so nothing was asked of the
+ * 停止请求连派发都没做到时追加——主机什么都没被问到。
  * host at all.
  *
- * Deliberately narrower than "the command is still running", which is not knowable from
- * here: nothing acknowledges a signal request. Its *absence* therefore means "we asked",
- * not "it died".
+ * 刻意比「命令仍在运行」窄，后者从这里不可知：
+ * 没有任何东西确认信号请求。它的*缺席*因此意味着「我们问了」，
+ * 而不是「它死了」。
  *
- * It lives beside the function that decides it because two callers now need the same
- * sentence — a timed-out or cancelled `exec`, and `close-session` on a background
- * session. One contract, one place.
+ * 它放在决定它的函数旁边，因为现在有两个调用方需要同一句话——
+ * 超时或取消的 exec，以及对后台会话的 close-session。
+ * 一份契约，一个地方。
  */
 export const COULD_NOT_SIGNAL =
   ' The remote command could not be signalled, so it may still be running on the host.';
 
-/** How long each signal is given to work before the next one is tried. */
+/** 每个信号在被下一个尝试前的等待时间。 */
 const ESCALATION_MS = 1000;
 
 /**
- * Escalate until the command is gone: INT, then TERM, then KILL, then drop the
+ * 升级直到命令消失：INT，然后 TERM，然后 KILL，然后丢通道。
  * channel.
+ * KILL 放最后因为它剥夺命令清理的机会；它存在是因为
+ * 下一级原来是 close()，而实测关通道停不了任何东西。
+ * 无视 INT 和 TERM 的命令过去会永远跑下去。
  *
- * KILL is last because it denies the command any chance to clean up; it exists
- * because the rung below it used to be `close()`, and closing a channel was measured
- * not to stop anything. A command that ignores INT and TERM used to run forever.
  *
- * Returns whether the *first* signal was dispatched — known synchronously, so the
- * caller can say "I could not even ask" in the same breath as the timeout it is already
- * reporting. It is not a claim that the command stopped, and callers must not read it
- * as one: the later rungs have not run yet, and no rung is acknowledged by anything.
+ * 返回*第一条*信号是否已派发——同步可知，调用方因此能在报告
+ * 超时的同时说「我连问都没问成」。它不是「命令已停」的断言，
+ * 调用方不得如此解读：后续级别还没跑，也没有任何级别被确认。
+ *
  */
 export function terminateChannel(channel: ClientChannel): boolean {
   const dispatched = signalChannel(channel, 'INT');
 
   const pending: NodeJS.Timeout[] = [];
   const later = (fn: () => void, ms: number) => {
-    // Unreferenced: this ladder outlives the promise it settled by up to three
-    // seconds, and a referenced timer would add that to the exit of any process
-    // whose last act was a timed-out command.
+    // 不引用：本阶梯比它已结算的 promise 多活至多三秒，
+    // 引用型计时器会把这段时间加到任何以超时命令为
+    // 最后一件事的进程的退出上。
     pending.push(setTimeout(fn, ms).unref());
   };
 
   const stop = () => { for (const t of pending) clearTimeout(t); pending.length = 0; };
-  // Nothing more to send once the channel is gone, and the id may be reused.
+  // 通道没了就没什么可发的了，且 id 可能已被复用。
   channel.once('close', stop);
 
   later(() => { signalChannel(channel, 'TERM'); }, ESCALATION_MS);
@@ -237,25 +237,25 @@ export function terminateChannel(channel: ClientChannel): boolean {
 
 /**
  * Wait for a channel to actually close, bounded.
+ * 阶梯的各级是计时器，terminateChannel 远在升级完成之前就返回了。
+ * 之后再拆传输——SSHConnection.close() 调 client.end()，或进程退出——
+ * 会取消剩余部分，无视 INT 的命令就这样活着、再无升级可能。
+ * 即将这么做的调用方必须先在这里等。
  *
- * The ladder's rungs are timers, so `terminateChannel` returns long before the escalation
- * has finished. Anything that tears the transport down afterwards — `SSHConnection.close()`
- * calling `client.end()`, or the process exiting — cancels the rest of it, and a command
- * that ignored INT then survives with no further escalation possible. Callers that are
- * about to do that must wait here first.
+ * 通道关闭则 resolve true，超时为 false。默认预算是阶梯
+ * 加一点余量，只死于 KILL 的命令也赶得上。
  *
- * Resolves true if the channel closed, false on timeout. The default budget is the ladder
- * plus a little, so a command that only dies to KILL still gets there.
+ *
  */
 export function waitForChannelClose(
   channel: ClientChannel,
   ms: number = ESCALATION_MS * 3 + 500,
 ): Promise<boolean> {
-  // ssh2 emits `'close'` exactly once, and `onCHANNEL_CLOSE` early-returns for a channel
-  // whose incoming state is already `'closed'` — so a listener attached after the fact
-  // never fires and the caller would burn the whole budget waiting for an event that has
-  // already happened. Not reachable through SessionManager today, because the session is
-  // removed from the map by that same emit; it is a trap for the next caller.
+  // ssh2 恰好发一次 close，且 onCHANNEL_CLOSE 对 incoming 已是
+  // closed 的通道提前返回——事后挂的监听器永不触发，
+  // 调用方会烧完整个预算等一个已发生的事件。今天经 SessionManager
+  // 不可达，因为同一次 emit 就把会话从 map 移除了；
+  // 这是给下一个调用方的陷阱。
   const incoming = (channel as ClientChannel & { incoming?: { state?: string } }).incoming;
   if (incoming?.state === 'closed' || channel.destroyed) return Promise.resolve(true);
 
@@ -266,14 +266,14 @@ export function waitForChannelClose(
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      // Detached on the timeout path too: a timed-out wait would otherwise leave its
-      // closure attached to a channel that may outlive it.
+      // 超时路径上也摘除：否则超时的等待会把它的闭包
+      // 留在一条可能比它活得更久的通道上。
       channel.removeListener('close', onClose);
       resolve(closed);
     };
     const timer = setTimeout(() => done(false), ms);
-    // Unreferenced so a hung channel cannot hold the process open; the caller is awaiting
-    // this, so the loop stays alive for as long as the caller itself does.
+    // 不引用，挂死的通道无法扣住进程；调用方在 await 本 promise，
+    // 循环只要调用方自己活着就活着。
     timer.unref();
     channel.once('close', onClose);
   });

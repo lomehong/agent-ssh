@@ -1,47 +1,47 @@
 /**
- * The SDDL half of the Windows ACL check: descriptor text in, verdict out.
+ * Windows ACL 检查的 SDDL 半边：描述符文本进，判定出。
  *
- * Split from windows-acl.ts so the parser's platform independence is legible in the module
- * graph — this file imports nothing at all, and `sddl-import-boundary.test.ts` holds it to
- * that. What it owns is the grammar *and* the allowlist the grammar is judged against
- * (`ALWAYS_ALLOWED_SIDS`, the RID-500 rule in `aclIdentity`): the second is authorization
- * policy rather than syntax, but it is policy that needs no machine to evaluate, which is
- * the line this cut actually draws.
+ * 从 windows-acl.ts 拆出使解析器的平台独立性在模块图中清晰可见——
+ * 本文件什么都不导入，sddl-import-boundary.test.ts 强制执行这一点。
+ * 它拥有的是文法*以及*文法被评判的白名单
+ *（ALWAYS_ALLOWED_SIDS、aclIdentity 中的 RID-500 规则）：后者是
+ * 授权策略而非语法，但它是不需要机器即可求值的策略，
+ * 这正是本次切分实际画下的线。
  *
- * An earlier version of this header claimed the split prevents a *silent* failure — that an
- * edit reaching for `icacls` inside `parseDacl` would leave CI green. That was wrong, and a
- * review round disproved it by doing it: such an edit fails about 69 parser tests loudly on
- * Linux, because none of those tests carries a platform guard. The real hazard is the step
- * after. Faced with 69 red tests on a change that "obviously only affects Windows", the
- * cheapest repair is `describe.runIf(win32)` — and *then* the 2000-run property suite stops
- * exercising the decision off Windows and the green is real. Asserting the boundary here
- * means the first step fails somewhere whose only sane repair is to undo the import.
+ * 本头文件的更早版本声称拆分防止*静默*失败——在 parseDacl 中
+ * 伸手拿 icacls 的编辑会让 CI 保持绿色。那是错的，评审轮通过
+ * 实际做它推翻了：这样的编辑在 Linux 上大声失败约 69 个解析器测试，
+ * 因为那些测试没有一个带平台守卫。真正的危险在下一步。
+ * 面对「显然只影响 Windows」的变更上的 69 个红测试，
+ * 最便宜的修复是 describe.runIf(win32)——然后 2000 次运行的
+ * property 测试套件在 Windows 之外停止检查该决定，绿色变成真的。
+ * 在这里断言边界意味着第一步在一个唯一合理修复就是撤销导入的
+ * 地方失败。
  *
- * The type split follows the same line: the verdict vocabulary is what a descriptor says, so
- * `Grant`, `UnknownReason`, `AclVerdict` and `AclIdentity` live here. `AclFinding` and
- * `AclOptions` are what we tell the operator and what the operator asked for, so they stay
- * with the platform half.
+ * 类型拆分沿同一条线：判定词汇是描述符说的内容，所以
+ * Grant、UnknownReason、AclVerdict 和 AclIdentity 在这里。
+ * AclFinding 和 AclOptions 是我们告诉运维的、以及运维要求的，
+ * 所以它们留在平台半边。
  *
- * `PRINCIPAL_NAMES`/`nameFor` are here against the plan that queued this split, which put
- * them on the message side. They cannot go there while `parseDacl` populates `Grant.name`:
- * honouring it would mean passing the parser a name resolver, a signature change the same
- * plan ruled out by asking for no behaviour change. The table is keyed by SDDL alias and
- * SID, which is this file's vocabulary anyway.
+ * PRINCIPAL_NAMES/nameFor 在这里是违背排队此拆分的计划的，
+ * 计划把它们放在消息侧。parseDacl 填充 Grant.name 时它们去不了那里：
+ * 遵守它意味着给解析器传一个名称解析器，同一计划以不改变行为
+ * 为由排除了这种签名变更。表以 SDDL 别名和 SID 为键，
  */
 
 /**
- * The principals a private config may name, by SID.
+ * 私有配置可以点名的主体，按 SID。
  *
- * An allowlist, because the POSIX branch is one — it refuses any bit outside
- * 0700 — and the refusal message promises "the owning user only". The first
- * version of this file was a denylist of six well-known groups, which let
- * through `Domain Users` (whose SID is domain-relative, so no static list can
- * name it), `Power Users`, and any second local account or custom group. On a
- * domain-joined host that is every employee, reported as owner-only.
+ * 白名单，因为 POSIX 分支就是——拒绝 0700 之外的任何位——
+ * 拒绝消息承诺「仅属主」。本文件首版是六个知名组的拒绝清单，
+ * 放过了 Domain Users（SID 是域相对的，静态列表无法点名）、
+ * Power Users、以及任何第二个本地账户或自定义组。在域加入主机上
+ * 那是每个员工，却报为仅属主。
  *
- * SYSTEM and Administrators stay allowed: they are what a file under %APPDATA%
- * actually carries (measured), and an administrator can take ownership
- * regardless of what any DACL says, so refusing them would buy nothing.
+ *
+ * SYSTEM 和 Administrators 保持允许：它们正是 %APPDATA% 下文件
+ * 实际携带的（实测），且管理员无论 DACL 说什么都能取得所有权，
+ * 拒绝它们买不到任何东西。
  */
 const ALWAYS_ALLOWED_SIDS: ReadonlySet<string> = new Set([
   'S-1-5-18',       // NT AUTHORITY\SYSTEM
@@ -49,20 +49,20 @@ const ALWAYS_ALLOWED_SIDS: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * SDDL alias to SID.
+ * SDDL 别名到 SID。
  *
- * Three entries carry the correctness load — `SY`, `BA`, and `LA` via
- * DOMAIN_RELATIVE_RIDS — because those are the only principals that can appear in the
- * allowlist, so those are the only comparisons where two spellings of one principal
- * have to come out equal. That mattered: on a GitHub `windows-latest` runner the user is
- * the built-in Administrator, whose own ACE is written `LA`, and comparing raw SIDs made
- * the operator a stranger to their own config — 60 tests failed with "access is granted
- * to LA".
+ * 三个条目承载正确性——SY、BA、以及经 DOMAIN_RELATIVE_RIDS 的 LA——
+ * 因为那些是白名单中能出现的仅有主体，所以也是仅有需要
+ * 一个主体的两种拼写得出相等结果的比较处。这很重要：
+ * GitHub windows-latest runner 上的用户是内建 Administrator，
+ * 其自有 ACE 写作 LA，比较原始 SID 使运维对自己的配置成了陌生人——
+ * 60 个测试以「访问授予了 LA」失败。
  *
- * The other fourteen are verdict-neutral: an unresolved alias falls through unchanged and
- * is refused either way. They exist so a refusal reports one entry per principal and
- * prints a SID a remediation can name — which means the length of this list is not a
- * security property.
+ *
+ * 其余十四个判定中性：未解析别名原样透传、两种方式都被拒。
+ * 它们存在使拒绝按主体报一条、打印修复可以点名的 SID——
+ * 因此这份清单的长度不是安全属性。
+ *
  */
 const ALIAS_SIDS: ReadonlyMap<string, string> = new Map([
   ['SY', 'S-1-5-18'],
@@ -85,11 +85,11 @@ const ALIAS_SIDS: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * Aliases whose SID is relative to an account domain, expanded against the
- * domain of the account we run as. `LA` is the reason this exists; the group ones
- * are here so a descriptor that spells one principal both ways is reported once
- * rather than twice — the display name still comes from the raw trustee, so `DU`
- * reads as "Domain Users" while the SID spelling reads as the SID.
+ * LA 是这个东西存在的理由；组条目在这里是为了让描述符
+ * 两种拼写指同一主体时只报一次而非两次——
+ * 显示名仍来自原始受托者，DU 读作 Domain Users
+ * 而 SID 拼写读作 SID。
+ *
  */
 const DOMAIN_RELATIVE_RIDS: ReadonlyMap<string, number> = new Map([
   ['LA', 500],  // built-in Administrator
@@ -100,22 +100,22 @@ const DOMAIN_RELATIVE_RIDS: ReadonlyMap<string, number> = new Map([
   ['DC', 515],  // Domain Computers
   ['DD', 516],  // Domain Controllers
   ['CA', 517],  // Cert Publishers
-  // These two live only in the forest root domain, so expanding them against *our*
-  // account domain names a SID that does not exist in a child domain. Harmless for
-  // the verdict — a SID resolving to nothing is not in the allowlist, so the ACE is
-  // refused either way — but the remediation would print a /remove:g icacls cannot
-  // map, which is the defect Grant.sid exists to prevent. Kept so a refusal names
-  // the principal; treat the SID as best effort.
+  // 这两个只存在于林根域，对照*我们的*账户域展开得到的是
+  // 子域中不存在的 SID。对判定无害——解析为空的 SID
+  // 不在白名单中，ACE 两种方式都被拒——但修复
+  // 会打印 icacls 无法映射的 /remove:g，
+  // 正是 Grant.sid 存在要防止的缺陷。保留使拒绝点名主体；
+  // SID 视为尽力而为。
   ['SA', 518],  // Schema Admins (forest root)
   ['EA', 519],  // Enterprise Admins (forest root)
   ['PA', 520],  // Group Policy Creator Owners
 ]);
 
 /**
- * Display names for principals we expect to have to name in a refusal. Only
- * cosmetic — an unrecognised trustee is reported by its SID or alias, and is
- * refused either way, so nothing security-relevant depends on this table being
- * complete.
+ * 我们预期在拒绝中必须点名的主体的显示名。仅为美观——
+ * 未识别受托者以其 SID 或别名报告、两种方式都被拒，
+ * 安全都与此表是否完整无关。
+ *
  */
 const PRINCIPAL_NAMES: ReadonlyMap<string, string> = new Map([
   ['WD', 'Everyone'], ['S-1-1-0', 'Everyone'],
@@ -134,42 +134,42 @@ const PRINCIPAL_NAMES: ReadonlyMap<string, string> = new Map([
 ]);
 
 /**
- * ACE types that grant nothing to their trustee: denials, and the audit, alarm
- * and non-ACL entry types.
+ * 不给受托者任何东西的 ACE 类型：拒绝、审计、告警
+ * 与非 ACL 条目类型。
  *
- * A denylist here, and an allowlist for principals — each in the direction that
- * fails safe. The first version tested `type === 'A' || type === 'OA'`, which
- * silently skipped `XA` and `ZA`: conditional allow ACEs, exactly what Dynamic
- * Access Control puts on managed files. An ACE type this does not recognise is
- * now treated as granting, so a future addition to SDDL cannot open a hole by
- * being unfamiliar.
+ * 这里用拒绝清单、主体用白名单——各按 fail-safe 的方向。
+ * 首版测试了 type === 'A' || type === 'OA'，
+ * 静默跳过了 XA 和 ZA：条件允许 ACE，恰是 Dynamic Access
+ * Control 放在受管文件上的东西。本类不识别的 ACE 类型
+ * 是文法错误而非策略决定，必须 fail-closed。
+ *
  */
 const NON_GRANTING_ACE_TYPES: ReadonlySet<string> = new Set([
-  'D', 'OD', 'XD',                    // access denied
-  'AU', 'AL', 'OU', 'OL', 'XU',       // audit and alarm
-  'ML', 'RA', 'SP', 'TL', 'FL',       // label, attribute, policy, trust, filter
+  'D', 'OD', 'XD',                    // 拒绝访问
+  'AU', 'AL', 'OU', 'OL', 'XU',       // 审计和告警
+  'ML', 'RA', 'SP', 'TL', 'FL',       // 标签、属性、策略、信任、过滤
 ]);
 
 /**
- * Two different flag vocabularies, which is easy to conflate — the first draft
- * did, and rejected every real descriptor as unparseable because `D:AI(...)`
- * carries a *control* flag where an ACE flag was expected.
+ * 两种不同的旗标词汇，容易混淆——初稿混淆了，将每个真实
+ * 描述符都拒绝为不可解析，因为 D:AI(...) 携带的是*控制*旗标
+ * 而非 ACE 旗标。
  *
- * DACL control flags qualify the ACL as a whole: `P` protected (inheritance
- * blocked), `AI` auto-inherited, `AR` auto-inherit-required. `P` is one
- * character, so these cannot be read in fixed-width chunks.
+ * DACL 控制旗标限定整个 ACL：P 受保护（阻止继承）、
+ * AI 自动继承、AR 需要自动继承。P 是单字符，
+ * 所以这些不能用固定宽度分块读取。
  */
 const DACL_CONTROL_FLAGS = /^(?:P|AI|AR)*$/;
 
-/** ACE flags, which are all two characters. */
+/** ACE 旗标，全部两个字符。 */
 const ACE_FLAG_CODES: ReadonlySet<string> = new Set([
   'CI', 'OI', 'IO', 'NP', 'ID', 'SA', 'FA', 'TP', 'CR',
 ]);
 
 /**
- * Rights that let a trustee change the object, as SDDL letter codes. `WD` here is
- * WRITE_DAC, not Everyone — the rights field and the trustee field have separate
- * vocabularies that happen to share spellings.
+ * 让受托者可以修改对象的权限，SDDL 字母码。这里的 WD 是
+ * WRITE_DAC 而非 Everyone——权限字段和受托者字段使用
+ * 恰好共享拼写的独立词汇表。
  */
 const WRITE_RIGHT_CODES: ReadonlySet<string> = new Set([
   'FA', 'FW', 'KA', 'KW', 'GA', 'GW', 'SD', 'WD', 'WO', 'CC', 'DC', 'SW', 'WP', 'DT',
@@ -181,24 +181,24 @@ const READ_RIGHT_CODES: ReadonlySet<string> = new Set([
 ]);
 
 /**
- * FILE_WRITE_DATA, FILE_APPEND_DATA, FILE_WRITE_EA, FILE_WRITE_ATTRIBUTES, DELETE,
- * WRITE_DAC, WRITE_OWNER, GENERIC_WRITE, GENERIC_ALL.
+ * DELETE、WRITE_DAC、WRITE_OWNER、GENERIC_WRITE、GENERIC_ALL。
+ *
  */
 const WRITE_MASK = 0x2 | 0x4 | 0x10 | 0x100 | 0x10000 | 0x40000 | 0x80000 | 0x40000000 | 0x10000000;
 
 /**
- * Whether a rights field lets its trustee *change* the object rather than only read it.
  *
- * This distinction is the basis of the default posture, and the field used to be parsed
- * and discarded. Read exposure on Windows is genuinely muddier than under POSIX — a
- * shared volume grants `BUILTIN\Users` read, and refusing over that stranded the reporter
- * of #138 — but write exposure is not muddy at all: "an ACE grants a non-owner
- * FILE_WRITE_DATA or WRITE_DAC" is exactly as unambiguous as `0o022`, and a config another
- * account can rewrite decides which hosts, roles and approval policy this server honours.
- * That is an authorization bypass, not a disclosure, and it was being reported as one.
+ * 这一区别是默认姿态的基础，该字段过去被解析后丢弃。
+ * Windows 上的读暴露确实比 POSIX 含糊——共享卷授予
+ * BUILTIN\Users 读，拒绝它曾让 #138 的报告者搁浅——
+ * 但写暴露毫无含糊：一个 ACE 给非属主
+ * FILE_WRITE_DATA 或 WRITE_DAC 与 0o022 一样毫不含糊，
+ * 另一账户可以改写的配置决定本服务器认可哪些主机、角色
+ * 和审批策略。那是授权绕过而非信息泄露，过去却被报为后者。
  *
- * Measured from real inheritance: `0x1200a9` is read-and-execute, `0x1301bf` is modify.
- * Anything this cannot classify counts as write, because refusing is the safe direction.
+ * 从真实继承实测：0x1200a9 是读和执行，0x1301bf 是修改。
+ * 此处无法分类的一律算写，拒绝是安全的方向。
+ *
  */
 function grantsWrite(rights: string): boolean {
   const field = rights.trim().toUpperCase();
@@ -215,9 +215,9 @@ function grantsWrite(rights: string): boolean {
 }
 
 export interface Grant {
-  /** How the operator will see it in `icacls` output; falls back to the trustee. */
+  /** 运维在 icacls 输出中如何看到它；回落到受托者。 */
   name: string;
-  /** The trustee exactly as the descriptor spelled it — SID or SDDL alias. */
+  /** 受托者恰如描述符拼写的样子——SID 或 SDDL 别名。 */
   trustee: string;
   /**
    * The resolved SID, which is what a remediation must name.
@@ -235,13 +235,13 @@ export interface Grant {
    * the verdict cannot disagree, on any host.
    */
   sid: string | null;
-  /** Whether this grant lets the trustee change the file, not merely read it. */
+  /** 此授权是否让受托者修改文件而非仅读取。 */
   writes: boolean;
 }
 
-/** Why the ACL could not be determined. Decides whether we refuse or continue. */
+/** ACL 为何无法确定。决定我们是拒绝还是继续。 */
 export type UnknownReason =
-  /** icacls is not on this machine. Nothing about the file is suspicious. */
+  /** 此机器上无 icacls。文件本身无可疑之处。 */
   | 'tool-missing'
   /**
    * The check ran out of time. Also a statement about the machine rather than the

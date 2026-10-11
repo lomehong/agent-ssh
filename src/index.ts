@@ -27,9 +27,9 @@ async function main() {
   const argv = parseArgv();
   checkRemovedFlags(argv);
 
-  // The approvals CLI is a subcommand, not a flag surface: it shares nothing
-  // with the server boot path (no config, no keychain, no transport), and
-  // running it must not start a stdio server that would hang the shell.
+  // approvals CLI 是子命令而非标志面：它与服务器启动路径
+  // 毫无共享（无配置、无密钥链、无传输），运行它绝不能
+  // 起一个会把 shell 吊死的 stdio 服务器。
   const positionals = process.argv.slice(2).filter((a) => !a.startsWith('--'));
   if (positionals[0] === 'approvals') {
     const { runApprovalsCli } = await import('./cli.js');
@@ -57,8 +57,8 @@ async function main() {
     await initTracing(argv.otelEndpoint as string, (argv.otelServiceName as string) || 'ssh-mcp');
   }
 
-  // Everything the transfer-root gate needs that it must not reach for itself:
-  // which config file was actually loaded, and which directories are off limits.
+  // 传输根大门所需的、且不许它自己去够的一切：
+  // 实际加载了哪个配置文件，以及哪些目录是禁区。
   const localPath = {
     transferRoot: config.defaults.transferRoot,
     configPath: getConfigPath(argv.config || undefined),
@@ -70,9 +70,9 @@ async function main() {
   const audit = new AuditStore(undefined, entropyScan, tamperEvident);
 
   if ('opaUrl' in argv) {
-    // Presence, not truthiness — the trap `flagEnabled` was written for. A
-    // space-separated `--opaUrl http://…` stores null, so the old guard dropped it
-    // silently, and dropped any `--opaFailClosed` the operator asked for with it.
+    // 要的是「存在」而不是真值——这正是 `flagEnabled` 当初要防的坑。
+    // 空格分隔的 `--opaUrl http://…` 会存成 null，旧守卫于是把它
+    // 静默丢弃，连运维要的 `--opaFailClosed` 一起丢。
     policy.setOpaUrl(
       parseOpaUrl(argv.opaUrl),
       flagEnabled(argv, 'opaFailClosed'),
@@ -83,9 +83,9 @@ async function main() {
     throw new OperatorError('--opaFailClosed does nothing without --opaUrl.');
   }
 
-  // An McpServer binds to a single transport, so HTTP needs one per session.
+  // 一个 McpServer 只能绑一个传输，HTTP 需要每会话一个。
   const createMcpServer = (): McpServer => {
-    // capabilities moved from serverInfo to ServerOptions in SDK 1.30.
+    // SDK 1.30 里 capabilities 从 serverInfo 挪到了 ServerOptions。
     const server = new McpServer(
       { name: 'SSH MCP Server', version: SERVER_VERSION },
       { capabilities: { tools: {}, resources: {} } },
@@ -122,12 +122,12 @@ async function main() {
   }
 
   const reaperInterval = setInterval(() => {
-    // Session reaping is awaited before connection reaping, and that order is load-bearing:
-    // closing a background session now signals its command, and `reapIdleConnections` gates
-    // on `sessionCount`, which drops to zero as soon as a session is closed. Fired without
-    // awaiting, the connection was torn down microseconds after the first signal and the
-    // TERM and KILL rungs were discarded — so a command that ignores INT survived its own
-    // reaping.
+    // 会话回收先于连接回收被 await，这个顺序承重：
+    // 现在关闭后台会话会信号其命令，而 `reapIdleConnections` 以
+    // `sessionCount` 为门，会话一关它就归零。若不 await 就发射，
+    // 连接会在第一个信号后微秒级被拆，
+    // TERM 与 KILL 两级被丢——对 INT 无视的命令就这样
+    // 活过了自己的回收。
     void (async () => {
       const conns = registry.listConnections()
         .map((info) => registry.get(info.profile))
@@ -138,12 +138,12 @@ async function main() {
   }, 60_000);
 
   /**
-   * How long teardown gets before the process exits regardless.
+    * 拆除在进程无视一切退出之前，还有多久。
    *
-   * One kill ladder (3s) plus slack. Sessions and connections close concurrently, so this
-   * is the whole budget rather than a per-session one. Docker's default stop grace is 10s
-   * and Kubernetes' is 30s, so this stays comfortably inside both — the point is that we
-   * choose the moment we give up rather than being SIGKILLed in the middle of it.
+    * 一条 kill 阶梯（3 秒）加余量。会话与连接并发关闭，所以这是
+    * 总预算而非按会话的预算。Docker 默认停止宽限 10 秒、Kubernetes
+    * 30 秒，本值稳稳落在两者之内——重点是放弃时机由我们选，
+    * 而不是中途被 SIGKILL。
    */
   const SHUTDOWN_BUDGET_MS = 5000;
 
@@ -153,16 +153,16 @@ async function main() {
     isShuttingDown = true;
     console.error('Shutting down SSH MCP Server...');
     clearInterval(reaperInterval);
-    // Audit first. An earlier version of this comment claimed session teardown wrote audit
-    // records that the old order dropped — it does not: nothing under src/ssh/ touches the
-    // audit store, only the `close-session` tool does, and that record is written and
-    // awaited during the tool call. So the reorder rescued nothing and put the final flush
-    // behind a teardown that now waits for kill ladders. Flushing first cannot lose a record
-    // that teardown does not write, and it survives a SIGKILL at the end of the grace period.
+    // 先冲审计。本注释的早期版本声称会话拆除会写出被旧顺序丢弃的
+    // 审计记录——并非如此：src/ssh/ 下没有任何东西碰审计存储，
+    // 只有 `close-session` 工具会，而那条记录在工具调用内已写出并 await。
+    // 所以这次重排什么也没救回来，反而把最终冲刷放到了一个如今要等
+    // kill 阶梯的拆除后面。先冲刷不会丢拆除不写的记录，
+    // 还能在宽限期末尾的 SIGKILL 下幸存。
     try { await audit.close(); } catch (e) { console.error('audit.close failed:', e); }
-    // Bounded, so `process.exit(0)` is reached deliberately rather than by the container
-    // runtime's SIGKILL. Teardown is concurrent now, so the honest ceiling is one kill
-    // ladder plus slack rather than one per session.
+    // 有界，让 `process.exit(0)` 是被刻意到达的，而不是被容器运行时
+    // 的 SIGKILL 打断。拆除现在并发进行，诚实的上限是一条 kill
+    // 阶梯加余量，而非每会话一条。
     try {
       await Promise.race([
         registry.closeAll(),
@@ -173,9 +173,9 @@ async function main() {
   };
 
   if (transportMode !== 'http') {
-    // The SDK's stdio transport listens only for 'data' and 'error', so a
-    // client that exits without signalling leaves this process running with
-    // its SSH connections open. Treat EOF on stdin as the client going away.
+    // SDK 的 stdio 传输只监听 'data' 和 'error'，客户端不发信号就退出时，
+    // 本进程会带着打开的 SSH 连接继续活着。把 stdin 的 EOF 视作
+    // 客户端离开。
     const onStdinClosed = () => { void cleanup(); };
     process.stdin.on('end', onStdinClosed);
     process.stdin.on('close', onStdinClosed);

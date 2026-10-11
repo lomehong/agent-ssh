@@ -6,20 +6,20 @@ import type { AclVerdict } from '../config/sddl.js';
 import { assertPrivateOnWindows } from '../config/windows-acl.js';
 
 /**
- * File-based approval queue — the human gate for hosts whose MCP client has no
- * elicitation support (plan §2, owner-ratified 2026-10-11 R6).
+ * 基于文件的审批队列——MCP 客户端无 elicitation 支持的主机的人为门
+ *（计划 §2，主人批准 2026-10-11 R6）。
  *
- * Shape: the server writes one `pending/<id>.json` per blocked command; the
- * operator decides it from the CLI (`agent-ssh approvals approve|reject <id>`);
- * the server polls the same file and acts only on a decision whose
- * `decisionFingerprint` still matches the request it queued. No decision
- * interface is exposed to the model — the only writers of a decision are this
- * CLI and the human behind it.
+ * 形状：服务器为每个被挡命令写一个 pending/<id>.json；运维从 CLI
+ * 决定（agent-ssh approvals approve 或 reject 加 id）；服务器轮询同一文件，
+ * 只在 decisionFingerprint 仍匹配其排队的请求时行动。
+ * 没有任何决定接口暴露给模型——决定的唯一写入者是本 CLI
+ * 及其背后的人。
  *
- * The fingerprint is a tripwire, not the control. The control is the
- * directory's permissions: `0700` on POSIX, and on Windows an
- * `assertPrivateOnWindows` check before the server waits. A fingerprint pins
- * the decision to the exact payload the human saw; it cannot stop someone who
+ *
+ * 指纹是绊线，不是控制。控制是目录权限：POSIX 上 0700，
+ * Windows 上服务器等待前的 assertPrivateOnWindows 检查。
+ * 指纹把决定钉在人看到的精确载荷上；它拦不住已经能改写文件的人。
+ *
  * can already rewrite the file.
  */
 
@@ -57,7 +57,7 @@ export function getApprovalQueueDir(): string {
   return join(xdgData, 'agent-ssh', 'approvals');
 }
 
-/** Canonical integrity hash of the payload the human is shown. */
+/** 人所看到的载荷的规范完整性哈希。 */
 export function fingerprintOf(req: Pick<PendingApproval, 'id' | 'profile' | 'command' | 'commandClass' | 'binary' | 'createdAt' | 'expiresAt'>): string {
   return createHash('sha256')
     .update(JSON.stringify({
@@ -73,8 +73,8 @@ export function fingerprintOf(req: Pick<PendingApproval, 'id' | 'profile' | 'com
 }
 
 function pendingPath(dir: string, id: string): string {
-  // The id is server-generated, but a reader-supplied id reaches this join via
-  // the CLI, so refuse traversal shapes instead of trusting that.
+  // id 由服务器生成，但读取方提供的 id 经 CLI 到达此拼接，
+  // 所以拒绝目录穿越形状而非信任它。
   if (!/^[A-Za-z0-9_-]+$/.test(id)) throw new Error(`Invalid approval id: ${id}`);
   return join(dir, 'pending', `${id}.json`);
 }
@@ -86,14 +86,14 @@ function newId(now: Date): string {
 export type QueueAclInspect = (path: string) => Promise<AclVerdict>;
 
 /**
- * Windows-only enforcement for the queue directory (T-11, owner ruling
- * 2026-10-11: the report-only leftover was not accepted).
+ * 队列目录的 Windows 专属强制（T-11，主人裁定 2026-10-11：
+ * 仅报告的残留不被接受）。
  *
- * The human approves what the FILE says, so a directory another account can
- * rewrite is an authorization bypass — forged approvals, not a privacy leak.
- * That is the write-exposure half of the upstream ACL semantics: refuse, never
- * report-and-continue. POSIX enforces the same property with the 0700 chmod
- * taken at queue creation, so this check is a no-op there.
+ * 人批准的是*文件*说的内容，所以另一账户可改写的目录是授权绕过——
+ * 伪造批准，而非隐私泄露。这是上游 ACL 语义的写暴露半边：
+ * 拒绝，绝不报告后继续。POSIX 以队列创建时取的 0700 chmod
+ * 强制同一性质，所以此检查在那里是空操作。
+ *
  */
 export async function assertQueueDirPrivate(
   dir: string,
@@ -114,8 +114,8 @@ function currentOSUser(): string {
 async function ensureDir(dir: string): Promise<void> {
   const pending = join(dir, 'pending');
   await mkdir(pending, { recursive: true });
-  // POSIX-only; Windows privacy is asserted by the ACL check the caller runs
-  // (assertPrivateOnWindows shares the config loader's refuse/report split).
+  // 仅 POSIX；Windows 隐私由调用方运行的 ACL 检查断言
+  //（assertPrivateOnWindows 与配置加载器共享拒绝/报告拆分）。
   if (platform() !== 'win32') {
     await chmod(dir, 0o700).catch(() => {});
     await chmod(pending, 0o700).catch(() => {});
@@ -130,7 +130,7 @@ export interface CreateApprovalInput {
   timeoutMs: number;
 }
 
-/** Write one pending request; returns what the operator will be shown. */
+/** 写一条待审请求；返回将展示给运维的内容。 */
 export async function createApprovalRequest(
   input: CreateApprovalInput,
   opts: { dir?: string; now?: Date } = {},
@@ -160,20 +160,20 @@ export interface WaitOptions {
   dir?: string;
   fingerprint: string;
   expiresAt: string;
-  /** Poll interval; the production default is 2s, tests use milliseconds. */
+  /** 轮询间隔；生产默认 2 秒，测试用毫秒。 */
   pollMs?: number;
   now?: () => Date;
-  /** Invoked once after the file is queued, for the server's stderr pointer. */
+  /** 文件入队后调用一次，用于服务器的 stderr 指引。 */
   onQueued?: (id: string) => void;
 }
 
 /**
- * Poll for a human decision until one arrives or the request expires.
+ * 轮询人的决定，直到到达或请求过期。
  *
- * Fails closed three ways, each with its own unavailable reason: expiry
- * (nobody answered), fingerprint mismatch (the file changed after the human
- * saw it), or a rejected decision (that last one is the human's answer, and is
- * `approved: false` without an unavailable cause).
+ * 三种方式 fail-closed，各有其不可用原因：过期（无人回答）、
+ * 指纹不匹配（人看到后文件变了）、或被拒的决定
+ *（最后一个是人的答案，approved: false 而无不可用原因）。
+ *
  */
 export async function waitForDecision(
   id: string,
@@ -215,7 +215,7 @@ export async function waitForDecision(
   }
 }
 
-/** Every pending request in the queue, oldest first (the CLI's list). */
+/** 队列中每条待审请求，最老的在前（CLI 的 list）。 */
 export async function listPending(opts: { dir?: string } = {}): Promise<PendingApproval[]> {
   const dir = opts.dir ?? getApprovalQueueDir();
   const pending = join(dir, 'pending');
@@ -230,8 +230,8 @@ export async function listPending(opts: { dir?: string } = {}): Promise<PendingA
     try {
       out.push(JSON.parse(await readFile(join(pending, f), 'utf8')) as PendingApproval);
     } catch {
-      // A torn or corrupt file is listed as its own entry so the operator can
-      // see it and delete it, rather than the queue quietly hiding it.
+      // 撕裂或损坏的文件作为自己的条目列出，使运维能看见并删除它，
+      // 而非队列悄悄藏起它。
       out.push({
         id: f.replace(/\.json$/, ''), createdAt: '', expiresAt: '', profile: '(unreadable)',
         command: '(unreadable)', commandClass: '', binary: '', fingerprint: '', status: 'pending',
@@ -246,7 +246,7 @@ export interface DecideOutcome {
   message: string;
 }
 
-/** CLI-side decision. Refuses anything not pending or already past expiry. */
+/** CLI 侧决定。拒绝任何非待审或已过期的东西。 */
 export async function decideApproval(
   id: string,
   decision: 'approved' | 'rejected',

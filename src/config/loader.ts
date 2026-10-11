@@ -24,20 +24,20 @@ export function getConfigPath(customPath?: string): string {
 }
 
 /**
- * Check that nobody but the owner can reach a config file, because it holds the hosts,
- * roles and policy rules that decide what this server will run.
+ * 检查除属主之外无人能触及配置文件——它保存着决定本服务器将运行什么
+ * 的主机、角色与策略规则。
  *
- * The two platforms answer differently on purpose. POSIX refuses: "only the owner" is
- * unambiguous there and `chmod` is a one-line fix. Windows refuses a config another
- * account can *change* and reports one it can only *read*, because read exposure is where
- * the platform is genuinely muddier — see `waived` in windows-acl.ts.
+ * 两个平台的答案刻意不同。POSIX 一律拒绝：「仅属主可及」在那里
+ * 没有歧义，`chmod` 一行可修。Windows 拒绝可被其他账户*修改*的配置、
+ * 报告只能被*读*的配置，因为读暴露正是该平台真正含糊之处——
+ * 见 windows-acl.ts 的 `waived`。
  *
- * Mode bits are POSIX's answer and are meaningless on Windows, which is the whole of #138:
- * Node synthesises `0o666` for every readable file there, so `& 0o077` was non-zero
- * unconditionally and every Windows config that has ever existed was rejected. The
- * `chmod 600` it prescribed could not lift that rejection — measured on Windows 11,
- * `chmod(path, 0o600)` leaves the mode at `0o666`, because `fs.chmod` there only toggles
- * the read-only bit. Following the instruction exactly returned the operator to where
+ * 模式位是 POSIX 的答案，在 Windows 上毫无意义——这就是 #138 的全部：
+ * Node 在那里为每个可读文件合成 `0o666`，于是 `& 0o077` 无条件非零，
+ * 史上所有 Windows 配置一律被拒。它开出的 `chmod 600` 也解除不了——
+ * Windows 11 实测：`chmod(path, 0o600)` 之后模式仍是 `0o666`，
+ * 因为那里的 `fs.chmod` 只拨只读位。一字不差照做，
+ * 运维回到原点。
  * they started.
  */
 export async function checkPermissions(filePath: string, opts: AclOptions = {}): Promise<void> {
@@ -47,9 +47,9 @@ export async function checkPermissions(filePath: string, opts: AclOptions = {}):
 }
 
 /**
- * Split out so its own refusals do not pass back through the `catch` that
- * tolerates ENOENT. They survived it only because an OperatorError carries no
- * `.code`, which was a coincidence rather than a design.
+ * 单独拆出，让它自己的拒绝不会回流进那条容忍 ENOENT 的 `catch`。
+ * 它们此前能幸免，只是因为 OperatorError 不带 `.code`——
+ * 这是巧合，不是设计。
  */
 async function checkPosixMode(filePath: string): Promise<void> {
   const dir = dirname(filePath);
@@ -62,8 +62,8 @@ async function checkPosixMode(filePath: string): Promise<void> {
     }
   };
 
-  // The file is tested before the directory is even stat'd, which is the order
-  // main used: batching both stats first meant a 0644 file whose directory
+  // 先测文件、后 stat 目录——与 main 原来的顺序一致：先批量 stat 两个，
+  // 会让一个 0644 的文件在目录中途消失时走 ENOENT 分支而被放行。
   // vanished in between took the ENOENT path and was accepted.
   const fileMode = await modeOf(filePath);
   if (fileMode === null) return;
@@ -79,9 +79,9 @@ async function checkPosixMode(filePath: string): Promise<void> {
     throw new OperatorError(
       `Config directory ${dir} is group/world accessible (mode ${dirMode.toString(8)}). ` +
       `Required: 0700. Run: chmod 700 ${dir}\n` +
-      // The published Docker image created this directory 0755, so a container
-      // with a config bind-mounted at the default path met this on every start
-      // with no way to chmod a path baked into the image.
+      // 官方 Docker 镜像以 0755 创建该目录，于是把配置 bind-mount 到
+      // 默认路径的容器每次启动都会撞上它，而且无法对镜像里烘焙的
+      // 路径做 chmod。
       'If the directory is not yours to change — a container image, or a mount point — ' +
       'bind-mount a 0700 directory over it, or point --config at one you control.',
     );
@@ -95,17 +95,17 @@ export async function loadConfig(customPath?: string, opts: AclOptions = {}): Pr
   try {
     raw = await readFile(configPath, 'utf8');
   } catch (err: any) {
-    // Also for an explicit --config that points nowhere. That used to escape
-    // as the raw system error ("ENOENT: no such file or directory, open ..."),
-    // which says the same thing in the vocabulary of a syscall.
+    // 对显式指向空处的 --config 也一样。它过去以原始系统错误逃逸
+    // （"ENOENT: no such file or directory, open ..."），
+    // 意思一样，词汇却是系统调用的。
     if (err.code === 'ENOENT') throw new ConfigNotFoundError(configPath);
-    // Everything else here is still the operator's file — a directory passed as
-    // --config, a mode or ACL that denies reading, a mount that went away. Those
-    // escaped raw too, so `reportFatal` printed them with a stack through our
-    // own frames: the presentation this change exists to remove.
-    // `.code` is carried through for the same reason ConfigNotFoundError keeps it: a
-    // wrapper script distinguishing "unreadable, remount and retry" from "absent, run the
-    // installer" was matching on it, and preserving it on one branch while dropping it on
+    // 这里其余一切仍是运维的文件——被当作 --config 传入的目录、
+    // 拒绝读取的 mode 或 ACL、消失的挂载。它们过去同样裸奔，
+    // `reportFatal` 带着我们自己的帧的堆栈打印它们：
+    // 正是这次改动要移除的呈现方式。
+    // `.code` 被保留的理由与 ConfigNotFoundError 相同：有包装脚本靠它
+    // 区分「不可读，重新挂载再试」与「不存在，去装一遍」，
+    // 一条分支保留、相邻分支丢弃，是只执行了一半的规则。
     // the adjacent one is a half-applied rule.
     throw Object.assign(
       new OperatorError(`Config file ${configPath} could not be read: ${err.message}`),
@@ -124,8 +124,8 @@ export async function loadConfig(customPath?: string, opts: AclOptions = {}): Pr
 
   const result = configSchema.safeParse(parsed);
   if (!result.success) {
-    // A root-level issue has an empty path, which used to render as a bare
-    // colon. Unreachable while the root schema accepted anything; an unknown
+    // 根级问题的 path 为空，过去会渲染成一个光秃秃的冒号。
+    // 根 schema 来者不拒时不可达；如今未知的顶层节会走到这里。
     // top-level section reaches it now.
     const issues = result.error.issues
       .map((i) => `  ${i.path.length ? i.path.join('.') : '(root)'}: ${i.message}`)
@@ -137,40 +137,40 @@ export async function loadConfig(customPath?: string, opts: AclOptions = {}): Pr
 }
 
 /**
- * `0` means unlimited, the convention `commandQuotaPerDay` and
- * `approvalGrantTtlMs` already use in this config file.
+ * `0` 表示不限制——本配置文件里 `commandQuotaPerDay` 与
+ * `approvalGrantTtlMs` 已有的约定。
  *
- * It has to be *mapped* rather than merely permitted. `sanitizeCommand` tests
- * `cleaned.length > maxChars`, so a literal `0` arriving there rejects every
- * non-empty command with "Command is too long (max 0 characters)" — a worse
- * failure than the one this spelling exists to fix.
+ * 它必须被*映射*而不只是被允许。`sanitizeCommand` 测的是
+ * `cleaned.length > maxChars`，一个字面 `0` 到那里会以
+ * "Command is too long (max 0 characters)" 拒绝一切非空命令——
+ * 比这个写法本要修掉的问题更糟。
  *
- * MAX_SAFE_INTEGER is the value `parseMaxChars` produces for `--maxChars=none`,
- * so the flag and the config file hand the rest of the code an identical
- * Profile rather than two spellings of uncapped (#123).
+ * MAX_SAFE_INTEGER 是 `parseMaxChars` 对 `--maxChars=none` 的产物，
+ * 这样标志与配置文件交给后续代码的就是同一个 Profile，
+ * 而不是「不设限」的两种拼法（#123）。
  */
 function uncapZero(maxChars: number): number {
   return maxChars === 0 ? Number.MAX_SAFE_INTEGER : maxChars;
 }
 
 /**
- * Resolve every profile against [defaults]. Each of these keys is documented as
- * a default that profiles inherit, so all of them must cascade — a key that is
- * accepted by the schema but never applied silently ignores the operator's
- * configuration (an `approvalMode` that never takes effect is a security
- * downgrade, not just a papercut).
+ * 让每个 profile 对照 [defaults] 解析。这些键每一个都被文档写明
+ * 是 profile 继承的默认值，因此全部必须级联——一个被 schema
+ * 接受却从不生效的键，是在无声地无视运维的配置
+ * （一个永不生效的 `approvalMode` 是安全降级，
+ * 不只是小划伤）。
  */
 function normalizeConfig(raw: RawConfig): AppConfig {
-  // commandMaxChars is mapped here as well as on the profile below, so no `0`
-  // survives anywhere in AppConfig. Leaving the raw value on `defaults` left one
-  // object carrying two encodings of "unlimited" — `profile.maxChars` as
-  // MAX_SAFE_INTEGER, `defaults.commandMaxChars` as 0 — with nothing in the
-  // types to tell them apart. buildAppConfig's quick-start path already copies it
-  // straight across (`maxChars: defaults.commandMaxChars`), and was correct only
-  // because that path's value comes from parseMaxChars, which never returns 0.
-  // Correct by
-  // coincidence of another surface is not a property to leave standing when the
-  // wrong encoding rejects every non-empty command.
+  // commandMaxChars 在这里和下面的 profile 上都要映射，让 `0`
+  // 在 AppConfig 的任何角落都不存活。把原始值留在 `defaults` 上，
+  // 等于让一个对象携带「不限制」的两种编码——`profile.maxChars`
+  // 是 MAX_SAFE_INTEGER，`defaults.commandMaxChars` 是 0——
+  // 而类型系统不提供任何区分。buildAppConfig 的快速启动路径
+  // 恰好直接照抄（`maxChars: defaults.commandMaxChars`），
+  // 其正确仅仅因为那条路径的值来自从不返回 0 的 parseMaxChars。
+  // 靠另一个表面的巧合才正确，
+  // 在错误编码会拒绝一切非空命令的情况下，
+  // 不是该留着的性质。
   const defaults: Defaults = {
     ...raw.defaults,
     commandMaxChars: uncapZero(raw.defaults.commandMaxChars),
@@ -190,8 +190,8 @@ function normalizeConfig(raw: RawConfig): AppConfig {
     transferTimeoutMs: p.transferTimeoutMs ?? defaults.transferTimeoutMs,
   }));
 
-  // Passed through untouched. mergePolicyRules() owns the layering over
-  // DEFAULT_RULES, so the loader has no policy semantics of its own to get
+  // 原样透传。对 DEFAULT_RULES 的分层由 mergePolicyRules() 负责，
+  // loader 自己不带任何可能出错的策略语义。
   // wrong.
   const overrideWarning = algorithmsOverrideWarning(profiles);
   if (overrideWarning) console.error(overrideWarning);
@@ -199,11 +199,11 @@ function normalizeConfig(raw: RawConfig): AppConfig {
 }
 
 /**
- * The load-time announcement for profiles that widen FROZEN_ALGORITHMS.
+ * 对放宽 FROZEN_ALGORITHMS 的 profile 的加载时通告。
  *
- * Exported pure so the message is assertable without a subprocess. A widened
- * allowlist is a lowered transport floor: the operator must see it at startup,
- * by profile, with the categories touched — not discover it from a failure to
+ * 导出为纯函数，消息无需子进程即可断言。放宽白名单就是
+ * 降低传输下限：运维必须在启动时看到它——按 profile、
+ * 列明涉及的类别——而不是从一次不合预期的协商失败里发现它。
  * negotiate the way they expected.
  */
 export function algorithmsOverrideWarning(profiles: Profile[]): string | null {
@@ -222,10 +222,10 @@ export function algorithmsOverrideWarning(profiles: Profile[]): string | null {
 export function getProfile(config: AppConfig, name?: string): Profile {
   const targetName = name || config.defaults.defaultProfile;
   if (!targetName) {
-    // Falling back to profiles[0] meant that with several hosts configured and
-    // no default chosen, a command with no profile argument ran against
-    // whichever host happened to be listed first — silently, and typically the
-    // one written down first, which tends to be production. One profile is
+    // 回落到 profiles[0] 意味着：配置了多台主机而未选默认时，
+    // 不带 profile 参数的命令会打到恰好排在第一台的主机上——
+    // 无声无息，而排第一的往往是生产。一个 profile 没有歧义；
+    // 多于一个就是调用方必须回答的问题。
     // unambiguous; more than one is a question the caller has to answer.
     if (config.profiles.length > 1) {
       const names = config.profiles.map((p) => p.name).join(', ');
@@ -234,12 +234,12 @@ export function getProfile(config: AppConfig, name?: string): Profile {
         `Pass a "profile" argument, or set defaults.defaultProfile in the config.`,
       );
     }
-    // Defensive: a lookup helper must not hand back `undefined` typed as `Profile`, which
-    // is what `profiles[0]` on an empty list used to do — a TypeError somewhere downstream
-    // rather than an explanation here. This is the invariant, not the product rule. The
-    // decision that an unconfigured server refuses work lives in `ConnectionRegistry`,
-    // which guards this branch AND the named-profile one below; reaching this line means
-    // a caller went around the registry.
+    // 防御性：查找助手不得交回被标成 `Profile` 的 `undefined`——
+    // 空列表上的 `profiles[0]` 过去正是如此——那会在下游某处变成
+    // TypeError，而不是这里的一句解释。这是不变量，不是产品规则。
+    // 「未配置的服务器拒绝干活」的决定在 `ConnectionRegistry`，
+    // 它同时守着本分支和下面的按名分支；走到这一行说明
+    // 有调用方绕过了 registry。
     if (config.profiles.length === 0) throw new UnconfiguredError(getConfigPath());
     return config.profiles[0];
   }

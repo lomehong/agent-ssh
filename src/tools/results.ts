@@ -12,16 +12,16 @@ export function textResult(text: string): ToolResult {
 }
 
 /**
- * Render a CommandResult for the client. A non-zero exit (or a kill signal)
- * is reported as isError with the redacted stderr and the exit status, so a
- * failed remote command cannot be mistaken for an empty success.
+ * 为客户端渲染 CommandResult。非零退出（或被信号杀死）
+ * 以 `isError` 返回，附脱敏 stderr 与退出状态，
+ * 使远程命令的失败不会被误读成一次空的成功。
  */
 export function commandOutput(result: CommandResult) {
-  // ssh2 reports exitCode null when the process died from a signal.
+  // ssh2 在进程死于信号时会报告 exitCode 为 null。
   const failed = result.exitCode !== 0 || Boolean(result.signal);
-  // entropyScan matches the SFTP and session-output paths. Without it a plain
-  // `env` dump hands high-entropy secrets straight to the model, since the
-  // regex layer only knows a fixed set of token shapes.
+  // entropyScan 与 SFTP、会话输出两条路径保持一致。没有它，一次普通的
+  // `env` 转储会把高熵机密直接交给模型——
+  // 因为正则层只认识固定的令牌形态。
   const stdout = redactText(result.stdout, { entropyScan: true });
   const stderr = redactText(result.stderr, { entropyScan: true });
 

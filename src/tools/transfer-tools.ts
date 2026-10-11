@@ -16,23 +16,23 @@ import { syntheticSuccess, textResult } from './results.js';
 import type { ToolDeps, Pipeline } from './pipeline.js';
 
 /**
- * Upper bound on `maxEntries`, independent of what the caller asks for.
+ * `maxEntries` 的上限，独立于调用方要多少。
  *
- * The response is also capped in bytes by the profile's `maxOutputBytes`, so
- * this is not the thing that keeps a huge directory out of the model's context
- * — that bound does. This one keeps the *count* an argument cannot inflate, so
- * a caller cannot turn one tool call into an unbounded walk of a remote tree.
+ * 响应还受 profile 的 `maxOutputBytes` 按字节封顶，
+ * 所以挡住巨型目录进入模型上下文的不是这条——是那条。这条
+ * 保住的是*数量*不被参数吹大，
+ * 让调用方无法把一次工具调用变成对远程树的无限遍历。
  */
 const MAX_LIST_ENTRIES = 1000;
 const DEFAULT_LIST_ENTRIES = 200;
 
 /**
- * rwx triples the way `ls -l` prints them, setuid/setgid/sticky included.
+ * rwx 三元组，按 `ls -l` 的渲染方式，含 setuid/setgid/sticky。
  *
- * Reading only the low nine bits renders `-rwsr-xr-x` as `-rwxr-xr-x`: a format
- * that imitates `ls -l` while dropping the only three bits that carry privilege.
- * An operator or a model deciding whether a remote file is safe to overwrite
- * could not see that it was setuid — which is precisely the precondition that
+ * 只读低九位会把 `-rwsr-xr-x` 渲染成 `-rwxr-xr-x`：
+ * 形似 `ls -l`，却丢掉了仅有的三个特权位。运维或模型在判断
+ * 远程文件能否安全覆盖时，将看不到它是 setuid——
+ * 而这恰是让覆盖变得危险的先决条件。
  * makes overwriting one dangerous.
  */
 function renderPermissions(mode: number): string {
@@ -40,8 +40,8 @@ function renderPermissions(mode: number): string {
   const out: string[] = [];
   for (let i = 0; i < 9; i++) out.push((mode & (1 << (8 - i))) ? rwx[i] : '-');
 
-  // Each special bit replaces the x of its own triple, upper-case when that x is
-  // not set — setuid without execute is `S`, with it `s`, as `ls` renders it.
+  // 每个特殊位替换所在三元组的 x；该 x 未置位时用大写——
+  // setuid 无执行位是 `S`，有则是 `s`，与 `ls` 的渲染一致。
   const special: [number, number, string][] = [
     [0o4000, 2, 's'],
     [0o2000, 5, 's'],
@@ -54,13 +54,13 @@ function renderPermissions(mode: number): string {
 }
 
 /**
- * The `ls -l` type character, from the mode's file-type bits.
+ * `ls -l` 的类型字符，取自 mode 的文件类型位。
  *
- * Read from the mode rather than from `isDirectory`/`isFile`, which between
- * them cover two of the seven types and report everything else as neither.
- * Measured against the test image's `/usr/bin`, where nearly every entry is a
- * symlink: a listing built from those two booleans rendered the whole directory
- * as `?`, which tells a model less than the raw filename did.
+ * 从 mode 读取而不是 `isDirectory`/`isFile`——两者合计只覆盖
+ * 七种类型中的两种，其余一律报「都不是」。对照测试镜像的
+ * `/usr/bin` 实测：那里几乎每项都是符号链接，用这两个布尔
+ * 构建的列表把整个目录渲染成 `?`，
+ * 比原始文件名传达的还少。
  */
 function typeChar(mode: number): string {
   switch (mode & 0o170000) {
@@ -75,19 +75,19 @@ function typeChar(mode: number): string {
   }
 }
 
-/** Width of an ISO timestamp, so the placeholder below keeps the columns aligned. */
+/** ISO 时间戳的宽度，让下方占位符保持列对齐。 */
 const MTIME_WIDTH = 24;
 
 /**
- * A remote mtime is optional on the wire, so it may be no date at all.
+ * 远程 mtime 在线上是可选的，因此可能根本没有日期。
  *
- * ssh2 fills `attrs.mtime` only when the entry carries SSH_FILEXFER_ACMODTIME,
- * and `toSftpStat` turns a missing one into `new Date(NaN)`. `toISOString()`
- * throws `RangeError: Invalid time value` on that, inside the `map` that builds
- * the response — so a single entry from a server that omits the flag failed the
- * whole listing with an opaque error instead of returning the directory. The
- * mode fields already degrade rather than throw (`undefined & mask` is 0, which
- * renders as `?` and `---------`); this makes the timestamp behave the same way.
+ * ssh2 仅在条目携带 SSH_FILEXFER_ACMODTIME 时填充 `attrs.mtime`，
+ * 而 `toSftpStat` 把缺失者变成 `new Date(NaN)`。`toISOString()`
+ * 会在构建响应的 `map` 里对它抛 `RangeError: Invalid time value`——
+ * 于是省略该标志的服务器返回的单个条目，就让整个列表以一个
+ * 莫名其妙的错误失败，而不是返回目录。mode 字段早已是降级而非
+ * 抛出（`undefined & mask` 为 0，渲染成 `?` 与 `---------`）；
+ * 本处让时间戳行为保持一致。
  */
 function renderMtime(mtime: Date): string {
   return Number.isNaN(mtime.getTime()) ? '(no mtime)'.padStart(MTIME_WIDTH) : mtime.toISOString();
@@ -99,18 +99,18 @@ function renderEntry(entry: SftpStat): string {
 }
 
 /**
- * Render the listing, stopping at the byte budget the caller's profile sets.
+ * 渲染列表，止于调用方 profile 设定的字节预算。
  *
- * `SftpClient.list` bills `filename + longname + 256` per retained entry, which
- * is a proxy for what a line costs and not the line itself: `entry.path` is the
- * directory joined to the filename, so the directory is repeated on every line
- * and the flat 256 never covered it. With a long remote path the rendered body
- * ran several times past the profile's `maxOutputBytes` while the layer that
+ * `SftpClient.list` 对每个保留条目计价 `filename + longname + 256`，
+ * 这只是行成本的代理而非行本身：`entry.path` 是目录拼接文件名，
+ * 每行都重复目录，而 flat 256 从未覆盖它。远程路径一长，
+ * 渲染产物就超出 profile 的 `maxOutputBytes` 好几倍，
+ * 而自以为在执行预算的那一层只花了零头。
  * believed it was enforcing the budget had spent a fraction of it.
  *
- * So the bound is applied to the bytes actually produced. The primitive's budget
- * still matters — it is what stops a hostile server's `longname` being retained
- * in memory — but the number the operator configured now describes the thing
+ * 所以边界改为作用于实际产出的字节。原语的预算仍然要紧——
+ * 它拦住敌意服务器的 `longname` 被驻留内存——但运维配置的数字
+ * 现在描述的是他们为之配置的东西，即到达模型的那份。
  * they configured it for, which is what reaches the model.
  */
 function renderListing(entries: SftpStat[], maxBytes: number): { body: string; truncated: boolean } {
@@ -127,23 +127,23 @@ function renderListing(entries: SftpStat[], maxBytes: number): { body: string; t
 }
 
 /**
- * Refuse a mode that grants authority the transfer itself does not carry.
+ * 拒绝授予传输本身并不具备的权限的 mode。
  *
- * Everything above the low nine bits is setuid, setgid and the sticky bit. A
- * caller allowed to write a file is not thereby allowed to write one that runs
- * as its owner, and `uploadFile` passes this straight to the remote `open`.
+ * 低九位以上全部是 setuid、setgid 与粘滞位。允许写文件的调用方，
+ * 并不因此有权写一个以属主身份运行的文件，而 `uploadFile` 把它
+ * 直接传给远程 `open`。
  *
- * `0` is refused rather than accepted. `uploadFile` reads it as "unset" through
- * an `||`, so a caller asking for mode 0 got 0600 — and on the overwrite path it
- * also suppressed the inherit-the-destination's-mode step, yielding neither the
- * mode asked for nor the one replaced. An argument silently rewritten is worse
+ * `0` 是拒绝而非接受。`uploadFile` 经 `||` 把它读作「未设置」，
+ * 于是要 mode 0 的调用方得到 0600——覆盖路径上还跳过了
+ * 继承目标 mode 的步骤，要的没给、被替换的也没保住。
+ * 参数被静默改写，比被拒绝更糟。
  * than one refused.
  *
- * Runs as a `preCheck`, i.e. inside the pipeline, so a caller probing the
- * boundary leaves an audit record. The range is deliberately *not* duplicated as
- * a zod bound on the field: the SDK validates the schema before the handler is
- * entered, so a bound there refused a setuid mode outside the pipeline — no
- * audit record, and this message unreachable. Measured: with both in place, a
+ * 以 `preCheck` 运行（即在管线内），探测边界的调用会留下审计记录。
+ * 该范围刻意*不*复制成字段上的 zod 边界：SDK 在进入 handler 前
+ * 就校验 schema，那里的边界会在管线之外拒绝 setuid mode——
+ * 无审计记录，这条消息也不可达。实测：两处都加时，
+ * 0o4755 的探测连一条审计记录都没有。
  * probe at 0o4755 produced no audit record at all.
  */
 export function checkMode(mode: number | undefined): number | undefined {
@@ -160,15 +160,15 @@ export function checkMode(mode: number | undefined): number | undefined {
 }
 
 /**
- * What the audit record adds once the local path has been resolved.
+ * 本地路径解析后，审计记录追加的内容。
  *
- * Appended rather than substituted, and empty when the two agree. The refinement
- * has to satisfy the pipeline's append-only rule — the audited string may
- * elaborate what was approved, never replace it — and swapping `./sub/../x.bin`
- * for `x.bin` is a replacement, which `refineCommand` correctly threw on.
+ * 是追加而不是替换，两者一致时为空。细化必须满足管线的
+ * 只追加规则——被审计的字符串可以细化所批准的内容，绝不能替换——
+ * 而把 `./sub/../x.bin` 换成 `x.bin` 是替换，`refineCommand`
+ * 正确地对它抛了异常。
  *
- * Appending turns out to be the better record anyway: an auditor sees the
- * spelling the caller sent *and* the file it resolved to, so a divergence
+ * 追加反而是更好的记录：审计者同时看到调用方发来的拼写
+ * *和*解析到的文件，两者的分歧可见，而不是被静默归一化掉。
  * between them is visible rather than silently normalised away.
  */
 function resolvedSuffix(asked: unknown, resolved: string): string {
@@ -176,32 +176,32 @@ function resolvedSuffix(asked: unknown, resolved: string): string {
 }
 
 /**
- * Streaming SFTP tools: bounded directory listing, and transfers that move
- * between the remote host and local disk without passing through model context.
+ * 流式 SFTP 工具：有界目录列表，以及在远程主机与本地磁盘之间
+ * 不经过模型上下文的传输。
  *
- * Two orderings are load-bearing here, and both come from #207.
+ * 两种顺序在此承重，都来自 #207。
  *
- * **Nothing observable precedes the decision.** The audited string is built from
- * the caller's own spelling of both paths, through `remotePathForAudit` and
- * `localPathForAudit`, neither of which performs any I/O. Every local effect —
- * the existence check, the staged `.part`, the operator-configuration errors the
- * transfer-root gate produces — happens inside `run()`, which the pipeline
- * reaches only after the call is allowed and approved. The throwing validators
- * run as `preCheck`, inside the pipeline's own try, so a refused call still
+ * **任何可观察动作都不得先于决定。** 被审计字符串由调用方
+ * 对两条路径自己的拼写构建，经 `remotePathForAudit` 与
+ * `localPathForAudit`——两者都不做任何 I/O。每个本地效果——
+ * 存在性检查、暂存的 `.part`、传输根大门报出的运维配置错误——
+ * 都发生在 `run()` 内，而管线只在调用获准并获批后才到达它。
+ * 会抛异常的校验器以 `preCheck` 运行、位于管线自己的 try 内，
+ * 被拒的调用因此仍留审计记录，而不是让客户端隐形探测边界。
  * leaves an audit record rather than letting a client probe the boundary
  * invisibly.
  *
- * **The decision is about the whole operation.** `overwrite` and `mode` change
- * what a call does — one destroys an existing remote file, the other sets its
- * permissions — so they belong in the string policy classifies, in the prompt a
- * human reads, and in the key an approval grant is remembered under. Left out,
+ * **决定针对整个操作。** `overwrite` 与 `mode` 改变调用的行为——
+ * 一个摧毁既有远程文件，另一个设定其权限——所以它们属于
+ * 策略所分类的字符串、人读的提示、审批授权记忆的键。
+ * 略去的话，批准一条路径即批准该调用的所有其他拼法。
  * one approval of a path covered every other spelling of the call.
  *
- * The resolved local path is then *appended* to the audit record through
- * `onResolved`, which the gate fires after confining the path and before it
- * stats or opens anything — so a refusal raised by the checks that follow is
- * audited with the resolution too, not only a success. Appended and not
- * substituted, because the pipeline's rule is that an audited string may be
+ * 解析出的本地路径再经 `onResolved` *追加*进审计记录，
+ * 门在限制路径之后、stat 或打开任何东西之前触发它——
+ * 因此后继检查抛出的拒绝也带着解析结果入账，不只是成功。
+ * 追加而非替换：管线的规则是被审计字符串可细化、绝不可替换，
+ * 且审计者同时看到被批准的拼写与解析到的文件更好。
  * elaborated and never replaced, and because an auditor is better served seeing
  * both the spelling that was approved and the file it resolved to.
  */
@@ -210,9 +210,9 @@ export function registerTransferTools(
   pipeline: Pipeline,
 ) {
   const { runAudited } = pipeline;
-  // Absent only when nothing was configured. The gate reads `transferRoot` and
-  // refuses with the message that names the config key, which is the same
-  // answer an operator who has a config but no root should get.
+  // 仅在什么都没配置时为缺省。大门读取 `transferRoot` 并以
+  // 指名配置键的消息拒绝——有配置而无根的运维就该得到
+  // 同样的回答。
   const ctx: LocalPathContext = localPath ?? { transferRoot: undefined };
 
   // ─── sftp-list ─────────────────────────────────────────────────────────
@@ -242,8 +242,8 @@ export function registerTransferTools(
           const budget = rt.conn.profile.maxOutputBytes;
           const { entries, truncated } = await new SftpClient(rt.conn).list(remotePath, {
             maxEntries: maxEntries ?? DEFAULT_LIST_ENTRIES,
-            // The listing is output headed for the model, so it is billed
-            // against the same budget every other tool's output is.
+            // 列表是 heading 给模型的输出，因此按与其他工具输出
+            // 相同的预算计费。
             maxResponseBytes: budget,
             idleTimeoutMs: rt.conn.profile.transferTimeoutMs,
             abortSignal: rt.abortSignal,
@@ -256,8 +256,8 @@ export function registerTransferTools(
             : '';
           return {
             audited: syntheticSuccess(rt.profileName),
-            // Filenames are remote, attacker-influenced content on their way
-            // into model context, exactly like command output.
+            // 文件名是远程的、受攻击者影响的内容，正要进入
+            // 模型上下文，与命令输出完全一样。
             output: textResult(redactText(body, { entropyScan: true }) + note),
           };
         },
@@ -273,12 +273,12 @@ export function registerTransferTools(
       localPath: z.string().describe('Local file to upload, inside defaults.transferRoot'),
       remotePath: z.string().describe('Remote destination path. No leading or trailing whitespace, and no control, bidirectional or zero-width characters.'),
       overwrite: z.boolean().optional().describe('Replace an existing remote file (default false)'),
-      // The range is deliberately NOT declared here, only in `checkMode`. The SDK
-      // validates this schema before the handler runs, so a zod bound refuses a
-      // setuid mode *outside* the pipeline — no audit record, and the message
-      // explaining why setuid is refused unreachable. A probe at a security
-      // boundary that leaves no trace is the thing `preCheck` exists to prevent,
-      // so the bound lives where the refusal can be logged. `.int()` stays,
+      // 该范围刻意不在此声明，只在 `checkMode`。SDK 在 handler
+      // 运行前就校验本 schema，zod 边界会在管线*之外*拒绝
+      // setuid mode——无审计记录，解释为何拒绝 setuid 的消息
+      // 也不可达。在安全边界上不留痕迹的探测，正是
+      // `preCheck` 存在要防止的东西，所以边界放在能记日志的
+      // 地方。`.int()` 保留：非整数是类型错误而非探测。
       // because a non-integer is a type error rather than a probe.
       mode: z.number().int().optional()
         .describe('Remote file mode, 1 to 511 (0o777); setuid, setgid and the sticky bit are refused. e.g. 420 for 0644. Omit for 0600 on a new file, or the replaced file’s permission bits.'),
@@ -302,18 +302,18 @@ export function registerTransferTools(
         },
         async (rt) => {
           const maxBytes = rt.conn.profile.transferMaxBytes;
-          // Refined through `onResolved`, which the gate fires after confining
-          // the path and before it stats or opens anything. Refining after the
-          // call returned covered only the success path — every refusal the gate
-          // itself raises (symlink source, outside the root, the root's own
+          // 经 `onResolved` 细化——门在限制路径之后、stat 或打开
+          // 任何东西之前触发它。调用返回后才细化只覆盖成功路径——
+          // 门自身抛出的每个拒绝（符号链接源、越出根、根自身
+          // 配置错误）审计的都会是调用方的拼写。
           // misconfiguration) audited the caller's spelling instead.
           const local = await localFileForRead(ctx, source, (displayPath) => {
             rt.refineCommand(`${approved}${resolvedSuffix(source, displayPath)}`);
           });
           try {
-            // Checked here as well as inside the transfer, because the size is
-            // already known: refusing before a byte moves beats refusing after
-            // the cap is passed mid-stream and a remote `.part` has to be
+            // 传输内部也查，但这里也查：大小已知，
+            // 一个字节未动就拒绝，好过流中途越限之后
+            // 还要清理远程 `.part`。
             // cleaned up.
             if (local.size > maxBytes) {
               throw new McpError(
@@ -371,9 +371,9 @@ export function registerTransferTools(
           preCheck: () => { sanitizeRemotePath(remotePath); },
         },
         async (rt) => {
-          // As on the upload side, and for the same reason: refined before the
-          // `.part` exists, so the overwrite and symlink refusals are audited
-          // with the resolved destination, and a throw from `refineCommand`
+          // 与上传侧相同、理由相同：在 `.part` 存在之前细化，
+          // 覆盖与符号链接拒绝都会带着解析后的目标入账，
+          // `refineCommand` 自身抛出也不会滞留暂存文件。
           // itself cannot strand a staged file.
           const download = await createLocalDownload(ctx, destination, overwrite ?? false, (t) => {
             rt.refineCommand(`${approved}${resolvedSuffix(destination, t.displayPath)}`);
@@ -394,9 +394,9 @@ export function registerTransferTools(
               output: textResult(`Downloaded ${bytes} bytes from ${remotePath} to ${download.target.displayPath}`),
             };
           } finally {
-            // Always, and after publish(): destroying the stream closes the
-            // handle, and publish() needs it open to sync(). On the failure
-            // path this is what removes the staged `.part`.
+            // 无条件、且在 publish() 之后：销毁流会关句柄，
+            // 而 publish() 需要它开着才能 sync()。失败路径上
+            // 正是它移除暂存的 `.part`。
             await download.cleanup();
           }
         },

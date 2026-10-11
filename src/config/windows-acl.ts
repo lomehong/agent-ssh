@@ -20,37 +20,37 @@ const WINDOWS_ROOT = /^[A-Za-z]:\\Windows$/;
 const CANONICAL_SYSTEM32 = 'C:\\Windows\\System32';
 
 /**
- * Absolute paths, not bare names — and not paths the caller gets to choose.
+ * 绝对路径，非裸名——且非调用方可选的路径。
  *
- * These subprocesses decide whether a config file is private, so who answers must
- * not be up to the ambient environment. Windows resolves a bare name through the
- * application directory, the working directory and then PATH, and the working
- * directory belongs to whichever MCP client spawned us; a planted `icacls.exe`
- * would run as the operator *and* dictate the verdict, since all it has to emit
- * is one line reading `D:(A;ID;FA;;;SY)`.
+ * 这些子进程决定配置文件是否私有，所以谁应答不能由环境决定。
+ * Windows 经应用目录、工作目录、然后 PATH 解析裸名，
+ * 工作目录属于生成我们的 MCP 客户端；种植的 icacls.exe
+ * 会以运维身份运行*并*决定判定，因为它只需输出一行
+ * 读作 D:(A;ID;FA;;;SY) 的内容。
  *
- * The first version of this comment claimed the environment could not influence
- * the verdict and then read `%SystemRoot%`, which the same parent sets — the hole
- * moved one variable over rather than closing. So the value is accepted only in
- * the shape a real Windows root has, and `readDescriptor` will not treat "icacls
- * is missing here" as "icacls is missing on this machine" without checking the
- * canonical location, because that verdict is the one that loads anyway.
  *
- * One thing this does *not* close: `os.tmpdir()` reads `TEMP`/`TMP` from the same
- * environment, and that is where the descriptor is written and read back. A parent that
- * points `TEMP` somewhere it watches has the window between `icacls` writing `acl.sddl`
- * and our `readFile` to substitute one line reading `D:(A;ID;FA;;;SY)`. Taking the temp
- * root from another environment variable would move the problem rather than solve it,
- * and a parent with that much control already chooses our argv — it could simply pass
- * `--allowUncheckedConfigAcl`. A known limit of the threat model, not something handled.
+ * 本注释首版声称环境无法影响判定、随后却读 %SystemRoot%，
+ * 而同一父进程设置它——洞移了一个变量而非关闭。
+ * 所以该值仅在真实 Windows 根的形状下被接受，且 readDescriptor
+ * 不会在未检查规范位置的情况下把「icacls 不在此处」当
+ * 「本机无 icacls」——因为该判定是无论如何都会加载的那个。
+ *
+ *
+ * 一件它*没有*关闭的事：os.tmpdir() 从同一环境读 TEMP/TMP，
+ * 那正是描述符写入和读回的地方。把 TEMP 指向自己监视处的父进程
+ * 拥有 icacls 写 acl.sddl 与我们 readFile 之间的窗口，
+ * 可替换为一行读作 D:(A;ID;FA;;;SY) 的内容。
+ * 从另一环境变量取临时根会把问题移动而非解决，
+ * 且拥有那么多控制的父进程本就选择我们的 argv——它可以直接传
+ * --allowUncheckedConfigAcl。威胁模型的已知限制，而非已处理。
  */
 function systemDir(): string {
-  // Canonical first. Shape is not integrity: the previous version accepted any
-  // `%SystemRoot%` matching /^[A-Za-z]:\\Windows$/, and `Z:\Windows` on removable
-  // media, a mapped drive, a `subst` alias or a mounted VHD satisfies that — so both
-  // subprocesses became the attacker's, and a world-readable config was reported
-  // `restricted` with no warning. Reproduced before this change. On any normal host
-  // C:\Windows\System32\icacls.exe exists, so the environment cannot redirect at all.
+  // 规范位置优先。形状不是完整性：前一版本接受任何匹配
+  // /^[A-Za-z]:..Windows$/ 的 %SystemRoot%，而可移动介质上的
+  // Z:.Windows、映射驱动器、subst 别名或挂载 VHD 都满足——
+  // 于是两个子进程都成了攻击者的，且一个全世界可读的配置被报为
+  // restricted 无任何告警。本变更前已复现。任何正常主机上
+  // C:.Windows.System32.icacls.exe 都存在，环境根本无法重定向。
   if (existsSync(join(CANONICAL_SYSTEM32, 'icacls.exe'))) return CANONICAL_SYSTEM32;
   const fromEnv = process.env.SystemRoot;
   return fromEnv && WINDOWS_ROOT.test(fromEnv) ? join(fromEnv, 'System32') : CANONICAL_SYSTEM32;
@@ -61,41 +61,41 @@ const ICACLS = join(SYSTEM32, 'icacls.exe');
 const WHOAMI = join(SYSTEM32, 'whoami.exe');
 
 /**
- * What these children inherit: nothing. They read no configuration of ours, and
- * `Path` is System32 alone so nothing they might start can be redirected either.
+ * 这些子进程继承什么：什么都不继承。不读我们的任何配置，
+ * Path 仅 System32，因此它们可能启动的任何东西也无处重定向。
  */
 const CHILD_ENV: NodeJS.ProcessEnv = { SystemRoot: join(SYSTEM32, '..'), Path: SYSTEM32 };
 
 /**
- * One budget for the whole check — and for the check, not merely its children.
  *
- * Per-child was the first shape, which made the ceiling the sum of however many
- * children the check happens to spawn — three today, so 4.5s of dead air before
- * the server reports ready, against a measured happy path of 60-150ms.
  *
- * The first version passed the signal to `execFile` only, which left `mkdtemp`,
- * `readFile` and `rm` — six operations across the two subjects — outside the bound
- * the comment claimed. A `%TEMP%` redirected to a stalled share made startup
- * latency unbounded rather than five seconds. The deadline is now raced against the
- * whole per-subject check, so the number means what it says.
+ * 按子进程是首版形状，使上限变成检查恰好生成的子进程数之和——
+ * 今天三个，服务器报告就绪前 4.5 秒死寂，对照实测 happy path
+ * 的 60-150ms。
  *
- * Generous, because running out is not evidence about the file: five seconds across
- * three process creations plus two temp-directory round trips, so that on-access
- * virus scanning or a loaded host does not turn a private config into a finding.
- * Expiry gets its own verdict for the same reason — see `timed-out`.
+ * 首版只把信号传给 execFile，留下 mkdtemp、readFile 和 rm——
+ * 跨两个主体的六次操作——在注释声称的界之外。被重定向到
+ * 停滞共享的 %TEMP% 使启动延迟无界而非五秒。截止时间现在
+ * 与整个单主体检查竞速，数字说它意味着什么就是什么。
+ *
+ *
+ * 宽裕，因为耗尽不构成关于文件的证据：三次进程创建加两次
+ * 临时目录往返共五秒，使按需扫描器有余地。
+ *
+ * 超时有自己的判定，同一理由——见 timed-out。
  */
 const ACL_TIMEOUT_MS = 5_000;
 
 
 /**
- * A finding the caller is told about, whether or not it also refuses.
+ * 调用方会被告知的发现，无论是否也拒绝。
  *
- * Discriminated because the two kinds are not the same statement and a reader of a log has
- * to tell them apart: "this ACL lets Authenticated Users modify your config" and "I could
- * not read this ACL" are different facts, and the first is the more actionable. The earlier
- * shape could only express the second, so the stronger finding went straight to
- * `console.error` and no caller could reach it — which is what `onFinding`'s own doc says
- * must not happen.
+ * 判别联合，因为两种不是同一陈述，日志读者必须区分：
+ * 「此 ACL 让 Authenticated Users 修改你的配置」和「我无法读此 ACL」
+ * 是不同事实，前者更可行动。更早的形状只能表达后者，
+ * 更强的发现直接进了 console.error，调用方无法触及——
+ * 正是 onFinding 自己的文档说不许发生的。
+ *
  */
 export type AclFinding =
   | {
@@ -109,48 +109,48 @@ export type AclFinding =
 
 export interface AclOptions {
   /**
-   * Refuse rather than warn when the ACL is readable beyond its owner.
-   * `--strictConfigAcl`. Off by default, and that default is the point.
+    * ACL 可被属主以外读取时拒绝而非告警。
+    * --strictConfigAcl。默认关，而默认正是要点。
+    *
+    * 2.3.0 曾默认拒绝，第一天就在文档化的 %APPDATA% 位置
+    * 挡住了一位报告者的配置——他们的 ACL 带了第四个主体，
+    * 白名单建时不知道它，因为白名单是在一台机器上实测的。
+    * --allowUncheckedConfigAcl 刻意不覆盖已知坏的判定，
+    * 于是完全无路可走：一个安全检查，最坏结果是把运维
+    * 锁在自己的配置之外，而 Windows 对该保证的表述不如 POSIX 清晰。
+    *
    *
-   * Refusing was the default in 2.3.0, and it blocked a reporter's config at the
-   * documented `%APPDATA%` location on the first day — their ACL carried a fourth
-   * principal, which the allowlist was built without knowing about because it was
-   * measured on one machine. `--allowUncheckedConfigAcl` deliberately did not cover a
-   * known-bad verdict, so there was no way past it at all: a security check whose worst
-   * outcome is locking an operator out of their own config, over a guarantee Windows
-   * states less clearly than POSIX does.
-   *
-   * So the finding is reported and the config loads. What the check knows is still worth
-   * saying — a config under `C:\` really does grant `BUILTIN\Users` read and
-   * `Authenticated Users` modify — but saying it and refusing are different things, and
-   * only one of them can strand somebody.
+    * 所以发现被报告、配置加载。检查知道的仍值得说——
+    * C:\ 下的配置确实给 BUILTIN Users 读和 Authenticated Users 修改——
+    * 但说出来和拒绝是两件事，只有其中一件能把人困住。
+    *
    */
   enforce?: boolean;
   /**
-   * Load the config even when the ACL could not be determined.
-   * `--allowUncheckedConfigAcl`.
+    * 即使 ACL 无法确定也加载配置。
+    * --allowUncheckedConfigAcl。
    */
   allowUnchecked?: boolean;
   /**
-   * Where "this check did not run" goes.
-   *
-   * It used to go straight to `console.error` from inside the config loader, which
-   * for a stdio MCP server is the client's log file — and this codebase has twice
-   * ruled that stderr cannot be the only copy (`policy/engine.ts`,
-   * `guard/elicitation.ts`). Handing the event to the caller lets `main()` decide,
-   * which is also the only place that could ever reach the audit store. Defaults
-   * to stderr so the module stands on its own.
+    * 「这条检查没跑」去哪。
+    *
+    * 它曾从配置加载器内部直达 console.error，对 stdio MCP
+    * 服务器那是客户端的日志文件——而本代码库已两次裁定
+    * stderr 不能是唯一副本（policy/engine.ts、
+    *），因为它与 stdout 竞速、被吞、且在客户端断开时丢弃。
+    *
+   * 到 stderr 使模块自立。
    */
   onFinding?: (finding: AclFinding) => void;
 }
 
 /**
- * The SID of the account this process runs as.
+ * 本进程以其运行的账户的 SID。
  *
- * Needed because `icacls /save` emits the DACL alone — no `O:` owner component —
- * so "the owner" has to come from somewhere else, and Node exposes no SID
- * (`os.userInfo().uid` is -1 on Windows). Measured at 12-20ms, and paid once per
- * process *once it succeeds* — only a success is cached, so a failure retries.
+ * 需要它是因为 icacls /save 只输出 DACL——没有 O: 属主组件——
+ * 所以「属主」必须来自别处，而 Node 不暴露 SID
+ *（os.userInfo().uid 在 Windows 上是 -1）。实测 12-20ms，
+ * 成功后每进程只付一次——只有成功被缓存，失败会重试。
  */
 let cachedUserSid: string | null | undefined;
 
@@ -162,12 +162,12 @@ async function currentUserSid(signal?: AbortSignal): Promise<string | null> {
       windowsHide: true,
       env: CHILD_ENV,
     });
-    // `"host\user","S-1-5-21-…-1001"`
+    // 形如 host user 加逗号加 SID
     const sid = stdout.match(/"(S-1-[0-9-]+)"/)?.[1];
-    // Only a success is remembered. Memoising the failure made one aborted or
-    // transient `whoami` pin `identity-unknown` for the life of the process, so
-    // every later check refused — and it forced a `resetIdentityCache` export
-    // whose only callers were tests undoing that poisoning.
+    // 只记住成功。缓存失败使一次中止或瞬态的 whoami
+    // 在进程生命周期内钉死 identity-unknown，此后每次检查都拒绝——
+    // 还迫使导出一个 resetIdentityCache，其唯一调用方
+    // 是撤销该污染的测试。
     if (sid) cachedUserSid = sid;
     return sid ?? null;
   } catch {
@@ -176,43 +176,43 @@ async function currentUserSid(signal?: AbortSignal): Promise<string | null> {
 }
 
 /**
- * Every line of the security descriptor file `icacls /save` writes.
+ * icacls /save 写的安全描述符文件的每一行。
  *
- * The saved file is UTF-16LE and holds the item's name on one line and its
- * descriptor on the next. Which line is which is not guessed here — the caller
- * hands each line to the parser and keeps the first that parses, so the reader
- * and the parser cannot disagree about what a descriptor looks like. They did
- * in the first version: the reader required a line *starting* with `D:` while
- * the parser accepted an `O:`/`G:` prefix, and the disagreement resolved to
+ * 保存的文件是 UTF-16LE，一行是条目名、下一行是其描述符。
+ * 哪行是什么不在此猜——调用方把每行交给解析器、保留第一个
+ * 能解析的，使读取器和解析器不可能对描述符的样子不一致。
+ * 首版它们确实不一致：读取器要求以 D: 开头的行，
+ * 解析器却接受 O:/G: 前缀，分歧解析为 unchecked。
+ *
  * "unchecked".
  *
- * SDDL via `/save` rather than PowerShell's `Get-Acl`, whose descriptor would carry an
- * `O:` owner component and save the second subprocess: measured at 8-22ms against
- * 740-830ms, on a check that runs at every start. And rather than plain `icacls` output,
- * which prints account names that depend on the installed language. That reasoning lived
- * only in the changeset, which is deleted at release.
+ * 用 /save 的 SDDL 而非 PowerShell 的 Get-Acl，后者的描述符
+ * 带 O: 属主组件、省下第二个子进程：实测 8-22ms 对 740-830ms，
+ * 而检查每次启动都跑。也不用普通 icacls 输出——它打印
+ * 依赖安装语言的账户名。那段推理只活在变更集中，发布即删。
  *
- * Microsoft documents `/save` against a directory; the single-file form is
- * undocumented but real, and windows-acl.live.test.ts covers it by asserting a
- * refusal that is only reachable if a descriptor came back parseable.
+ *
+ * Microsoft 对目录文档化了 /save；单文件形式无文档但真实，
+ * windows-acl.live.test.ts 用断言一个只有描述符可解析才可达的
+ * 拒绝来覆盖它。
  */
 /**
- * What a failed descriptor read means.
+ * 描述符读取失败意味着什么。
  *
- * Pure apart from the injected existence check, because the branch that matters most
- * is unreachable from any platform's tests otherwise: off Windows the identity lookup
- * fails first, and on the Windows job only the `read-refused` arm is exercised. The
- * canonical-location check *is* the security argument for pinning System32, and it was
- * executed by nothing.
+ * 除注入的存在性检查外为纯函数，因为最重要的分支在
+ * 任何平台的测试中均不可达：非 Windows 上身份查找先失败，
+ * Windows 作业上只有 read-refused 臂被走到。固定 System32 的
+ * 安全论证正是规范位置检查，而它之前什么都没执行过。
  *
- * Two failures say nothing about the file — icacls being absent from the machine, and
- * the check running out of time — and those are the two the caller loads anyway even
- * under `--strictConfigAcl`.
- * Everything else (a non-zero exit, output we could not read) is about this path.
  *
- * Which makes "absent" worth being sure of: absent *here* is not enough, because a
- * redirected %SystemRoot% would otherwise reach a fail-open branch, and pinning the
- * path exists to prevent exactly that.
+ * 两种失败不构成关于文件的证据——机器上缺 icacls、
+ * 检查超时——而即使在 --strictConfigAcl 下调用方
+ * 也照样加载的正是这两个。
+ *
+ *
+ * 这使「缺席」值得确认：此处缺席不够，因为重定向的 %SystemRoot%
+ * 否则会到达 fail-open 分支，固定路径的存在正是为了阻止它。
+ *
  */
 export function classifyReadFailure(
   err: any,
@@ -247,21 +247,21 @@ async function readDescriptor(
   } catch (err: any) {
     return classifyReadFailure(err);
   } finally {
-    // Not awaited: `rm` takes no signal, so awaiting it put an unbounded filesystem
-    // operation on the path a server start waits for. The directory holds a security
-    // descriptor, not a secret, and %TEMP% is per-user — so losing the race to a
-    // stalled disk costs a stray directory, not correctness.
+    // 不等待：rm 不收信号，await 它会把无界文件系统操作
+    // 放到服务器启动等待的路径上。该目录装的是安全描述符
+    // 而非机密，且 %TEMP% 按用户隔离——输给停滞磁盘的竞速
+    // 代价是一个游离目录，而非正确性。
     if (dir) void rm(dir, { recursive: true, force: true }).catch(() => {});
   }
 }
 
 /**
- * Whichever comes first: the verdict, or the deadline.
+ * 先到者：判定，或截止时间。
  *
- * The signal reaches the subprocesses, but `mkdtemp` and `rm` accept none, so
- * without this the budget bounded three of the nine operations the check performs.
- * Expiry resolves to the same verdict a subprocess timeout produces, which warns
- * and loads — a slow machine is not evidence about the file.
+ * 信号到达子进程，但 mkdtemp 和 rm 不收，所以没有这个
+ * 预算只约束检查九次操作中的三次。超时解析为与子进程超时
+ * 相同的判定——告警并加载：慢机器不构成关于文件的证据。
+ *
  */
 function raceDeadline(verdict: Promise<AclVerdict>, signal?: AbortSignal): Promise<AclVerdict> {
   if (!signal) return verdict;
@@ -282,11 +282,11 @@ const TIMED_OUT: AclVerdict = {
 
 export async function inspectAcl(path: string, signal?: AbortSignal): Promise<AclVerdict> {
   const sid = await currentUserSid(signal);
-  // The budget expiring has to mean the same thing wherever it lands. `whoami` runs
-  // first and its failure is indistinguishable inside the catch, so without this an
-  // expiry during the identity lookup became `identity-unknown` and *refused*, while
-  // the identical expiry one subprocess later became `timed-out` and loaded. Only a
-  // success is cached, so it refused a second time for the directory too.
+  // 预算耗尽必须处处意味着同一件事。whoami 先跑且失败
+  // 在 catch 内不可分辨，没有这个的话身份查找期间的超时
+  // 变成 identity-unknown 且*拒绝*，而晚一个子进程的同一超时
+  // 变成 timed-out 并加载。只缓存成功，于是目录也被拒第二次。
+  //
   if (sid === null && signal?.aborted) return TIMED_OUT;
   if (sid === null) {
     return { status: 'unknown', reason: 'identity-unknown', detail: 'could not read this account\'s SID' };
@@ -296,14 +296,14 @@ export async function inspectAcl(path: string, signal?: AbortSignal): Promise<Ac
   const read = await readDescriptor(path, signal);
   if ('failure' in read) return { status: 'unknown', reason: read.failure, detail: read.detail };
 
-  // The reader does not decide which line is the descriptor; the parser does.
+  // 读取器不决定哪行是描述符；解析器决定。
   let lastDetail = 'no line parsed as a security descriptor';
   for (const line of read.lines) {
     const trimmed = line.trim();
-    // A descriptor opens with one of its components. Without this, "first line that
-    // parses" let an item-name line stand in for the descriptor: `parseDacl('D:')` is a
-    // legitimately empty DACL and therefore `restricted`, and `icacls D: /save` for a
-    // drive-relative `--config D:config.toml` writes a name line of exactly `D:`.
+    // 描述符以其组件之一开头。没有这个，「第一行能解析」让
+    // 条目名行顶替描述符：parseDacl 的 D: 是合法的空 DACL 因而是
+    // restricted，而对驱动器相对的 --config D:config.toml 跑
+    // icacls D: /save 恰好写出一行名为 D: 的名字行。
     if (!/^[OGDS]:/.test(trimmed)) continue;
     const verdict = parseDacl(trimmed, identity);
     if (verdict.status !== 'unknown') return verdict;
@@ -313,63 +313,63 @@ export async function inspectAcl(path: string, signal?: AbortSignal): Promise<Ac
 }
 
 /**
- * Whether a path is somewhere its ACL can reasonably be tightened.
+ * 路径是否处于其 ACL 可以被合理收紧的地方。
  *
- * A drive root or the working directory is not: the remediation for a config at
- * `C:\config.toml` used to be printed as `icacls "C:\" /inheritance:d` followed
- * by a `/remove:g` of BUILTIN\Users — which, run as printed, breaks inheritance
- * across the volume and takes the drive away from every non-administrator. The
- * fix for a config in a place like that is to put it somewhere else.
+ * 驱动器根或工作目录不是：C: 下配置的修复过去被打印为
+ * icacls C: 加 /inheritance:d 后接对 BUILTIN Users 的 /remove:g——
+ * 照原样运行会破坏整个卷的继承、把驱动器从每个非管理员手里拿走。
+ * 那种位置的配置的修复是把它放到别处。
+ *
  */
 function isTightenable(path: string, kind: 'file' | 'directory'): boolean {
-  // A file is always tightenable. Removing BUILTIN\Users from one config file
-  // takes nothing away from anyone — the destructive case was only ever the
-  // directory, and scoping this to both made the advice for the realistic case
-  // ("your config is under C:\sshcfg") worse than what it replaced.
+  // 文件总是可收紧。从单个配置文件移除 BUILTIN Users
+  // 不从任何人手里拿走任何东西——破坏性情形从来只是目录，
+  // 把两者都框进来会让现实情形的建议（配置在 C: 下）
+  // 比它替代的东西更糟。
   if (kind === 'file') return true;
 
   const { root } = parsePath(path);
   if (path === root || path === '.' || path === '..') return false;
-  // For a directory, not merely "is it a root". Everything under `C:\` inherits
-  // BUILTIN\Users read-and-execute, so any directory outside the profile can come
-  // back broad — and `C:\Users\config.toml` would then be answered with "strip
-  // BUILTIN\Users from C:\Users", which removes every other account's traverse to
-  // its own profile. The first version keyed on how the path was spelled, so it
-  // caught only the two shapes that had been reported.
+  // 对目录，不只是「是否为根」。C: 下一切继承 BUILTIN Users
+  // 的读和执行，profile 之外的任何目录都可能回来 broad——
+  // 而 C:Users 下配置会得到「从 C:Users 移除 BUILTIN Users」，
+  // 这会移除其他所有账户到自己 profile 的遍历路径。首版按路径
+  // 拼写键控，只抓到被报告的两种形状。
   //
-  // Outside the profile the fix is described rather than printed. A directory the
-  // operator does own — `D:\configs`, say — is perfectly tightenable, and telling
-  // them to move the file would be poor advice; but that cannot be told apart from
-  // a directory other accounts depend on, and only one of those two mistakes is
-  // destructive.
+  //
+  // profile 之外以描述而非打印给出修复。运维确实拥有的目录
+  //——比如 D:configs——完全可以收紧，让他们移文件是差建议；
+  // 但那无法与其他账户依赖的目录区分，而两种错误中只有一种是
+  // 破坏性的。
+  //
   const home = process.env.USERPROFILE;
-  // With no profile to compare against the honest answer is "cannot tell", and
-  // relocation() is the message that says so without prescribing anything destructive.
-  // Returning true here reinstated exactly the advice this function exists to prevent:
-  // break inheritance on a shared directory and strip BUILTIN\Users from it.
+  // 没有 profile 可对照时诚实的回答是「无法判断」，
+  // 于是告警而非收紧。
+  //
+  // 在共享目录上破坏继承并从中移除 BUILTIN Users。
   if (!home) return false;
-  // Both sides through realpath, because Windows hands out 8.3 short names and the
-  // two ends of this comparison need not agree on which form they use: on a GitHub
-  // runner %TEMP% is `C:\\Users\\RUNNER~1\\AppData\\Local\\Temp` while %USERPROFILE% is
-  // `C:\\Users\\runneradmin`, so comparing the text said "outside the profile" for a
-  // directory squarely inside it, and the operator got "move the config" where the
-  // fix was two commands. The Windows job caught that; the VM did not.
+  // 两侧都经 realpath：Windows 发放 8.3 短名，此比较的两端
+  // 未必用同一种形式：GitHub runner 上 %TEMP% 是 C:.Users.RUNNER~1
+  // 而 %USERPROFILE% 是 C:.Users.runneradmin，比较文本对一个
+  // 完全在 profile 之内的目录说「在 profile 之外」，运维得到
+  // 「移走配置」而修复只是两条命令。Windows 作业抓到了它；VM 没有。
   //
-  // path.relative rather than a prefix match: a hardcoded separator was wrong on
-  // the platform the tests run on, and a bare startsWith would also accept a
-  // sibling whose name merely begins with the profile's (`C:\\Users\\meloud`).
   //
-  // Through isWithinRoot rather than a local `!rel.startsWith('..')`, which
-  // rejected a legitimately named child such as `..cache` as an escape. One
-  // containment implementation, shared with the transfer-root gate.
+  // 用 path.relative 而非前缀匹配：硬编码分隔符在测试运行的平台
+  // 上就是错的，裸 startsWith 还会接受一个名字恰好以 profile 开头的
+  // 兄弟目录（C:.Users.meloud）。
+  //
+  // 经 isWithinRoot 而非本地 !rel.startsWith：后者把合法命名的
+  // 子项如 ..cache 当成逃逸。一处包含实现，与传输根门共享。
+  //
   return isWithinRoot(canonical(home), canonical(path));
 }
 
 /**
- * A path in the form the filesystem itself uses, lowercased.
+ * 文件系统自身使用的形式的路径，小写。
  *
- * `realpathSync.native` is what expands an 8.3 short name. It needs the path to
- * exist, so a missing one falls back to lexical resolution.
+ * realpathSync.native 是展开 8.3 短名的那个。它要求路径存在，
+ * 缺失时回落到词法解析。
  */
 function canonical(path: string): string {
   try {
@@ -380,12 +380,12 @@ function canonical(path: string): string {
 }
 
 /**
- * The two commands that make a path private again.
+ * 让路径重新变私有的两条命令。
  *
- * `grants` is empty for a NULL DACL, where there is nothing to remove and the
- * point is to give the object an ACL at all. Shared rather than written twice:
- * this text has the worst record in the change — three corrected versions so far
- * — and a second copy is a second thing to keep correcting.
+ * NULL DACL 时 grants 为空：没有可移除的，重点是给对象一个 ACL。
+ * 共享而非写两遍：这段文本在本次变更中错误记录最差——
+ * 至今三个修正版本——第二份就是第二件要继续修的东西。
+ *
  */
 function remediation(path: string, kind: 'file' | 'directory', grants: Grant[] = []): string {
   const resolved = grants.filter((g) => g.sid !== null);

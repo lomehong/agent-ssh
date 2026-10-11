@@ -1,17 +1,17 @@
 #!/bin/sh
-# linuxserver.io custom-cont-init hook for the integration test servers.
+# 集成测试服务器用的 linuxserver.io custom-cont-init 钩子。
 #
-# sshd defaults to `MaxStartups 10:30:100`: beyond 10 concurrent unauthenticated
-# handshakes it starts dropping connections at random. The integration suite
-# runs test files in parallel and each opens real SSH connections, so it crossed
-# that line as the suite grew — producing failures and, worse, *skips*, because
-# a probe that gets dropped makes a test file skip itself and a degraded run
-# still looks green.
+# sshd 默认 `MaxStartups 10:30:100`：并发未认证握手超过 10 个就开始
+# 随机丢连接。集成套件并行跑测试文件、每个都开真实 SSH 连接，
+# 套件长大后就越过了这条线——产生失败，更糟的是*跳过*：
+# 探测被丢会让测试文件跳过自己，而降级的运行
+# 看起来仍是绿的。
 #
-# MaxSessions is raised for the same reason: several tests hold concurrent
-# channels (sessions, SFTP) on one connection.
 #
-# Test fixture only — these are not production-appropriate values.
+# MaxSessions 因同样理由调高：多个测试在同一条连接上
+# 并发持有通道（会话、SFTP）。
+#
+# 仅测试夹具——这些不是生产适用值。
 CONFIG=/config/sshd/sshd_config
 
 if [ -f "$CONFIG" ]; then

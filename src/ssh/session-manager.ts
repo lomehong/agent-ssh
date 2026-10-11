@@ -6,18 +6,18 @@ import { openWithRetry } from './channel-retry.js';
 import { randomUUID } from 'crypto';
 
 /**
- * How the manager reaches the SSH connection.
+ * 管理器如何够到 SSH 连接。
  *
- * Deliberately narrow: the manager opens channels and reports channel
- * open/close, but knows nothing about connecting, reconnecting or exec. That
- * keeps session bookkeeping — which grows with every session feature — out of
- * the connection lifecycle it kept getting tangled with.
+ * 刻意收窄：管理器只开通道、报告通道的打开与关闭，
+ * 对连接、重连或 exec 一无所知。这让会话簿记——它随每个
+ * 会话特性不断增长——不再与那个它总被缠在一起的连接
+ * 生命周期混作一团。
  */
 export interface SessionManagerDeps {
   /**
-   * Read on every call rather than snapshotted at construction: limits,
-   * timeouts and workdir all come from the profile, and the profile object can
-   * be replaced (a config reload, or a test adjusting a limit).
+    * 每次调用都读，而不是构造时快照：限制、超时与 workdir
+    * 都来自 profile，而 profile 对象可能被替换
+    * （配置热重载，或测试在调限制）。
    */
   profile(): Profile;
   openShell(): Promise<ClientChannel>;
@@ -26,7 +26,7 @@ export interface SessionManagerDeps {
   onChannelClosed(): void;
 }
 
-/** Owns the named sessions of a single SSH connection. */
+/** 拥有一条 SSH 连接的全部命名会话。 */
 export class SessionManager {
   private sessions = new Map<string, Session>();
 
@@ -59,12 +59,12 @@ export class SessionManager {
   }
 
   /**
-   * Register a session and tie its lifetime to its channel.
+    * 注册会话并把其生命周期绑到通道上。
    *
-   * The eviction is guarded: close() only ends the stream, so a channel's
-   * 'close' can arrive long after the same name was reused, and an unguarded
-   * delete would evict the *new* session — leaving its channel open but
-   * unreachable through get/list/close/reap.
+    * 逐出有守卫：close() 只结束流，所以通道的 'close' 可能在
+    * 同名被复用很久之后才到，无守卫的 delete 会逐出*新*
+    * 会话——通道开着，却从 get/list/close/reap
+    * 都够不到。
    */
   private register(name: string, session: Session, stream: ClientChannel): void {
     this.sessions.set(name, session);
@@ -98,24 +98,24 @@ export class SessionManager {
 
 
   /**
-   * Quiet the shell down and confirm it can run the session protocol — in one
-   * round trip.
+    * 让 shell 安静下来，并确认它能跑会话协议——一次往返完成。
+    *
    *
-   * Priming suppresses the prompt, history and bracketed paste, all of which
-   * would otherwise land in command output. The readiness marker at the end
-   * doubles as the handshake: it comes back only from a shell that can run
-   * `printf`, which is the same capability every later command depends on.
-   *
-   * This replaced two weaker mechanisms. Waiting for a prompt with /[#$>]\s*$/
-   * was a guess that failed on busybox ash (its prompt is followed by a
-   * cursor-position query) and would silently "succeed" on cmd.exe, which
-   * presents a `>` prompt and then cannot run a single command — every call
-   * afterwards sat until the 60s command timeout with nothing useful to say.
+    * Priming 压掉提示符、历史与括号粘贴，否则它们都会混进
+    * 命令输出。末尾的就绪标记兼任握手：只有能跑 `printf`
+    * 的 shell 才会回它，而那正是后续每条命令都依赖的
+    * 同一能力。
+    *
+    * 它替代了两个更弱的机制。用 /[#$>]\s*$/ 等提示符是猜，
+    * 在 busybox ash 上失败（其提示符后跟光标位置查询），
+    * 又会在 cmd.exe 上静默「成功」——它显示 `>` 提示符，
+    * 却跑不了任何一条命令，之后每次调用都坐等到 60 秒
+    * 命令超时，一无所获。
    */
   private primeShell(stream: ClientChannel, session: InteractiveSession): Promise<void> {
     const { workdir, name: profileName } = this.deps.profile();
-    // Split literals: the echoed input never contains the assembled marker, so
-    // only the shell's own output can satisfy the match.
+    // 拆成字面量：回显的输入永远不含拼装出的标记，
+    // 因此只有 shell 自己的输出能满足匹配。
     const parts = ['SSHMCP_RDY', `_${randomUUID()}`];
     const marker = parts.join('');
 
@@ -184,35 +184,35 @@ export class SessionManager {
     try {
       return await session.close();
     } finally {
-      // Guarded and in a `finally`, both because closing now awaits a kill ladder rather
-      // than returning on the next microtask. Unguarded, a reaper closing this session
-      // while the caller re-opened the same name would evict the *new* session — the
-      // hazard `register` already documents. Without the `finally`, a rejection left the
-      // entry behind forever, holding a `sessionMaxPerConnection` slot and blocking the
-      // name.
+      // 加守卫并放进 `finally`：因为现在的关闭要等一条 kill 阶梯，
+      // 而不是下个微任务就返回。无守卫时，回收器关闭本会话的同一时刻
+      // 调用方重开同名，会逐出*新*会话——`register` 已记录的隐患。
+      // 没有 `finally`，一次 rejection 会把条目永远留在那里，
+      // 占着一个 `sessionMaxPerConnection` 槽位并堵死该名字。
+      //
       if (this.sessions.get(name) === session) this.sessions.delete(name);
     }
   }
 
   async closeAll(): Promise<void> {
-    // Concurrently. The ladders are independent timers on independent channels, and
-    // sequentially this was measured at 10.0s for five commands that ignore INT and TERM —
-    // past Docker's 10s default stop grace, so the container was SIGKILLed mid-teardown and
-    // the later sessions got no escalation at all. Before the ladder was awaited each
-    // session at least received its INT immediately, so serialising made the tail worse
-    // than the bug it fixed.
+    // 并行。各阶梯是独立通道上的独立计时器，串行时实测：五条
+    // 无视 INT 与 TERM 的命令耗了 10.0 秒——超过 Docker 默认 10 秒
+    // 停止宽限，容器在拆除中途被 SIGKILL，后面的会话根本没得到
+    // 升级信号。阶梯被 await 之前每个会话至少立即收到自己的 INT，
+    // 串行化让尾部比它修掉的 bug 更糟。
+    //
     await Promise.all([...this.sessions.keys()].map((name) => this.close(name).catch(() => {})));
   }
 
   /**
-   * Close every expired session, awaiting the escalation.
-   *
-   * Awaited, and async for that reason. Fire-and-forget left exactly one hole in the
-   * guarantee `waitForChannelClose` exists for: `close()` dispatched INT and returned, the
-   * entry was deleted so `sessionCount` hit zero in the same tick, and the reaper's very
-   * next call — `reapIdleConnections`, which gates on `sessionCount` — closed the
-   * connection and ended the client microseconds later. TERM and KILL were then discarded,
-   * so a background command that ignores INT survived its own reaping.
+    * 关闭每条过期会话，并等升级走完。
+    *
+    * 之所以 await、之所以是 async。发射后不管在 `waitForChannelClose`
+    * 所守护的保证上留了个洞：`close()` 派发 INT 即返回，条目被删，
+    * `sessionCount` 同一 tick 归零，回收器的下一次调用——以
+    * `sessionCount` 为门的 `reapIdleConnections`——随即关闭连接，
+    * 客户端微秒级结束。TERM 与 KILL 随之被丢，
+    * 对 INT 无视的后台命令就这样活过了自己的回收。
    */
   async reapExpired(): Promise<void> {
     const expired = [...this.sessions.entries()].filter(([, s]) => s.isExpired());

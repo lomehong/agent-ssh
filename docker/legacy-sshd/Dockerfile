@@ -1,15 +1,15 @@
-# A legacy-algorithms-only sshd: the network-device compatibility axis.
+# 只讲旧算法的 sshd：网络设备兼容轴。
 #
-# This fixture offers NOTHING the frozen (modern-only) algorithm allowlist can
-# accept, so a default client config must fail to negotiate and a
-# `profile.algorithms` override must connect. It models the older network gear
-# (Huawei/H3C/Cisco/Ruijie lines) that ships ssh-rsa / CBC / DH-group1 era
-# defaults — without it, the override path could only be tested for "does not
-# crash", never for "actually negotiates".
+# 本夹具不提供任何冻结（仅现代）算法白名单能接受的东⻄，
+# 因此默认客户端配置必然协商失败，而 `profile.algorithms` 覆盖
+# 必须能连上。它建模的是出厂即 ssh-rsa / CBC / DH-group1 时代
+# 默认的旧网络设备（华为/华三/思科/锐捷线）——没有它，覆盖路径
+# 只能测「不崩」，永远测不了「真的协商成功」。
 #
-# Alpine 3.20 carries OpenSSH 9.x, which still *enables* these legacy names when
-# they are listed explicitly (they are merely out of the default sets). If a
-# future base image drops one entirely, the integration test will fail with a
+#
+# Alpine 3.20 带 OpenSSH 9.x，显式列出这些旧名时仍会*启用*它们
+# （它们只是不在默认集合里）。若未来基底镜像彻底移除某个，
+# 集成测试会以协商错误失败，从这条注释查起。
 # negotiation error and this comment is where to start.
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 

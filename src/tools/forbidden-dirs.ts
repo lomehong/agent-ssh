@@ -4,26 +4,26 @@ import { getAuditLogPath } from '../audit/store.js';
 import type { ForbiddenDir } from './local-path.js';
 
 /**
- * Directories the transfer root must not overlap, beyond the two the gate
- * already derives for itself (the installation and the config directory).
+ * 除大门自己已派生的两个目录（安装目录与配置目录）之外，
+ * 传输根目录不得与之重叠的目录清单。
  *
- * Its own module rather than a literal at the call site in index.ts, because
- * there the list sat inside `main()`'s body, which no test can reach — it is not
- * exported, and nothing short of starting the server evaluates it. So the list
- * was the one input to the transfer-root gate that nothing verified, while the
- * gate itself was thoroughly tested against whatever it was handed. (index.ts
- * does not run `main()` under test: the call is gated on SSH_MCP_DISABLE_MAIN,
- * which every test script sets. Unreachable, not unimportable.) The gate takes
- * the list as an argument precisely so that knowing where the audit log went is
- * somebody else's job — this is that somebody.
+ * 单独成一个模块，而不是 index.ts 调用点里的字面量，因为
+ * 那份清单原本放在 `main()` 函数体内，任何测试都够不到——
+ * 它不被导出，不启动服务器就不会被求值。于是这份清单成了
+ * 传输根大门唯一无人验证的输入，而大门本身对递给它的东西
+ * 反而测得很彻底。（测试下 index.ts 不运行 `main()`：该调用由
+ * SSH_MCP_DISABLE_MAIN 把关，每个测试脚本都会设置它。
+ * 是不可达，不是不可导入。）大门把清单作为参数接收，正是为了让
+ * 「审计日志去了哪里」成为别人的职责——
+ * 本模块就是那个别人。
+ * 两个条目按惯例都是 0700 且属主自有，因此大门施加的每项隐私检查
+ * 都会接受它们。它们必须按名字排除：
  *
- * Both entries are conventionally 0700 and owner-owned, so every privacy check
- * the gate applies accepts them. They have to be excluded by name:
+ * - 根目录里含审计日志时，一次下载就能替换记录这次传输本身的
+ *   防篡改记录；
  *
- * - a root containing the audit log lets a download replace the tamper-evident
- *   record of the transfer that wrote it;
- * - a root shaped like `~/.ssh` turns the same two tools into "read the private
- *   key" and "append to authorized_keys".
+ * - 形如 `~/.ssh` 的根目录会把同样的两个工具变成「读私钥」与
+ *   「向 authorized_keys 追加」。
  */
 export function transferForbiddenDirs(): ForbiddenDir[] {
   return [

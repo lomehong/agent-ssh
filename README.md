@@ -9,31 +9,29 @@
 [![License](https://img.shields.io/github/license/tufantunc/ssh-mcp)](./LICENSE)
 [![GitHub issues](https://img.shields.io/github/issues/tufantunc/ssh-mcp)](https://github.com/tufantunc/ssh-mcp/issues)
 
-**SSH MCP Server** is a security-first Model Context Protocol server that gives LLM agents controlled SSH access to remote hosts — with command classification, policy-based authorization, human-in-the-loop approval, and full audit logging.
+**SSH MCP Server** 是一个安全优先的 Model Context Protocol 服务器，让 LLM 智能体以受控方式通过 SSH 访问远程主机——具备命令分类、基于策略的授权、人工审批（human-in-the-loop）与完整的审计日志。
 
-> **The risk this server exists to manage.** Giving an LLM shell access on a remote host puts private data, untrusted input and network egress in one place — Simon Willison's ["lethal trifecta"](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/). Prompt injection has no general fix, so ssh-mcp assumes any command may be attacker-influenced: it classifies before executing, authorizes against a role × host-group matrix, gates destructive work behind approval, and records the decision either way. That narrows the blast radius; it does not remove the risk. Two things stay yours: **never point it at a root account**, and **never set `auto` approval on a production profile**. [SECURITY.md](./SECURITY.md) has the full threat model.
+> **这个服务器所要管理的风险。** 把 shell 权限交给 LLM，等于把私密数据、不可信输入和网络出口放进了同一个地方——即 Simon Willison 所说的 ["lethal trifecta"](https://simonwillison.net/2025/Jun/16/the-lethal-trifecta/)。提示注入没有通用解，因此 ssh-mcp 假定任何命令都可能受攻击者影响：先分类再执行，按「角色 × 主机组」矩阵授权，破坏性操作一律先过审批，且无论结果如何都留有记录。这缩小的是爆炸半径，不是消除风险。有两件事始终由你负责：**绝不要把它指向 root 账户**，以及**绝不要在生产 profile 上设置 `auto` 审批**。完整威胁模型见 [SECURITY.md](./SECURITY.md)。
 
 ---
 
-## Quick Start
+## 快速开始
 
-### 1. Install
+### 1. 安装
 
 ```bash
 npm install -g ssh-mcp
 ```
 
-### 2. Configure
+### 2. 配置
 
-Without a config the server still starts, so a client or directory can complete the MCP
-handshake and read `tools/list` — but **every tool call is refused** until you configure it,
-with a message naming the path below. Nothing runs on a host until this step is done.
+没有配置时服务器依然会启动，客户端因此能完成 MCP 握手并读取 `tools/list`——但在完成配置之前，**每一次工具调用都会被拒绝**，拒绝消息会给出下面这条路径。这一步完成之前，主机上不会运行任何东西。
 
-Create the config file at the path for your platform:
+在对应平台的路径创建配置文件：
 
-| Platform | Path |
+| 平台 | 路径 |
 |---|---|
-| Linux | `~/.config/ssh-mcp/config.toml` (or `$XDG_CONFIG_HOME/ssh-mcp/config.toml`) |
+| Linux | `~/.config/ssh-mcp/config.toml`（或 `$XDG_CONFIG_HOME/ssh-mcp/config.toml`） |
 | macOS | `~/Library/Application Support/ssh-mcp/config.toml` |
 | Windows | `%APPDATA%\ssh-mcp\config.toml` |
 
@@ -46,298 +44,206 @@ approvalMode = "ask-destructive"
 name = "dev"
 host = "192.168.1.100"
 port = 22
-user = "deploy"           # NOT root!
+user = "deploy"           # 不要用 root！
 auth = "key"
 keyRef = "~/.ssh/id_ed25519"
 role = "admin"
-approvalPolicy = "auto"    # dev is permissive
+approvalPolicy = "auto"    # dev 环境可以宽松
 ```
 
 ```bash
 chmod 700 ~/.config/ssh-mcp && chmod 600 ~/.config/ssh-mcp/config.toml
 ```
 
-The config decides which hosts, roles and policy rules this server honours, so it checks
-that nobody but you can read it — and treats the two platforms differently, because the
-question has a much clearer answer on one of them.
+配置文件决定了本服务器认可哪些主机、角色和策略规则，因此它会检查「除你之外无人能读到它」——并对两类平台区别处理，因为这个问题的答案在其中一个平台上要清晰得多。
 
-**Linux and macOS: enforced.** The mode check above, on the file *and* the directory —
-which is why `chmod 700` is in that command, since `mkdir -p` under the default umask
-leaves the directory 0755. The server refuses to start otherwise. "Only the owner" is
-unambiguous here and `chmod` is a one-line fix.
+**Linux 和 macOS：强制执行。** 对文件*和*目录同时执行上面的模式检查——这正是命令里带 `chmod 700` 的原因：默认 umask 下 `mkdir -p` 建出的目录是 0755。不满足则拒绝启动。「仅属主可访问」在这里没有歧义，`chmod` 一行就能修好。
 
-**Windows: split by what the ACL actually allows.** There are no mode bits, so the ACL is
-read instead — and read exposure and write exposure are not treated alike, because Windows
-is much clearer about one of them than the other.
+**Windows：按 ACL 实际允许的内容区别对待。** Windows 没有模式位，所以改为读取 ACL——而且读暴露与写暴露不做同等处理，因为 Windows 对其中一件事的判定远比另一件清晰。
 
-| The ACL lets another account… | Default |
+| 若 ACL 允许其他账户…… | 默认行为 |
 |---|---|
-| only **read** the config | reported, and the server starts |
-| **change** the config | refused |
-| nothing (no ACL at all) | refused — that is full control for everyone |
-| …and if the ACL could not be read | refused, except when `icacls` is absent or the check timed out |
+| 只能**读取**配置 | 报告，服务器照常启动 |
+| **修改**配置 | 拒绝 |
+| 什么都不能（连 ACL 都没有） | 拒绝——那等于人人完全控制 |
+| ……以及 ACL 本身无法读取时 | 拒绝，例外：`icacls` 不存在或检查超时 |
 
-A config under `%APPDATA%` inherits access for you, `SYSTEM` and `Administrators` and needs
-nothing done to it. One created elsewhere does not: a file under `C:\` inherits *read* for
-every local account and *modify* for every authenticated one. The message names the two
-`icacls` commands that fix it either way.
+`%APPDATA%` 下的配置会继承你本人、`SYSTEM` 与 `Administrators` 的访问权，无需额外处理。放在别处的则不然：`C:\` 下的文件默认继承*每个本地账户*的**读**权限和*每个已认证账户*的**修改**权限。无论哪种情况，修复所需的两条 `icacls` 命令都会写在提示消息里。
 
-Read exposure is reported rather than refused because that is where Windows is genuinely
-muddier than POSIX, and refusing over it blocked a config at the documented location
-([#138](https://github.com/tufantunc/ssh-mcp/issues/138)). Write exposure is refused
-because it is not muddy at all: another account being able to rewrite the file that decides
-which hosts, roles and approval policy this server honours is an authorization bypass, not
-a disclosure.
+读暴露只报告不拒绝，因为那正是 Windows 确实比 POSIX 含糊的地方，而在这上面一律拒绝曾把一个放在文档指定位置的配置挡在门外（[#138](https://github.com/tufantunc/ssh-mcp/issues/138)）。写暴露则一律拒绝，因为它毫不含糊：另一个账户若能改写这份「决定本服务器认可哪些主机、角色与审批策略」的文件，那是授权绕过，不是信息泄露。
 
-Two flags move the whole thing: `--strictConfigAcl` refuses everything the check objects
-to, read-only grants included; `--allowUncheckedConfigAcl` reports everything and refuses
-nothing. Neither combination leaves you without an exit, which is the lesson of #138.
+两个标志可以整体调整这套行为：`--strictConfigAcl` 把检查反对的一切都变为拒绝，包括只读授权；`--allowUncheckedConfigAcl` 把一切都变为报告，不拒绝任何情况。两种组合都不会让你无路可走——这正是 #138 的教训。
 
-### Exit statuses
+### 退出码
 
-| Status | Meaning |
+| 退出码 | 含义 |
 |---|---|
-| `0` | Clean shutdown |
-| `1` | A defect in the server — printed with a stack trace; please report it |
-| `2` | How it was invoked or configured — printed as a message, no stack |
+| `0` | 正常关闭 |
+| `1` | 服务器自身缺陷——带堆栈打印，请提交报告 |
+| `2` | 调用方式或配置问题——以消息打印，无堆栈 |
 
-A supervisor that treats any non-zero status as a failure needs no change. One
-that matched on `1` to detect a startup problem should match on `2` as well.
+把一切非零退出码都视为失败的监督程序无需改动。若它靠匹配 `1` 来发现启动故障，那也应同时匹配 `2`。
 
-Starting with nothing configured is **not** an exit-2 condition, as of the release that
-added introspection without a config: the server starts so it can be described, and
-refuses each tool call instead. A supervisor that used a non-zero exit to catch an
-unconfigured deployment should watch for `starting unconfigured` on stderr, or read
-`configured` from `GET /health` when running the HTTP transport.
+「什么都不配置」启动**不**属于退出码 2 的情形——自加入无配置内省能力的那个版本起：服务器会照常启动以便被描述，转而逐个拒绝工具调用。原先靠非零退出码来发现「未配置部署」的监督程序，应改为盯住 stderr 上的 `starting unconfigured`，或在 HTTP 传输下读取 `GET /health` 返回的 `configured` 字段。
 
-### 3. Set credentials via environment variables
+### 3. 通过环境变量设置凭据
 
 ```bash
-export SSH_MCP_PASSWORD="your-password"        # if using auth=password
-# OR use SSH agent (recommended):
-export SSH_AUTH_SOCK="$SSH_AUTH_SOCK"           # already set if agent running
+export SSH_MCP_PASSWORD="your-password"        # 若使用 auth=password
+# 或者使用 SSH agent（推荐）：
+export SSH_AUTH_SOCK="$SSH_AUTH_SOCK"           # agent 已在运行时该变量已设置
 ```
 
-### 4. Connect from your MCP client
+### 4. 从 MCP 客户端连接
 
-**Claude Code:**
+**Claude Code：**
 ```bash
 claude mcp add --transport stdio ssh-mcp -- ssh-mcp
 ```
 
-**Claude Desktop / Cursor / Windsurf:**
+**Claude Desktop / Cursor / Windsurf：**
 ```json
 {
-  "mcpServers": {
-    "ssh-mcp": {
-      "command": "ssh-mcp",
-      "env": {
-        "SSH_MCP_PASSWORD": "your-password"
+  "mcpServers": {@NL@@    "ssh-mcp": {@NL@@      "command": "ssh-mcp",
+      "env": {@NL@@        "SSH_MCP_PASSWORD": "your-password"
       }
     }
   }
 }
 ```
 
-**Never pass passwords as CLI arguments** — they're visible via `ps aux`. Use env vars, config files, SSH agent, or OS keychain.
+**绝不要把密码放进 CLI 参数**——它们会经由 `ps aux` 暴露。请使用环境变量、配置文件、SSH agent 或操作系统密钥链。
 
 ---
 
-## Tools (23)
+## 工具（23 个）
 
-| Tool | Purpose | readOnly | destructive |
+| 工具 | 用途 | readOnly | destructive |
 |------|---------|:--------:|:----------:|
-| `list-connections` | Discover available hosts and connection status | ✅ | — |
-| `list-sessions` | List active sessions per host | ✅ | — |
-| `open-session` | Create a named interactive (stateful) or background session | — | — |
-| `close-session` | Close a session. A background session's command is signalled (INT/TERM/KILL) before its channel is dropped | — | ✅ |
-| `read-session-output` | Read output from background sessions (e.g., `tail -f`) | ✅ | — |
-| `read-command` | Execute allowlisted read-only commands (`ls`, `cat`, `grep`, ...) | ✅ | — |
-| `run-command` | Execute arbitrary commands (destructive/privileged need approval, unless `approvalPolicy = "auto"`) | — | — |
-| `privileged-command` | Execute with sudo (needs approval, unless `approvalPolicy = "auto"`) | — | ✅ |
-| `sftp-upload` | Upload a file via SFTP (replaces the destination unconditionally) | — | ✅ |
-| `sftp-download` | Download a file via SFTP | ✅ | — |
-| `sftp-list` | List a remote directory, bounded in entries and bytes | ✅ | — |
-| `sftp-upload-file` | Stream a local file to the remote host, never through model context | — | ✅ |
-| `sftp-download-file` | Stream a remote file to local disk, never through model context | — | ✅ |
-| `signal-process` | Send INT/TERM/KILL to a remote PID | — | ✅ |
-| `pty-open` | Open a raw PTY session — a true pseudo-terminal whose byte stream you read/write directly. Works against network-device CLIs (Huawei/H3C/Cisco/Ruijie) where POSIX marker sessions fail. Goes through the approval gate | — | ✅ |
-| `pty-read` | Read new PTY output since the last cursor (capped per call; reports dropped/skipped bytes) | ✅ | — |
-| `pty-write` | Send raw input to a PTY — include your own newlines. Content in a raw PTY cannot be classified: the gate is pty-open; every write is audited and transcripted | — | — |
-| `pty-resize` | Resize a PTY session (rows x cols) | — | — |
-| `pty-close` | Close a PTY session (signal ladder, then channel drop) | — | ✅ |
-| `pty-list` | List raw PTY sessions with status, cursors, transcript size | ✅ | — |
-| `forward-open` | Open a port forward: local (listen here → reach target via the host), remote (host listens → connections land on target), dynamic (local SOCKS5, disabled unless allowDynamicForwarding=true). Destructive floor + denylist on the full listen→target pair | — | ✅ |
-| `forward-close` | Close a named forward and destroy its live connections | — | ✅ |
-| `forward-list` | List active forwards with mode, listen address, target, connection count | ✅ | — |
+| `list-connections` | 发现可用主机与连接状态 | ✅ | — |
+| `list-sessions` | 列出各主机的活动会话 | ✅ | — |
+| `open-session` | 创建命名的交互式（有状态）或后台会话 | — | — |
+| `close-session` | 关闭会话。后台会话的命令会先收到信号（INT/TERM/KILL），再丢弃其通道 | — | ✅ |
+| `read-session-output` | 读取后台会话的输出（如 `tail -f`） | ✅ | — |
+| `read-command` | 执行白名单内的只读命令（`ls`、`cat`、`grep` 等） | ✅ | — |
+| `run-command` | 执行任意命令（破坏性/特权命令需审批，除非 `approvalPolicy = "auto"`） | — | — |
+| `privileged-command` | 以 sudo 执行（需审批，除非 `approvalPolicy = "auto"`） | — | ✅ |
+| `sftp-upload` | 通过 SFTP 上传文件（无条件覆盖目标） | — | ✅ |
+| `sftp-download` | 通过 SFTP 下载文件 | ✅ | — |
+| `sftp-list` | 列出远程目录，条目数与字节数均有上限 | ✅ | — |
+| `sftp-upload-file` | 将本地文件流式传输到远程主机，绝不经过模型上下文 | — | ✅ |
+| `sftp-download-file` | 将远程文件流式传输到本地磁盘，绝不经过模型上下文 | — | ✅ |
+| `signal-process` | 向远程 PID 发送 INT/TERM/KILL | — | ✅ |
+| `pty-open` | 打开裸 PTY 会话——真正的伪终端，你直接读写其字节流。适用于 POSIX 标记会话无法工作的网络设备 CLI（华为/华三/思科/锐捷）。需通过审批门 | — | ✅ |
+| `pty-read` | 读取自上个游标以来的新 PTY 输出（单次有上限；报告丢弃/跳过的字节数） | ✅ | — |
+| `pty-write` | 向 PTY 发送原始输入——换行需自行包含。裸 PTY 中的内容无法做命令分类：门在 pty-open；每次写入都被审计并记录转录 | — | — |
+| `pty-resize` | 调整 PTY 会话尺寸（行 × 列） | — | — |
+| `pty-close` | 关闭 PTY 会话（信号阶梯，然后丢弃通道） | — | ✅ |
+| `pty-list` | 列出裸 PTY 会话的状态、游标与转录大小 | ✅ | — |
+| `forward-open` | 打开端口转发：local（本地监听 → 经主机抵达目标）、remote（主机监听 → 连接落到目标）、dynamic（本地 SOCKS5，除非 allowDynamicForwarding=true 否则禁用）。破坏性下限 + 对完整「监听→目标」对的拒绝清单 | — | ✅ |
+| `forward-close` | 关闭指定转发并销毁其活动连接 | — | ✅ |
+| `forward-list` | 列出活动转发的模式、监听地址、目标与连接数 | ✅ | — |
 
-### Raw PTY sessions (agent-ssh)
+### 裸 PTY 会话（agent-ssh）
 
-`open-session`'s interactive mode frames every command in printf markers to
-recover exit codes and CWD — a protocol that needs a POSIX shell and fails
-immediately against a network-device CLI. The raw PTY tools are the answer:
-`pty-open` allocates a real pseudo-terminal (a true PTY, not the marker
-protocol) and hands you the byte stream. `pty-write` sends whatever you type
-(include your own newlines: `"screen-length 0 temporary\n"`), `pty-read`
-returns everything since your last cursor, capped at 32KB per call.
+`open-session` 的交互模式用 printf 标记包裹每条命令，以取回退出码和 CWD——这套协议依赖 POSIX shell，面对网络设备 CLI 会立即失效。裸 PTY 工具就是答案：`pty-open` 分配一个真正的伪终端（真 PTY，而非标记协议），把字节流交到你手上。`pty-write` 发送你输入的任何内容（换行自行包含：`"screen-length 0 temporary\n"`），`pty-read` 返回自你上个游标以来的全部输出，单次上限 32KB。
 
-Because a byte stream cannot be command-classified, the safety gate lives at
-**open**: `pty-open` classifies destructive and goes through the approval gate.
-Every write is audited; every session is transcripted (redacted, next to the
-audit log, capped at 10MB); and sessions die on their own after the idle bound
-(`ptySessionIdleTimeoutMs`, default 10min) or lifetime bound
-(`ptySessionMaxLifetimeMs`, default 2h). Use a dedicated low-privilege account
-on the device — the transcript is a compensating control, not a permission.
+由于字节流无法做命令分类，安全门设在**打开**这一步：`pty-open` 按破坏性分类并走审批门。每次写入都被审计；每个会话都有转录（经脱敏，存放在审计日志旁，上限 10MB）；会话在空闲上限（`ptySessionIdleTimeoutMs`，默认 10 分钟）或生存期上限（`ptySessionMaxLifetimeMs`，默认 2 小时）到达后自行终止。请在设备上使用专用的低权限账户——转录是补偿性控制，不是授权。
 
-### Device archives (agent-ssh)
+### 设备档案（agent-ssh）
 
-`deviceType` on a profile (`huawei` | `h3c` | `cisco` | `ruijie` | `generic`)
-teaches a raw PTY session the vendor dialect: after the session opens, the
-archive's paging-off command is sent automatically (Huawei VRP
-`screen-length 0 temporary`, H3C `screen-length disable`, Cisco/Ruijie
-`terminal length 0`), and every `pty-read` reports whether the buffered tail
-ends in that vendor's prompt — the network-device equivalent of "the command
-finished". Encoding is UTF-8 today; legacy GB2312/GBK device output is a
-recorded gap in `src/devices/archives.ts`, not a latent assumption.
+profile 上的 `deviceType`（`huawei` | `h3c` | `cisco` | `ruijie` | `generic`）让裸 PTY 会话学会对应厂商的方言：会话打开后，档案中的关分页命令会自动发送（华为 VRP `screen-length 0 temporary`、华三 `screen-length disable`、思科/锐捷 `terminal length 0`），且每次 `pty-read` 都会报告缓冲区尾部是否止于该厂商的提示符——即网络设备版的「命令执行完毕」。编码目前为 UTF-8；遗留的 GB2312/GBK 设备输出是 `src/devices/archives.ts` 中已登记的缺口，不是暗含的假设。
 
-### Streaming file transfer
+### 流式文件传输
 
-`sftp-upload`/`sftp-download` move file *contents* through the model's context:
-the text is an argument on the way out and a response on the way back. That is
-what you want for a config snippet and exactly what you do not want for a 200 MB
-tarball or anything binary.
+`sftp-upload`/`sftp-download` 让文件*内容*经过模型上下文：出去时内容是参数，回来时是响应。传一段配置片段时这正是你要的；传一个 200 MB 的 tar 包或任何二进制文件时，这恰恰是你不要的。
 
-The two also differ on what they do to an existing destination, and the approved
-string now says which is which. `sftp-upload` replaces unconditionally and spells
-`--overwrite` every time, because that is what it always does; `sftp-upload-file`
-refuses unless you pass `overwrite: true`, and only then carries the flag. Since
-`sftp-upload` takes its content as an argument rather than naming a local file,
-its string also carries `--bytes=<n> --sha256=<32 hex>` — without that, two
-uploads to the same path are the same string, which means one approval covers
-both and an auditor cannot tell which set of bytes landed. The digest is 128
-bits rather than a short prefix because that claim has to hold against a caller
-who picks both payloads, not only against an accidental repeat.
+这两个工具对已存在目标的处理方式也不同，批准字符串如今写明了区别。`sftp-upload` 无条件覆盖，并且每次都带 `--overwrite`，因为它本来就是无条件覆盖；`sftp-upload-file` 则拒绝执行，除非你传 `overwrite: true`，此时才携带该标志。由于 `sftp-upload` 的内容是参数而非本地文件名，它的批准字符串还带有 `--bytes=<n> --sha256=<32 hex>`——否则对同一路径的两次上传会生成相同的字符串，一次批准就同时覆盖两次，审计者也无法分辨落地的是哪一组字节。摘要用 128 位而非短前缀，因为这个结论必须能顶住「两次载荷都由调用方挑选」的情形，而不只是防偶然重复。
 
-`[policy].denylist` patterns are tested against that whole string and, for every
-SFTP tool, against the remote path on its own — as given, lexically normalized,
-and read the way Windows reads it (see "Policy Engine"). A rule written for the
-path, such as `authorized_keys$`, therefore does not depend on where the string
-puts it or on how the file is spelled. A rule anchored on the *whole* string
-(`^sftp:upload /root/.*$`) still does: that layout is ours to change, so anchor
-on the path instead.
+`[policy].denylist` 的模式会针对整个字符串做匹配，并且对五个 SFTP 工具还会针对远程路径本身单独匹配——按原样、按词法规范化后、以及按 Windows 的读法各一次（见「策略引擎」）。为路径写的规则（如 `authorized_keys$`）因此不依赖字符串里路径的位置，也不依赖文件的拼写。锚定在*整个字符串*上的规则（`^sftp:upload /root/.*$`）则不然：这个布局由我们掌控、可能变化，所以请锚定在路径上。
 
-`sftp-upload-file` and `sftp-download-file` stream between the remote host and
-local disk instead. Neither the bytes nor a base64 encoding of them ever reaches
-the model — the response is a byte count and two paths.
+`sftp-upload-file` 与 `sftp-download-file` 改为在远程主机与本地磁盘之间流式传输。字节本身及其 base64 编码都不会到达模型——响应是一个字节数和两个路径。
 
-The two transfer tools are **off until you configure `defaults.transferRoot`**,
-and refuse with an explanation until then. (`sftp-list` has no local side and
-needs none of this.) That directory is the whole of their local reach:
+这两个传输工具**默认关闭，直到你配置 `defaults.transferRoot`**，在那之前会拒绝并给出解释。（`sftp-list` 没有本地一侧，无需这些。）该目录就是它们本地可达范围的全部：
 
 ```toml
 [defaults]
 transferRoot = "/srv/ssh-mcp-transfers"
-transferMaxBytes = 268435456        # 256MB per transfer
-transferTimeoutMs = 300000          # 5min with no bytes moving
+transferMaxBytes = 268435456        # 每次传输 256MB
+transferTimeoutMs = 300000          # 5 分钟内无字节移动即超时
 ```
 
-Checked on every call, and refused rather than degraded if any of it fails: the
-directory must be `0700` and owned by the account running this server, with no
-group- or world-writable parent, and must not overlap the ssh-mcp installation,
-the config directory, the audit log directory, or `~/.ssh`. Caller paths are
-confined to it, symlinks are refused rather than followed, and a download is
-staged as a sibling `.part` file and published atomically, so a failed transfer
-never leaves a half-written file at the destination.
+每次调用都会检查，且任何一项不满足都是拒绝而不是降级：目录必须是 `0700` 且属主为运行本服务器的账户，父目录不得对组或其他人可写，且不得与 ssh-mcp 安装目录、配置目录、审计日志目录或 `~/.ssh` 重叠。调用方路径被限制在该目录内，符号链接一律拒绝而不跟随；下载会先写到同级的 `.part` 文件再原子发布，因此失败的传输不会在目标位置留下写了一半的文件。
 
-`transferTimeoutMs` is an **idle** budget, not a total one: it bounds one
-metadata round-trip, or one stretch of the copy with no bytes moving, and is
-re-armed on progress. A slow but live transfer of a large file survives it; a
-stalled channel still fails within one window. That is why the byte cap above
-does not have to be divided by it — a total budget would have made a 256MB cap
-mean "only if the link sustains 900 KB/s".
+`transferTimeoutMs` 是**空闲**预算，不是总预算：它限制一次元数据往返，或拷贝过程中无字节移动的一段，并在有进展时重新计时。慢但仍在推进的大文件传输不受影响；停滞的通道仍会在一个窗口内失败。这就是为什么上面的字节上限不需要除以它——若按总预算计，256MB 的上限就等于「仅当链路能持续跑出 900 KB/s」。
 
-Not available on Windows, where the transfer root cannot yet be verified
-private; the two transfer tools refuse there rather than writing into a
-directory other accounts may be able to read.
+Windows 上不可用：传输根目录还无法在 Windows 上验证其私有性；两个传输工具在该平台直接拒绝，而不是写进一个其他账户可能读得到的目录。
 
-`sftp-upload-file` takes an optional `mode` (1–511; setuid, setgid and the
-sticky bit are refused). Omitted, a new remote file is published `0600`; an
-overwritten one inherits the replaced file's permission bits — its permission
-bits only, not its setuid or setgid.
+`sftp-upload-file` 接受可选的 `mode`（1–511；setuid、setgid 与粘滞位会被拒绝）。省略时，新建的远程文件以 `0600` 发布；覆盖已有文件时继承被替换文件的权限位——仅权限位本身，不含 setuid 或 setgid。
 
-What a transfer is authorized for includes these arguments: the string the
-policy engine classifies, the approval prompt a human reads, and the audit
-record all name `--overwrite` and `--mode` when they are given. So approving one
-upload to a path does not approve a different one to the same path, and an
-approval grant (`approvalGrantTtlMs`) cannot be replayed with a different mode.
+一次传输获得授权的范围包含这些参数：策略引擎分类的字符串、人读到的审批提示、以及审计记录，在给出 `--overwrite` 与 `--mode` 时都会如实写明。因此批准某路径的一次上传，不等于批准同路径的另一次上传；审批授权（`approvalGrantTtlMs`）也不能带着不同的 mode 重放。
 
-### Interactive Sessions
+### 交互式会话
 
-Sessions maintain state (CWD, environment variables) between commands:
+会话在多条命令之间维持状态（CWD、环境变量）：
 
 ```
 Agent: open-session(name="deploy", type="interactive")
 Agent: run-command(session="deploy", command="cd /opt/myapp")
-Agent: run-command(session="deploy", command="git pull")    # runs in /opt/myapp
-Agent: run-command(session="deploy", command="npm ci")      # CWD persists
+Agent: run-command(session="deploy", command="git pull")    # 在 /opt/myapp 中执行
+Agent: run-command(session="deploy", command="npm ci")      # CWD 保持
 Agent: close-session(name="deploy")
 ```
 
-### Background Sessions
+### 后台会话
 
-Long-running processes (logs, builds):
+长时间运行的进程（日志、构建）：
 
 ```
 Agent: open-session(name="logs", type="background", command="tail -f /var/log/syslog")
-Agent: read-session-output(name="logs", lines=20)   # poll
+Agent: read-session-output(name="logs", lines=20)   # 轮询
 Agent: close-session(name="logs")
 ```
 
-### Remote host support
+### 远程主机支持
 
-Tested against Linux (Debian/bash, Alpine/busybox ash), Dropbear, and Windows
-OpenSSH on Windows 11.
+已在以下环境测试：Linux（Debian/bash、Alpine/busybox ash）、Dropbear，以及 Windows 11 上的 Windows OpenSSH。
 
 | | Linux / BSD / macOS | Windows OpenSSH |
 |---|:---:|:---:|
-| `read-command`, `run-command`, `privileged-command`, `signal-process` | ✅ | ✅ |
-| `sftp-upload`, `sftp-download` | ✅ | ✅ |
+| `read-command`、`run-command`、`privileged-command`、`signal-process` | ✅ | ✅ |
+| `sftp-upload`、`sftp-download` | ✅ | ✅ |
 | `sftp-list` | ✅ | ✅ |
-| `sftp-upload-file`, `sftp-download-file` | ✅ | ❌ (local side unverifiable) |
-| Background sessions | ✅ | ✅ |
-| **Interactive sessions** | ✅ | ❌ |
+| `sftp-upload-file`、`sftp-download-file` | ✅ | ❌（本地一侧无法验证） |
+| 后台会话 | ✅ | ✅ |
+| **交互式会话** | ✅ | ❌ |
 
-**Interactive sessions require a POSIX shell** (sh, bash, ash, zsh). They work by
-bracketing each command with `printf` markers and reading `$?` and `$PWD` from a
-trailer — none of which exist in `cmd.exe`, the default shell for Windows
-OpenSSH. Opening one against such a host fails immediately with an explicit
-error rather than timing out; everything else works normally.
+**交互式会话需要 POSIX shell**（sh、bash、ash、zsh）。其原理是用 `printf` 标记包裹每条命令，并从结尾读取 `$?` 与 `$PWD`——这些东西在 `cmd.exe`（Windows OpenSSH 的默认 shell）里都不存在。对这类主机打开交互会话会立即失败并给出明确错误，而不是超时；其余功能一切正常。
 
-Setting PowerShell as the OpenSSH `DefaultShell` does not help: the protocol is
-POSIX-specific, not merely non-`cmd`.
+把 PowerShell 设为 OpenSSH 的 `DefaultShell` 也无济于事：这套协议是 POSIX 专属的，不只是「非 `cmd`」的问题。
 
 ---
 
-## Configuration
+## 配置
 
-### Profile options
+### Profile 选项
 
 ```toml
 [defaults]
 defaultProfile = "dev"
 sessionMaxPerConnection = 5
-sessionIdleTimeoutMs = 600000       # 10min
-sessionBackgroundMaxMs = 3600000    # 1hr
+sessionIdleTimeoutMs = 600000       # 10 分钟
+sessionBackgroundMaxMs = 3600000    # 1 小时
 commandTimeoutMs = 60000
-commandMaxChars = 5000              # 0 = unlimited, the config spelling of --maxChars=none
+commandMaxChars = 5000              # 0 = 不限制；配置文件里 --maxChars=none 的写法
 commandMaxOutputBytes = 1048576     # 1MB
-connectionIdleReapMs = 900000       # 15min
-commandQuotaPerDay = 0              # 0 = unlimited; circuit breaker for runaway agents
-approvalGrantTtlMs = 0              # 0 = always prompt; see "Approval Grants"
+connectionIdleReapMs = 900000       # 15 分钟
+commandQuotaPerDay = 0              # 0 = 不限制；防止 agent 失控的熔断器
+approvalGrantTtlMs = 0              # 0 = 每次都提示；见「审批授权」
 approvalMode = "ask-destructive"    # auto | ask-destructive | ask-all | deny
-# transferRoot = "/srv/ssh-mcp-transfers"   # enables the streaming file tools; see above
-transferMaxBytes = 268435456        # 256MB per streaming transfer
-transferTimeoutMs = 300000          # 5min with no bytes moving (idle, not total)
+# transferRoot = "/srv/ssh-mcp-transfers"   # 启用流式文件工具；见上文
+transferMaxBytes = 268435456        # 每次流式传输 256MB
+transferTimeoutMs = 300000          # 5 分钟内无字节移动即超时（按空闲计，非总时长）
 
 [[profiles]]
 name = "prod-web-1"
@@ -345,36 +251,35 @@ host = "10.0.1.50"
 port = 22
 user = "deploy"
 auth = "agent"                      # agent | key | password | keychain
-keyRef = "~/.ssh/id_ed25519"        # for auth=key
-keychainEntry = "ssh-mcp/prod"      # for auth=keychain (requires @napi-rs/keyring)
-via = "bastion"                     # ProxyJump — route through bastion profile
-group = "prod"                      # Policy tier: prod | staging | dev, or your own (see [policy])
+keyRef = "~/.ssh/id_ed25519"        # auth=key 时使用
+keychainEntry = "ssh-mcp/prod"      # auth=keychain 时使用（需要 @napi-rs/keyring）
+via = "bastion"                     # ProxyJump——经由 bastion profile 路由
+group = "prod"                      # 策略层级：prod | staging | dev，或自定义（见 [policy]）
 workdir = "/var/www"
-trustedHostKey = "SHA256:..."       # Pin host key (optional)
+trustedHostKey = "SHA256:..."       # 固定主机密钥（可选）
 tty = false
-# agent-ssh: network-device compatibility (widens the frozen algorithm allowlist
-# for THIS host only — resolved against the frozen base, never ssh2's defaults).
-# Every override warns at load and marks its commands algorithmsOverride=true in
-# the audit log. Legacy names lower the transport floor; scope them tightly.
+# agent-ssh：网络设备兼容（仅为该主机放宽冻结的算法白名单——
+# 解析基于冻结的基础配置，绝不是 ssh2 的默认值）。
+# 每项覆盖在加载时都会告警，并在审计日志中把相关命令标记为 algorithmsOverride=true。
+# 旧式算法名会降低传输安全下限；请把覆盖范围收紧到具体主机。
 # algorithms = { kex = { append = "diffie-hellman-group1-sha1" }, cipher = ["aes128-cbc", "3des-cbc"], serverHostKey = { append = "ssh-rsa" }, hmac = { append = "hmac-sha1" } }
-# deviceType = "huawei"               # generic | huawei | h3c | cisco | ruijie (paging/prompt personality)
-# keyboardInteractive = false         # answer keyboard-interactive prompts with the resolved password
+# deviceType = "huawei"               # generic | huawei | h3c | cisco | ruijie（关分页/提示符特性）
+# keyboardInteractive = false         # 用解析出的密码回答 keyboard-interactive 提示
 role = "operator"                   # viewer | operator | admin
 readOnly = false
 approvalPolicy = "ask-all"
-cert = false                        # SSH CA cert auth — auto-detects keyRef-cert.pub
-announceAgent = true                # Send AI_AGENT=ssh-mcp to this host (see below); clear it for a host you do not control
-sessionMaxPerConnection = 3         # per-profile override
-sessionIdleTimeoutMs = 300000       # stricter for prod
-commandQuotaPerDay = 200            # per-profile override
-maxChars = 2000                     # per-profile override; stricter for prod
-transferMaxBytes = 16777216         # per-profile override; transferRoot is not per-profile
-transferTimeoutMs = 60000           # per-profile override
+cert = false                        # SSH CA 证书认证——自动探测 keyRef-cert.pub
+announceAgent = true                # 向该主机发送 AI_AGENT=ssh-mcp（见下文）；对不受你控制的主机请清除
+sessionMaxPerConnection = 3         # 按 profile 覆盖
+sessionIdleTimeoutMs = 300000       # 生产环境更严格
+commandQuotaPerDay = 200            # 按 profile 覆盖
+maxChars = 2000                     # 按 profile 覆盖；生产环境更严格
+transferMaxBytes = 16777216         # 按 profile 覆盖；transferRoot 不能按 profile 设置
+transferTimeoutMs = 60000           # 按 profile 覆盖
 
-# Optional. Merged over the built-in role matrix; see "Policy Engine" below.
-# roleBindings is keyed by role and then by tier, so the block below changes
-# operator on prod and leaves operator's other tiers, and viewer and admin,
-# on their defaults.
+# 可选。合并到内建角色矩阵之上；见下文「策略引擎」。
+# roleBindings 按 role 再按 tier 索引，因此下面这段只改 prod 上的 operator，
+# operator 的其他 tier 以及 viewer、admin 都保持默认。
 [policy]
 denylist = ["^terraform\\s+destroy", "\\.ssh/authorized_keys$"]
 
@@ -382,52 +287,23 @@ denylist = ["^terraform\\s+destroy", "\\.ssh/authorized_keys$"]
 prod = ["read-only", "safe", "destructive"]
 ```
 
-Unknown sections and keys are a startup error, not a warning, so a typo cannot
-leave you running defaults you thought you had overridden. That extends to role
-and tier names: every one you write under `[policy.roleBindings]` has to be
-reachable by some profile, and every profile's role and tier has to resolve to
-real bindings. Both directions are checked at startup.
+未知的节与键是启动错误，不是告警—— typo 不可能让你在以为自己覆盖过的配置上跑在默认值上。这条规则也延伸到角色与层级名称：你写在 `[policy.roleBindings]` 下的每个角色/层级，都必须能被某个 profile 达到；每个 profile 的 role 与 tier 也必须能解析到真实绑定。两个方向都在启动时检查。
 
-### Host-side identification
+### 主机侧标识
 
-Every command this server runs announces itself to the host as the environment
-variable `AI_AGENT=ssh-mcp`, so an operator can tell an agent's session from a
-person's from anything on the host that reads the session environment — a
-`/etc/profile` snippet or a `ForceCommand` wrapper, for instance. It covers all
-three channels a command can run on: one-shot commands, background sessions and
-interactive sessions. SFTP transfers do not carry it, because the SSH library
-this server uses offers no way to send an environment request on a subsystem
-channel.
+本服务器运行的每条命令都会以环境变量 `AI_AGENT=ssh-mcp` 的形式向主机表明身份，运维人员因此能从任何读取会话环境的东西——比如一段 `/etc/profile` 脚本或 `ForceCommand` 包装器——分辨出 agent 会话与真人的会话。它覆盖命令可以运行的全部三种通道：一次性命令、后台会话与交互式会话。SFTP 传输不携带它，因为本服务器使用的 SSH 库无法在 subsystem 通道上发送环境请求。
 
-**The variable only lands in the session if the host opts in** with
-`AcceptEnv AI_AGENT` in `sshd_config`. Without that line sshd ignores it and the
-session environment is unchanged — measured against Dropbear, which has no
-`AcceptEnv` mechanism at all, and against Windows OpenSSH on a default
-configuration: the command runs, the exit code is unchanged, the variable is
-simply absent.
+**只有主机选择接受，该变量才会进入会话**，即在 `sshd_config` 中配置 `AcceptEnv AI_AGENT`。没有这一行时 sshd 会忽略它，会话环境不变——这一点对照过完全没有 `AcceptEnv` 机制的 Dropbear，以及默认配置的 Windows OpenSSH：命令照常运行，退出码不变，变量只是不在。
 
-**The request is nevertheless sent to every host, opted in or not.** `AcceptEnv`
-is the server's policy about what it stores; it is not a gate on what this client
-transmits. A host that has not opted in — including one that is hostile — can
-still see on the wire that an agent rather than a person is driving the session.
-That is why `announceAgent = false` exists on the profile: set it for any host you
-do not control and nothing is sent to it. It is on by default, because the
-operators who benefit are the ones running the hosts you do control.
+**但无论主机是否接受，请求都会发给每台主机。** `AcceptEnv` 是服务器关于「存储什么」的策略，不是对「本客户端发送什么」的门。未接受的主机——包括怀有敌意的主机——依然能从线上看出驱动会话的是 agent 而非真人。这就是 profile 上存在 `announceAgent = false` 的原因：对任何不受你控制的主机设置它，就不会向其发送任何内容。它默认开启，因为从中受益的，正是运营着「你可控主机」的那些运维。
 
-No version is sent, deliberately. A version would narrow a hostile host to one
-specific build; the tool's name alone does not. (The SSH transport already
-discloses the *library* version in its identification string, which is one
-library's version across every program that uses it.)
+我们刻意不发送版本号。版本号会把敌意主机的侦察范围缩小到某个具体构建，而工具名本身不会。（SSH 传输本来就会在 identification string 中暴露*库*版本——那是所有使用该库的程序共有的一个版本号。）
 
-Treat the variable as a courtesy label, not an attestation. Any SSH client can
-set it and any agent can omit it, so it is useful for attributing sessions you
-already trust and must not be used as an authorization or intrusion-detection
-input. Authoritative attribution belongs to the key or principal that
-authenticated.
+请把这个变量当作礼节性标签，而不是身份证明。任何 SSH 客户端都能设置它，任何 agent 也都能省略它，所以它适用于归因「你本来就已信任」的会话，不得用作授权或入侵检测的输入。权威的归因属于完成认证的那把密钥或那个主体。
 
-### ProxyJump (Bastion)
+### ProxyJump（堡垒机）
 
-Reach internal hosts behind a bastion/jump server. The `via` field specifies a profile name to tunnel through:
+经堡垒机/跳板机抵达内网主机。`via` 字段指定要穿隧的 profile 名：
 
 ```toml
 [[profiles]]
@@ -438,18 +314,18 @@ auth = "agent"
 
 [[profiles]]
 name = "internal-db"
-host = "10.0.1.50"                 # private IP — not directly reachable
+host = "10.0.1.50"                 # 内网 IP——无法直接到达
 user = "dbadmin"
 auth = "key"
 keyRef = "~/.ssh/db_key"
-via = "bastion"                     # tunnel through bastion
+via = "bastion"                     # 经 bastion 隧道
 ```
 
-No agent forwarding — only a TCP tunnel via `forwardOut`. The bastion stays connected and reusable for multiple internal hosts.
+不做 agent 转发——只有一条经 `forwardOut` 的 TCP 隧道。堡垒机连接保持不断，可供多台内网主机复用。
 
-### SSH CA Certificates
+### SSH CA 证书
 
-For enterprise setups with a central SSH Certificate Authority:
+面向采用中心化 SSH 证书颁发机构（CA）的企业环境：
 
 ```toml
 [[profiles]]
@@ -458,42 +334,35 @@ host = "db.internal"
 user = "admin"
 auth = "key"
 keyRef = "~/.ssh/id_ed25519"
-cert = true                         # enable CA cert auth
+cert = true                         # 启用 CA 证书认证
 ```
 
-The certificate file is auto-detected using OpenSSH convention (`keyRef` + `-cert.pub`, e.g. `~/.ssh/id_ed25519-cert.pub`). You can override the path with `SSH_MCP_<NAME>_CERT` env var. The cert is concatenated with the private key per ssh2 convention.
+证书文件按 OpenSSH 惯例自动探测（`keyRef` + `-cert.pub`，如 `~/.ssh/id_ed25519-cert.pub`）。可用环境变量 `SSH_MCP_<NAME>_CERT` 覆盖路径。证书按 ssh2 惯例与私钥拼接。
 
-### Credential Resolution Order
+### 凭据解析顺序
 
-1. **SSH agent** (`SSH_AUTH_SOCK`) — no key material in process memory
-2. **OS keychain** (macOS Keychain / Windows Credential Manager / Linux Secret Service) — requires `auth = "keychain"` and `@napi-rs/keyring`
-3. **Environment variables** — `SSH_MCP_PASSWORD`, `SSH_MCP_KEY`, `SSH_MCP_SUDO_PASSWORD`, or profile-specific `SSH_MCP_<NAME>_PASSWORD`
-4. **Key file** — `keyRef` path or `SSH_MCP_KEY` env var
+1. **SSH agent**（`SSH_AUTH_SOCK`）——进程内存中无密钥材料
+2. **操作系统密钥链**（macOS Keychain / Windows 凭据管理器 / Linux Secret Service）——需要 `auth = "keychain"` 与 `@napi-rs/keyring`
+3. **环境变量**——`SSH_MCP_PASSWORD`、`SSH_MCP_KEY`、`SSH_MCP_SUDO_PASSWORD`，或按 profile 的 `SSH_MCP_<NAME>_PASSWORD`
+4. **密钥文件**——`keyRef` 路径或环境变量 `SSH_MCP_KEY`
 
-**Never CLI arguments.** v2 removes `--password`, `--sudoPassword`, `--suPassword` entirely.
+**绝不走 CLI 参数。** v2 彻底移除了 `--password`、`--sudoPassword`、`--suPassword`。
 
 ---
 
-## Policy Engine
+## 策略引擎
 
-### Roles
+### 角色
 
-| Role | Dev | Staging | Prod |
+| 角色 | Dev | Staging | Prod |
 |------|-----|---------|------|
 | **viewer** | read-only | read-only | read-only |
 | **operator** | read-only, safe, destructive | read-only, safe, destructive | read-only, safe |
-| **admin** | all | all | read-only, safe, destructive |
+| **admin** | 全部 | 全部 | read-only, safe, destructive |
 
-Which column applies comes from the profile's `group`. Set it explicitly —
-without it the tier is guessed from the profile name (`prod`/`staging`/`dev`,
-`local`, `test`, `sandbox`), and **an unrecognised name resolves to `prod`**,
-the strictest tier. A production host named `web-01` is therefore treated as
-production rather than silently getting dev permissions.
+应用哪一列由 profile 的 `group` 决定。请显式设置——否则层级会从 profile 名称猜测（`prod`/`staging`/`dev`、`local`、`test`、`sandbox`），且**无法识别的名称一律解析为 `prod`**，即最严格的一档。因此一台名为 `web-01` 的生产主机会按生产对待，而不是悄悄拿到 dev 权限。
 
-Note what this means for `sudo`: **`admin` has no `privileged` on `prod`**, so
-`privileged-command` is refused there by design — including on a quick-start
-profile, which has no name to infer from and therefore lands on `prod`. If the
-host is not production, say so:
+注意这对 `sudo` 意味着什么：**`admin` 在 `prod` 上没有 `privileged`**，因此 `privileged-command` 在那里会被设计性拒绝——包括 quick-start profile，它没有名字可推断，同样落到 `prod`。如果那台主机不是生产环境，请明说：
 
 ```bash
 npx ssh-mcp --host=10.0.0.5 --user=deploy --group=dev
@@ -505,22 +374,16 @@ name = "build-box"
 group = "dev"
 ```
 
-### Configuring the matrix
+### 配置矩阵
 
-The table above is the default, not a limit. An optional `[policy]` section is
-merged over it at startup, so granting sudo on a host you have honestly
-labelled `prod` is a reviewable line in a config file rather than a relabelling:
+上面的表格是默认值，不是上限。可选的 `[policy]` 节会在启动时合并到其上——于是在一台你如实标注为 `prod` 的主机上开放 sudo，就成了配置文件里一行可评审的改动，而不是重新贴标签：
 
 ```toml
 [policy.roleBindings.admin]
 prod = ["read-only", "safe", "destructive", "privileged"]
 ```
 
-The merge is at role *and* tier depth. That block changes `admin` on `prod` and
-nothing else: `admin` on `staging` and `dev` keep their defaults, and `viewer`
-and `operator` are untouched. Roles and tiers the defaults have never heard of
-are added rather than rejected, which is what makes a custom `group` resolve to
-real bindings instead of falling back to the strictest tier:
+合并发生在 role *与* tier 两个深度。上面那段只改 `prod` 上的 `admin`，别无其他：`admin` 在 `staging` 与 `dev` 上保持默认，`viewer` 与 `operator` 也不受影响。默认值没听说过的角色与层级会被新增而非拒绝——这正是自定义 `group` 能解析到真实绑定、而不是回落到最严格一档的机制：
 
 ```toml
 [[profiles]]
@@ -532,177 +395,82 @@ group = "tier-1"
 "tier-1" = ["read-only", "safe", "destructive"]
 ```
 
-Extra deny patterns live in the same section, and are applied on top of the
-never-allowed list rather than replacing it:
+额外的拒绝模式放在同一节，叠加在「永不放行」清单之上而不是替换它：
 
 ```toml
 [policy]
 denylist = ["^terraform\\s+destroy", "\\.ssh/authorized_keys$"]
 ```
 
-Each pattern is a regular expression tested against the command string of every
-call. For the five SFTP tools it is also tested against the remote path on its
-own, three ways: as given; in a normalized reading, where `//` and `/./`
-collapse, `..` resolves against the segment before it, a trailing `/` is
-dropped, and `\` is read as `/`; and in a **Windows reading**, tested
-case-insensitively. The refusal says which matched.
+每个模式都是一个正则表达式，对每次调用的命令字符串做匹配。对五个 SFTP 工具，它还会针对远程路径本身以三种方式匹配：按原样；按规范化读法（`//` 与 `/./` 折叠、`..` 相对其前一段解析、结尾 `/` 去除、`\` 按 `/` 读）；以及按 **Windows 读法**（不区分大小写地匹配）。拒绝消息会说明是哪一条命中。
 
-The Windows reading is what Win32 resolves a path to, measured over SFTP on
-Windows 11 (build 26200): the case variants, a trailing run of dots and spaces,
-and the `::$DATA` default-stream spelling all reach the same file, so a rule
-that caught one spelling and not another was a bypass, not a distinction. On
-top of the normalized reading it strips those spellings, roots a
-drive-relative path (`C:x/…`) at its drive — where it actually resolves
-depends on process state this server cannot see, and rooting is the fail-closed
-reading — drops `\\?\` and `\\.\` device prefixes, and keeps a UNC root
-(`\\server\share\…` → `//server/share/…`). Tested case-insensitively, it also
-catches `Authorized_Keys` with a rule written for `authorized_keys`; on a POSIX
-target those are different files, but erring toward refusal is the direction
-this engine takes everywhere else too.
+Windows 读法对应的是 Win32 实际解析路径的结果——在 Windows 11（build 26200）上经 SFTP 实测：大小写变体、结尾的成串点与空格、`::$DATA` 默认流拼写都指向同一个文件，因此「抓得住一种拼写却放走另一种」的规则是绕过，不是区别。在规范化读法的基础上，它还会剥掉这些拼写、把盘符相对路径（`C:x/…`）锚定到其盘符（实际解析位置取决于本服务器无法看见的进程状态，锚定是 fail-closed 的读法）、去掉 `\\?\` 与 `\\.\` 设备前缀，并保留 UNC 根（`\\server\share\…` → `//server/share/…`）。它不区分大小写地匹配，因此为 `authorized_keys` 写的规则也能抓住 `Authorized_Keys`；在 POSIX 目标上这是两个不同的文件，但向拒绝一侧出错正是本引擎在所有其他地方一致采取的方向。
 
-What the readings do not do:
+这些读法**不会**做的事：
 
-- **resolve anything on the target.** A relative path stays relative, so a rule
-  anchored on `/root/` does not see `.ssh/authorized_keys`; symlinks are not
-  followed; and an 8.3 short name (`AUTHOR~1`) is not expanded — no lexical
-  reading can, it takes the target's own directory listing to know the long
-  name.
-- **test the local path** of `sftp-upload-file` or `sftp-download-file` on its
-  own. That side is confined by `transferRoot`. The local path does end those two
-  tools' command strings, so a pattern anchored on the end of the string can
-  still match it there, as it always could.
+- **在目标机上解析任何东西。** 相对路径保持相对，因此锚定在 `/root/` 的规则看不到 `.ssh/authorized_keys`；符号链接不跟随；8.3 短名（`AUTHOR~1`）也不展开——任何词法读法都做不到，要知道长名必须查目标自己的目录列表。
+- **单独检测 `sftp-upload-file` 或 `sftp-download-file` 的本地路径。** 那一侧由 `transferRoot` 限制。本地路径确实会出现在这两个工具的命令字符串末尾，因此锚定字符串末尾的模式仍能在那里命中，这一点一直如此。
 
-So anchor a path rule on its trailing segments: `\.ssh/authorized_keys$` matches
-the absolute, relative and Windows spellings alike — including the case,
-trailing-dot and `::$DATA` variants of each. A pattern written for a command is
-tested against SFTP paths too — `^rm` refuses an `sftp-download` of a file
-called `rmlist.txt`.
+所以路径规则请锚定在结尾的路径段上：`\.ssh/authorized_keys$` 对绝对、相对与 Windows 拼写一视同仁——包括各自的大小写、结尾点与 `::$DATA` 变体。为命令写的模式也会作用于 SFTP 路径——`^rm` 会拒绝下载名为 `rmlist.txt` 的文件。
 
-One performance note: patterns are ordinary regular expressions run against
-caller-supplied path bytes — bounded by the remote-path length limit, the same
-exposure the command string has always had. Prefer anchored, linear patterns; a
-catastrophically backtracking one stalls the tool call it matches.
+一条性能说明：这些模式是跑在调用方提供的路径字节上的普通正则——受远程路径长度上限约束，与命令字符串一直以来的暴露面相同。请优先使用锚定的线性模式；一个灾难性回溯的模式会卡死它命中的那次工具调用。
 
-Because role and tier names are free strings, nothing in the merge itself can
-tell a new custom role from a misspelling of an existing one. A cross-check at
-startup does, and these all fail there rather than at the point of use:
+由于角色与层级名称是自由字符串，合并本身无法区分「新增自定义角色」与「既有角色的拼写错误」。启动时的交叉检查可以，下列情形都在启动时失败，而不是在使用点才暴露：
 
-- a command class outside `read-only | safe | destructive | privileged`, so a
-  `priviledged` typo cannot parse into a grant of nothing and then read as a
-  policy decision when a command is refused;
-- any unrecognised section or key anywhere in the config, so a block the parser
-  does not understand is an error rather than a clean startup with none of the
-  behaviour you configured;
-- a role or tier under `[policy.roleBindings]` that no profile uses, so
-  `[policy.roleBindings.operater]` cannot merge in as a fourth role while the
-  profiles you meant to restrict keep running on defaults;
-- a profile whose `role` has no bindings, or whose tier has none under that
-  role, so a host cannot end up on `read-only` for a reason nobody wrote down.
+- 命令类别不在 `read-only | safe | destructive | privileged` 之内——`priviledged` 这样的拼写错误不会解析成一个空授权，然后在命令被拒绝时被误读成一项策略决定；
+- 配置中任何位置出现无法识别的节或键——解析器看不懂的块是错误，而不是「正常启动但你配置的行为一项都没生效」；
+- `[policy.roleBindings]` 下没有任何 profile 使用的角色或层级——`[policy.roleBindings.operater]` 不会作为第四个角色悄悄并入，而你本想收紧的那些 profile 也不会继续跑在默认值上；
+- 某个 profile 的 `role` 没有绑定，或其 tier 在该角色下没有绑定——主机不会因为一个没人写下来的理由落到 `read-only`。
 
-The last one covers the tier you did not set as well as the one you did. A
-profile with no `group` still resolves to one by name, and that inferred tier
-has to exist under the profile's role like any other.
+最后一条同样覆盖你没显式设置的 tier。没有 `group` 的 profile 仍会按名称解析出一个 tier，而这个推断出的 tier 也必须在该 profile 的角色下存在。
 
-A tier with no bindings for a role grants `read-only`, and never another tier's
-classes. There is no fallback between tiers: while the matrix was compiled in,
-falling back to `prod` meant falling back to a role's strictest cell, but a
-`[policy]` block can write that cell now.
+某角色在某个 tier 下没有任何绑定时授予 `read-only`，绝不会授予其他 tier 的类别。tier 之间没有回落：矩阵还是编译期内置时，回落到 `prod` 等于回落到某角色最严格的格子；如今 `[policy]` 块可以直接写下那个格子。
 
-An OPA sidecar is not an alternative route to the same grant. OPA is consulted
-only for commands the local policy already allows, so it can refuse more but
-never widen. Widening happens here or not at all.
+OPA sidecar 不是通往同一授权的后门。OPA 只对本地策略已经放行的命令做评估，所以它只能收紧、绝不能放宽。放宽只发生在这里，别无他处。
 
-### Command Classification
+### 命令分类
 
-Every command is classified before execution:
+每条命令在执行前都会被分类：
 
-- **read-only**: Allowlisted commands (`ls`, `cat`, `grep`, `df`, `stat`, `systemctl status`, ...),
-  and only when every argument is provably data under a grammar declared for that binary — see
-  below
-- **safe**: Non-destructive mutations (`npm install`, `git pull`, ...)
-- **destructive**: mutations that need approval (`rm -rf /tmp/build`, ...)
-- **privileged**: `sudo`, `su`, `doas`, `pkexec`
+- **read-only**：白名单内的命令（`ls`、`cat`、`grep`、`df`、`stat`、`systemctl status` 等），且仅当每个参数都能在该二进制声明的文法下被证明是数据时——见下文
+- **safe**：非破坏性变更（`npm install`、`git pull` 等）
+- **destructive**：需要审批的变更（`rm -rf /tmp/build` 等）
+- **privileged**：`sudo`、`su`、`doas`、`pkexec`
 
-**`read-only` is granted by argument grammar, not by binary name alone.** An allowlisted
-binary's argument list is checked word by word against a grammar declared for it
-(`src/policy/reader-grammar.ts`); an option the grammar does not list, an abbreviation of one
-it does, a short-option cluster with an unlisted letter, an argument carrying an unquoted
-shell glob (`*`, `?`, `[`), or an operand shaped like something
-the binary would write to, all fall the whole command to `safe` instead. This is what a
-`readOnly` profile is confined to, what `viewer` holds on prod and staging (on dev the viewer
-holds `safe` too), and what `read-command`
-requires — all of these refuse `safe` except the viewer on dev, so a command that used to
-run under the old, name-only
-rule can now be refused. The refusal names the rejected word (for example, `` `journalctl` is
-read-only only with the options and operands its grammar lists; `--foo` is not accepted
-there. ``), so the caller can see which spelling of the same command still works. See
-[SECURITY.md](./SECURITY.md) for the residual risks this leaves open.
+**`read-only` 由参数文法授予，而不是只看二进制名。** 白名单二进制的参数列表会逐词对照为它声明的文法（`src/policy/reader-grammar.ts`）检查：文法未列出的选项、已列选项的缩写、携带未列出字母的短选项簇、带未加引号 shell 通配符（`*`、`?`、`[`）的参数，或形如该二进制会写入的目标的操作数——任一出现，整条命令都降为 `safe`。这正是 `readOnly` profile 被限制的范围，是 `viewer` 在 prod 与 staging 上持有的权限（dev 上的 viewer 还额外持有 `safe`），也是 `read-command` 的要求——除 dev 上的 viewer 外，这些场景都拒绝 `safe`，因此过去在旧的「只看名字」规则下能跑的命令，现在可能被拒绝。拒绝消息会指出被拒的那个词（例如：`` `journalctl` 仅在其文法列出的选项与操作数下才是只读的；`--foo` 在那里不被接受 ``），调用方能看清同一命令的哪种写法仍然可用。由此遗留的风险见 [SECURITY.md](./SECURITY.md)。
 
-A separate **forbidden** list is never allowed, whatever the role or approval
-policy: `rm -rf /`, `mkfs`, `dd of=/dev/`, `shutdown`, `curl|sh`, fork bombs,
-writes to `/etc/cron`, `/etc/systemd` or `authorized_keys`, `iptables -F`, and
-recursive `chmod 777 /` / `chown /`. Add your own patterns via the policy
-denylist; an invalid pattern fails at startup rather than degrading silently.
+另有一份 **forbidden** 清单，无论角色与审批策略如何都绝不放行：`rm -rf /`、`mkfs`、`dd of=/dev/`、`shutdown`、`curl|sh`、fork 炸弹、对 `/etc/cron`、`/etc/systemd` 或 `authorized_keys` 的写入、`iptables -F`，以及递归的 `chmod 777 /` / `chown /`。可通过策略 denylist 追加你自己的模式；非法模式在启动时即报错，不会静默降级。
 
-### Approval Modes
+### 审批模式
 
-- `auto` — no prompts (dev only!)
-- `ask-destructive` — prompt for destructive/privileged (default). Narrower than it sounds:
-  outside the never-allowed list, `destructive` is one `rm -rf /path` pattern, `find` with a
-  write/exec flag, an unresolvable command word, a program handed to an interpreter this
-  server cannot read (`python3 -c`, `perl -e`, `node -e`, a program arriving on a pipe —
-  but not `awk`, whose program is not read), and `sftp-upload`/interactive `open-session` — elevation classifies `privileged`, which also
-  prompts. Ordinary writes, service control and signals do not. See
-  [SECURITY.md](./SECURITY.md) before relying on this in production.
-- `ask-all` — prompt for every command
-- `deny` — reject destructive/privileged commands outright (no prompt)
+- `auto` —— 无提示（仅限 dev！）
+- `ask-destructive` —— 对破坏性/特权命令提示（默认）。比字面意思更窄：在「永不放行」清单之外，`destructive` 指形如 `rm -rf /path` 的模式、带写入/执行标志的 `find`、无法解析的命令词、交给本服务器读不懂的解释器的程序（`python3 -c`、`perl -e`、`node -e`、经管道到达的程序——但不含 `awk`，它的程序不会被读取），以及 `sftp-upload`/交互式 `open-session`——提权归类为 `privileged`，同样提示。普通的写操作、服务控制与信号不在其列。在生产上依赖它之前先读 [SECURITY.md](./SECURITY.md)。
+- `ask-all` —— 每条命令都提示
+- `deny` —— 直接拒绝破坏性/特权命令（不提示）
 
-### Approval Grants (just-in-time)
+### 审批授权（just-in-time）
 
-`approvalGrantTtlMs` lets one explicit approval cover repeats of the **exact
-same** command on the same profile for a bounded time (e.g. `300000` for five
-minutes). It exists because approving `rm -rf /tmp/build` every few seconds
-during an iterative task trains you to click through prompts — which is worse
-for safety than a grant you chose deliberately.
+`approvalGrantTtlMs` 允许一次显式审批在限定时间内覆盖同一 profile 上**完全相同**命令的重复执行（例如 `300000` 即五分钟）。它存在的原因是：在迭代任务中每隔几秒批准一次 `rm -rf /tmp/build`，会把你训练成对提示无脑点确认——这比一个你深思熟虑后给出的授权更不安全。
 
-A grant is bound to the exact command text, the profile and the command class:
-approving `rm -rf /tmp/build` does not cover `rm -rf /tmp/build-prod`, the same
-command on another host, or the same command escalated to `sudo`. Runs covered
-by a grant appear in the audit log with `approver: "jit-grant"`, so they stay
-distinguishable from a fresh human answer.
+授权绑定于精确的命令文本、profile 与命令类别：批准 `rm -rf /tmp/build` 不覆盖 `rm -rf /tmp/build-prod`，不覆盖另一台主机上的同一命令，也不覆盖升级为 `sudo` 的同一命令。由授权覆盖的运行会在审计日志中记为 `approver: "jit-grant"`，与真人首次作答保持可区分。
 
-**Off by default** (`0` = always prompt). Auto-approval weakens the gate that
-makes destructive commands safe, so turning it on should be a decision.
+**默认关闭**（`0` = 每次都提示）。自动审批削弱了让破坏性命令变得安全的这道门，因此开启它应当是一个郑重的决定。
 
-#### Answering the prompt
+#### 应答审批提示
 
-Approval goes through the MCP elicitation request, so what you see is your
-client's dialog. Accepting it approves the command — there is no second field to
-fill in.
+审批经 MCP elicitation 请求完成，你看到的就是客户端的对话框。接受即批准该命令——没有需要再填的第二个字段。
 
-You have **10 minutes** to answer. Past that the request expires and the command
-is refused rather than left pending, and the refusal says so; the prompt may
-still be open in your client, in which case run the command again once you are
-ready. If your client does not support elicitation at all, every destructive and
-privileged command is refused with `APPROVAL_UNAVAILABLE` naming that cause —
-approval fails closed by design.
+你有 **10 分钟**作答。超时后请求过期，命令被拒绝而不是悬而未决，拒绝消息会说明原因；提示框可能还开在你的客户端里，若是这样，准备好后再运行一次命令即可。如果客户端完全不支持 elicitation，所有破坏性与特权命令都会被拒绝并报 `APPROVAL_UNAVAILABLE` 注明原因——审批在设计上就是 fail-closed 的。
 
-#### Approval queue (agent-ssh)
+#### 审批队列（agent-ssh）
 
-Elicitation needs a client that supports it. The `approvalChannel` setting
-(default `both`) gives every other host a second gate with the same 10-minute
-budget:
+Elicitation 需要客户端支持。`approvalChannel` 设置（默认 `both`）为其他所有宿主环境提供了第二道门，同样有 10 分钟的时限：
 
-- `elicitation` — the client dialog only (upstream behavior).
-- `queue` — never ask the client; every destructive command waits in a file
-  queue for a human.
-- `both` — try the client's dialog; if this client cannot be asked at all, the
-  command waits in the queue instead of failing. A client that answers **no**
-  is a final answer — the queue is never consulted behind an explicit decline.
+- `elicitation` —— 仅用客户端对话框（上游行为）。
+- `queue` —— 绝不询问客户端；每条破坏性命令都在文件队列中等待人工处理。
+- `both` —— 先试客户端对话框；若该客户端完全无法被询问，命令进入队列等待而不是失败。客户端回答**拒绝**即为终局——显式拒绝之后绝不会再去问队列。
 
-The queue lives under the platform data directory (`…
-/agent-ssh/approvals/`, one JSON file per pending command, `0600` in a `0700`
-directory). The server prints the exact command on stderr:
+队列位于平台数据目录下（`…/agent-ssh/approvals/`，每条待审命令一个 JSON 文件，`0700` 目录内 `0600` 权限）。服务器会把精确的命令打印到 stderr：
 
 ```bash
 APPROVAL_QUEUED id=173…-a1b2c3 — a destructive command on "prod-web-1" is waiting for a human.
@@ -710,61 +478,36 @@ Decide with: agent-ssh approvals approve 173…-a1b2c3   (or reject 173…-a1b2c
 ```
 
 ```bash
-agent-ssh approvals list              # every pending request, with age and time left
-agent-ssh approvals approve <id>      # prints the full payload, then records the decision
+agent-ssh approvals list              # 全部待审请求，含已等待时长与剩余时间
+agent-ssh approvals approve <id>      # 打印完整载荷，然后记录决定
 agent-ssh approvals reject <id>
 ```
 
-Each decision records **who** ran the CLI; the audit log shows it as
-`approver: "cli:<user>"`, distinguishable from `mcp-client` and `jit-grant`.
-Past expiry the request is marked expired and refuses — fail-closed, like the
-elicitation timeout. The decision file carries a fingerprint of the payload it
-was shown; if the file's contents stop matching it, the server refuses rather
-than run something that was not approved. There is deliberately **no approve
-verb on the MCP tool surface** — the model can request, wait, and be refused,
-but only a human with shell access can let a destructive command through.
+每条决定都会记录**是谁**运行的 CLI；审计日志显示为 `approver: "cli:<user>"`，与 `mcp-client` 和 `jit-grant` 可区分。过期后请求被标记为过期并拒绝——与 elicitation 超时一样 fail-closed。决定文件带有其所见载荷的指纹；一旦文件内容与指纹不符，服务器宁拒不跑——绝不执行一个未经批准的东西。我们刻意**不在 MCP 工具面上提供 approve 动词**——模型可以请求、等待、被拒绝，但只有拥有 shell 权限的人才能放行破坏性命令。
 
-### Command Quota
+### 命令配额
 
-`commandQuotaPerDay` bounds how many commands a profile may run in a rolling
-24-hour window (0 = unlimited). The approval gate stops *destructive* commands
-and the HTTP rate limiter caps request rate, but neither bounds total work — a
-prompt-injected agent looping over allowed commands stays under both. The quota
-is the circuit breaker for that case.
+`commandQuotaPerDay` 限制一个 profile 在滚动 24 小时窗口内可运行的命令数（0 = 不限制）。审批门拦住的是*破坏性*命令，HTTP 限流器限制的是请求速率，但两者都不限制总工作量——一个被提示注入的 agent 循环执行允许的命令，两条限制都拦不住它。配额就是为这种情况准备的熔断器。
 
-Counted after policy allows a command and before it runs, so a denied command
-does not spend budget. The window slides rather than resetting at midnight,
-which would let an agent spend a full quota just before the reset and another
-immediately after.
+计数发生在策略放行之后、执行之前，因此被拒绝的命令不消耗预算。窗口是滑动的，不在午夜重置——按午夜重置的话，agent 可以在重置前花完整个配额，重置后又立刻再来一份。
 
-### External Policy Engine (OPA)
+### 外部策略引擎（OPA）
 
-For organizations that standardize on Open Policy Agent / Rego:
+面向统一采用 Open Policy Agent / Rego 的组织：
 
 ```bash
 ssh-mcp --opaUrl=http://localhost:8181
 ```
 
-When `--opaUrl` is set, commands the built-in engine allows are additionally
-evaluated by OPA. **OPA can only narrow.** A command the built-in engine has
-already denied returns that denial without OPA being consulted at all, so a
-sidecar answering `allow` cannot grant a class the role bindings withhold. To
-widen, edit `[policy]`.
+设置 `--opaUrl` 后，内建引擎放行的命令会再交给 OPA 评估。**OPA 只能收紧。** 内建引擎已拒绝的命令直接返回拒绝，根本不会咨询 OPA，因此 sidecar 回答 `allow` 也给不了角色绑定扣下的类别。要放宽，请改 `[policy]`。
 
-An outage falls back to the local decision and logs one warning per minute. That is the
-default because OPA is an *additional* deny layer and stopping all work would be the worse
-failure — but an operator who deployed OPA *as* the authorization gate loses that gate
-during the outage, and the only signal is a stderr line MCP clients usually discard.
-`--opaFailClosed` makes the gate being down mean no; the refusal carries `ruleId:
-"opa-unavailable"` so the audit record says the gate was down rather than implying a policy
-refused the command.
+OPA 故障时回落到本地决定，并每分钟记录一条告警。这是默认行为，因为 OPA 是*额外*的拒绝层，停掉全部工作是更糟的失败——但如果运维是把 OPA *当作*授权门部署的，故障期间这道门就没了，而唯一的信号是一行 MCP 客户端通常会丢弃的 stderr。`--opaFailClosed` 让「门不可用」等于「否」；拒绝信息带 `ruleId: "opa-unavailable"`，审计记录因此说明「门当时不可用」，而不是暗示某条策略拒绝了命令。
 
-The request shape is modeled on the AuthZEN Access Evaluation contract:
+请求结构参照 AuthZEN Access Evaluation 契约建模：
 
 ```json
 {
-  "input": {
-    "subject": { "role": "operator", "profile": "prod-web-1" },
+  "input": {@NL@@    "subject": { "role": "operator", "profile": "prod-web-1" },
     "action": { "tool": "run-command", "commandClass": "destructive" },
     "resource": { "command": "rm -rf /tmp/cache", "binary": "rm", "host": "10.0.1.50" },
     "context": { "readOnly": false }
@@ -772,296 +515,230 @@ The request shape is modeled on the AuthZEN Access Evaluation contract:
 }
 ```
 
-For the five SFTP tools, `resource` also carries three path keys: `remotePath`,
-the path as given; and `remotePathNormalized` and `remotePathWindows`, the same
-two readings the local denylist tests, so a rule can match a canonical spelling
-without parsing `command` or reimplementing either reading in Rego. Other tools
-omit all three, and so does an empty path. `remotePath` is **as given** —
-`/root//.ssh/x` arrives spelled that way, so a `startswith` rule on a directory
-misses it: match trailing segments, or match the normalized keys.
-`remotePathWindows` keeps the case it was given; `lower()` both sides in the
-policy for case-insensitive rules. Match fields rather than the whole
-`resource` object — its keys vary by tool.
+对五个 SFTP 工具，`resource` 还携带三个路径键：`remotePath`（按原样的路径），以及 `remotePathNormalized` 与 `remotePathWindows`——即本地 denylist 所用的同两种读法，规则因此可以在不解析 `command`、不用 Rego 重实现读法的情况下匹配规范拼写。其他工具省略全部三个键，空路径亦然。`remotePath` 是**按原样**——`/root//.ssh/x` 传过来就是这个拼写，对目录做 `startswith` 的规则会漏掉它：请匹配结尾的路径段，或匹配规范化后的键。`remotePathWindows` 保留传入的大小写；要不区分大小写，请在策略里对两侧做 `lower()`。请匹配字段而不是整个 `resource` 对象——它的键因工具而异。
 
-OPA responds with `{ "result": true/false }`. If OPA denies (`result: false`), the command is blocked even if the built-in engine allows it. If OPA is unreachable, the built-in engine's decision stands by default (fail-open, to avoid locking out access); `--opaFailClosed` refuses instead. A 200 that carries no boolean `result` counts as unreachable — that is what OPA answers for an undefined document, so a misnamed package or an unactivated bundle is an outage rather than consent.
+OPA 以 `{ "result": true/false }` 应答。若 OPA 拒绝（`result: false`），即使内建引擎放行，命令也会被拦截。若 OPA 不可达，默认按内建引擎的决定执行（fail-open，避免锁死访问）；`--opaFailClosed` 则改为拒绝。一个没有布尔 `result` 的 200 应答按不可达处理——OPA 对未定义文档就是这么答的，因此写错包名或未激活 bundle 是一次故障，而不是默许。
 
-Example Rego policy (`ssh-mcp.rego`):
+Rego 策略示例（`ssh-mcp.rego`）：
 ```rego
 package ssh.mcp
 
 default allow := false
 
-# Admins pass the OPA gate on dev hosts. The built-in policy still applies on
-# top: this widens nothing that the role bindings withhold.
-allow if {
-  input.subject.role == "admin"
+# admin 在 dev 主机上通过 OPA 门。内建策略仍叠加在其上生效：
+# 这不会放宽角色绑定扣下的任何权限。
+allow if {@NL@@  input.subject.role == "admin"
   startswith(input.subject.profile, "dev")
 }
 
-# Deny all destructive commands on prod
-deny if {
-  input.action.commandClass == "destructive"
+# 拒绝 prod 上的所有破坏性命令
+deny if {@NL@@  input.action.commandClass == "destructive"
   startswith(input.subject.profile, "prod")
 }
 ```
 
 ---
 
-## Security
+## 安全
 
-### Threat Model
+### 威胁模型
 
-See [SECURITY.md](./SECURITY.md) for the full threat model, vulnerability reporting policy, and deployment checklist.
+完整威胁模型、漏洞报告政策与部署检查清单见 [SECURITY.md](./SECURITY.md)。
 
-### Supply chain
+### 供应链
 
-Releases carry signed attestations, published through [Sigstore](https://www.sigstore.dev/)
-and recorded in its public transparency log. They live in **two different stores**, which is
-what decides how each is verified:
+发布产物携带签名证明（attestation），经 [Sigstore](https://www.sigstore.dev/) 发布并记入其公开透明日志。它们存放在**两个不同的存储**里，这决定了各自如何验证：
 
-| Attestation | Predicate | Stored by | Since |
+| 证明 | 谓词 | 存储方 | 起始版本 |
 |---|---|---|---|
-| Build provenance — [SLSA](https://slsa.dev/) Build **Level 2** | `slsa.dev/provenance/v1` | npm | every release |
-| SBOM — CycloneDX and SPDX | `cyclonedx.org/bom`, `spdx.dev/Document` | GitHub | releases after v2.4.0 |
+| 构建溯源——[SLSA](https://slsa.dev/) Build **Level 2** | `slsa.dev/provenance/v1` | npm | 每个版本 |
+| SBOM——CycloneDX 与 SPDX | `cyclonedx.org/bom`、`spdx.dev/Document` | GitHub | v2.4.0 之后的版本 |
 
-Provenance comes from npm [trusted publishing](https://docs.npmjs.com/trusted-publishers):
-the release workflow authenticates with a short-lived OIDC token and no stored credential,
-so there is no long-lived npm token to leak.
+溯源来自 npm [trusted publishing](https://docs.npmjs.com/trusted-publishers)：发布工作流用短时效 OIDC 令牌认证，不落任何存储的凭据，因此不存在可泄露的长期 npm 令牌。
 
 ```bash
-npm audit signatures        # provenance, against an installed tree
+npm audit signatures        # 溯源，对照已安装的依赖树
 
-npm pack ssh-mcp            # the SBOM attestation is bound to the tarball, so fetch it
+npm pack ssh-mcp            # SBOM 证明绑定在 tarball 上，先取下来
 gh attestation verify ssh-mcp-*.tgz --repo tufantunc/ssh-mcp --predicate-type https://cyclonedx.org/bom
 ```
 
-Both flags on the last command are load-bearing. `gh attestation verify` defaults to the
-SLSA predicate, so without `--predicate-type` it filters the SBOM out and reports nothing
-found — and the provenance it would look for instead is in npm's store, not the GitHub
-store `--repo` queries. Use `https://spdx.dev/Document` for the SPDX one.
+最后一条命令的两个标志都缺一不可。`gh attestation verify` 默认匹配 SLSA 谓词，不加 `--predicate-type` 会把 SBOM 过滤掉并报告「未找到」——而它本要找的溯源存放在 npm 的存储里，不在 `--repo` 查询的 GitHub 存储里。SPDX 那份用 `https://spdx.dev/Document`。
 
-Both SBOMs are also attached to each
-[GitHub release](https://github.com/tufantunc/ssh-mcp/releases), for reading rather than
-verifying.
+两份 SBOM 也附加在每个 [GitHub release](https://github.com/tufantunc/ssh-mcp/releases) 上，供阅读而非校验。
 
-**Level 2, not 3.** Provenance is signed by the generic GitHub-hosted runner —
-`builder.id` is `https://github.com/actions/runner/github-hosted` — which the build itself
-can influence; Build L3 requires an isolated builder it cannot. Reaching L3 is not
-currently compatible with trusted publishing: npm turns on its own provenance whenever that
-setting is left at its default, and then ignores any externally generated one. So L3 today
-would mean returning to a long-lived npm token — trading the property described above for a
-level number.
+**Level 2，而非 3。** 溯源由通用的 GitHub 托管 runner 签名——`builder.id` 是 `https://github.com/actions/runner/github-hosted`——构建过程本身能影响它；Build L3 要求一个它影响不到的隔离 builder。当前 L3 与 trusted publishing 不兼容：该设置保持默认时 npm 会开启自己的溯源，然后忽略一切外部生成的溯源。所以今天上 L3 意味着退回长期 npm 令牌——用一个等级数字换掉上述性质。
 
-### Safe Defaults
+### 安全默认值
 
-- **Non-root** user in all examples
-- **TOFU** host key verification (accept on first connect, verify after — within one process; see [SECURITY.md](./SECURITY.md#host-key-trust-does-not-survive-a-restart))
-- **RFC 9142** algorithm allow-list (no SHA-1, no CBC, no ssh-rsa)
-- **exec()-only for elevation** (`privileged-command` takes no `session`, so sudo never runs in a persistent shell — fixes PTY leak. Interactive sessions exist for ordinary commands; this bullet is about elevation, not about every path being an exec channel)
-- **Sudo via stdin** (not argv — fixes process list leak)
-- **Sanitizer** strips CR/LF/NUL from all metadata
-- **3-layer redaction** (field → regex → entropy) on audit logs
-- **No CLI-arg secrets** (use env vars, keychain, or config)
-- **Agent announcement is disclosed, not hidden** — every command tells the host `AI_AGENT=ssh-mcp`, including hosts that never opted in to storing it; clear `announceAgent` on a profile pointing at a host you do not control (see [Host-side identification](#host-side-identification))
+- 所有示例均使用**非 root** 用户
+- **TOFU** 主机密钥验证（首次连接接受、此后验证——限于单进程内；见 [SECURITY.md](./SECURITY.md#主机密钥信任不跨重启保留)）
+- **RFC 9142** 算法白名单（无 SHA-1、无 CBC、无 ssh-rsa）
+- **提权仅用 exec()**（`privileged-command` 不接受 `session`，sudo 永远不在持久 shell 中运行——修复 PTY 泄露。交互式会话为普通命令而设；这一条讲的是提权，不是说所有路径都是 exec 通道）
+- **sudo 经 stdin 传递**（不走 argv——修复进程列表泄露）
+- **净化器**从所有元数据中剥离 CR/LF/NUL
+- 审计日志**三层脱敏**（字段 → 正则 → 熵）
+- **CLI 参数不携带机密**（用环境变量、密钥链或配置）
+- **agent 身份明示而非隐藏**——每条命令都告诉主机 `AI_AGENT=ssh-mcp`，包括从未同意存储它的主机；指向不受控主机的 profile 请清除 `announceAgent`（见[主机侧标识](#主机侧标识)）
 
-### Hardening Checklist
+### 加固检查清单
 
-- [ ] Create dedicated low-privilege service account on target hosts
-- [ ] Use command-specific `sudoers` instead of `NOPASSWD: ALL`
-- [ ] Enable `ask-all` approval for production profiles
-- [ ] Restrict network egress on target hosts
-- [ ] Use `readOnly = true` for monitoring profiles
-- [ ] Review audit logs regularly
-- [ ] Run `chmod 700 <config dir> && chmod 600 config.toml` (Windows: the ACL under `%APPDATA%` is already restricted)
+- [ ] 在目标主机上创建专用的低权限服务账户
+- [ ] 使用按命令限定的 `sudoers`，而不是 `NOPASSWD: ALL`
+- [ ] 为生产 profile 启用 `ask-all` 审批
+- [ ] 限制目标主机的网络出口
+- [ ] 监控类 profile 使用 `readOnly = true`
+- [ ] 定期复查审计日志
+- [ ] 执行 `chmod 700 <config dir> && chmod 600 config.toml`（Windows：`%APPDATA%` 下的 ACL 已受限）
 
 ---
 
-## Transports
+## 传输方式
 
-### stdio (default)
+### stdio（默认）
 
-For local MCP clients (Claude Code, Cursor, Windsurf). No network exposure.
+面向本地 MCP 客户端（Claude Code、Cursor、Windsurf）。无网络暴露。
 
 ```bash
-ssh-mcp                          # reads config from XDG path
-ssh-mcp --config=/path/to.toml   # custom config path
+ssh-mcp                          # 从 XDG 路径读取配置
+ssh-mcp --config=/path/to.toml   # 自定义配置路径
 ```
 
-### HTTP (optional)
+### HTTP（可选）
 
-For remote/web clients behind a reverse proxy with TLS:
+面向置于带 TLS 的反向代理之后的远程/Web 客户端：
 
 ```bash
 ssh-mcp --transport=http --httpPort=3000 --bearerToken=secret
 ssh-mcp --transport=http --httpPort=3000 --bearerToken=secret --rateLimit=60
 ```
 
-| Flag | Default | Description |
+| 标志 | 默认值 | 说明 |
 |------|---------|-------------|
-| `--bearerToken` | required | Bearer token for authentication (all routes except `GET /health`) |
-| `--httpPort` | 3000 | HTTP listen port |
-| `--httpHost` | 127.0.0.1 | Bind address |
-| `--rateLimit` | 0 (off) | Max authenticated requests per minute, per client (0 = unlimited) |
-| `--httpSessionTtl` | 1800000 | Idle timeout of an MCP client session over HTTP, in ms (a session with a request in flight or an open SSE stream does not expire). At the 64-session cap a new client evicts the least recently active session with no request in flight, one holding an SSE stream only when no other can go |
-| `--authFailureLimit` | 10 | Failed bearer-auth attempts allowed per client per minute (0 = off) |
-| `--trustProxy` | false | Read the client address from `X-Forwarded-For`, but only when the peer is the proxy — bare means a loopback peer |
-| `--trustedProxies` | — | Comma-separated peer addresses allowed to send `X-Forwarded-For`. Empty means loopback only |
+| `--bearerToken` | 必填 | 用于认证的 Bearer 令牌（`GET /health` 以外的所有路由） |
+| `--httpPort` | 3000 | HTTP 监听端口 |
+| `--httpHost` | 127.0.0.1 | 绑定地址 |
+| `--rateLimit` | 0（关闭） | 每客户端每分钟已认证请求上限（0 = 不限制） |
+| `--httpSessionTtl` | 1800000 | HTTP 上 MCP 客户端会话的空闲超时，单位 ms（有请求在途或 SSE 流打开的会话不过期）。达到 64 会话上限时，新客户端会逐出最久不活跃且无请求在途的会话；仅当无其他可逐出时才逐出持有 SSE 流的会话 |
+| `--authFailureLimit` | 10 | 每客户端每分钟允许的认证失败次数（0 = 关闭） |
+| `--trustProxy` | false | 从 `X-Forwarded-For` 读取客户端地址，但仅在对端是代理时——裸标志意味着对端为 loopback |
+| `--trustedProxies` | — | 允许发送 `X-Forwarded-For` 的对端地址，逗号分隔。为空表示仅 loopback |
 
-Endpoints: `POST /` (MCP Streamable HTTP), `GET /status`, `GET /health`
+端点：`POST /`（MCP Streamable HTTP）、`GET /status`、`GET /health`
 
-`GET /health` answers `{"healthy": true, "configured": <bool>}`. It stays `200` either way —
-`healthy` is liveness — while `configured` is false when no profile is set, which is the
-case of a config bind mount that silently did not attach: the server binds the port and
-refuses every tool call. `GET /status` carries the profile list itself and stays behind the
-bearer token.
+`GET /health` 返回 `{"healthy": true, "configured": <bool>}`。无论哪种情况都是 `200`——`healthy` 表示存活；`configured` 在未设置任何 profile 时为 false，典型场景是配置 bind mount 静默没有挂上：服务器照常绑端口，但拒绝每一次工具调用。`GET /status` 返回 profile 列表本身，仍在 bearer 令牌保护之后。
 
-`--rateLimit` is a budget per client, keyed the same way as the failed-auth budget below,
-and every authenticated request spends from it: `POST /` and the rest of the MCP route,
-`GET /status`, and an authenticated request to a path that does not exist. `GET /health`
-never does. A wrong token never does either, so unauthenticated traffic cannot spend a
-working client's budget. When a client's budget is spent the server returns HTTP 429 with
-a JSON-RPC error body, and `Retry-After` gives the seconds until that client's next request
-will be accepted.
+`--rateLimit` 是按客户端计的预算，键的取法与下面的认证失败预算一致，每个已认证请求都会消耗它：`POST /` 与其余 MCP 路由、`GET /status`，以及对不存在路径的已认证请求。`GET /health` 永不消耗；错误令牌同样不消耗，因此未认证流量花不掉正常客户端的预算。预算耗尽时服务器返回 HTTP 429 和 JSON-RPC 错误体，`Retry-After` 给出距该客户端下一个请求被接受的秒数。
 
-Failed authentication is throttled separately, and on by default. `--rateLimit` never saw a
-wrong bearer token, because the auth check answers before the limiter is reached — so
-guessing ran at network speed. `--authFailureLimit` gives each client its own small budget,
-spent only on a 401; a correct token never consumes from it, so a working client never
-throttles itself. Once an address has spent its budget every request from it waits,
-including one with the right token — that is deliberate, since answering the guess would
-otherwise tell the caller which token was right. Clients are told apart by socket address,
-for this budget and for `--rateLimit` alike. **Behind a reverse proxy that means every
-client shares one of each**, so set `--trustProxy` when the proxy is yours — the server
-prints a warning the first time it sees `X-Forwarded-For` without it. `--trustProxy` takes
-the *rightmost* `X-Forwarded-For` entry, which is the hop the proxy itself appended;
-everything to its left came from the client, so reading the leftmost would let a client
-choose its own budget or spend a victim's. That only holds if a proxy actually appended
-the entry, so the header is read **only when the peer is the proxy** — bare `--trustProxy`
-means a loopback peer, which is the deployment above; name a proxy elsewhere with
-`--trustedProxies`. When the header cannot be read as an address, or the peer is not
-trusted, the server falls back to the socket address and says so once, so a flag that is
-not taking effect is not silent. One trusted hop is assumed. A malformed
-`--authFailureLimit` is refused at startup rather than silently disabling the check; only
-`0` turns it off.
+认证失败单独限流，且默认开启。`--rateLimit` 从来看不到错误的 bearer 令牌，因为认证检查先于限流器应答——猜令牌本可以跑满网络速度。`--authFailureLimit` 给每个客户端一个独立的小预算，只在 401 时消耗；正确令牌永不动用它，正常客户端不会限流自己。地址一旦耗尽预算，其后的所有请求都要等待——包括带正确令牌的请求，这是刻意的：否则应答「猜的那次」就等于告诉调用方哪个令牌是对的。客户端按 socket 地址区分，此预算与 `--rateLimit` 皆然。**在反向代理之后，这意味着所有客户端共享同一份两种预算**，所以代理归你管时请设置 `--trustProxy`——服务器第一次在未设置该标志时见到 `X-Forwarded-For` 会打印告警。`--trustProxy` 取*最右*一条 `X-Forwarded-For` 条目，即代理自己追加的那一跳；其左的全部来自客户端，读最左一条等于让客户端自选预算或花掉受害者的预算。这只有「代理确实追加了条目」时才成立，因此该头部**仅在对端是代理时**才读——裸 `--trustProxy` 表示对端为 loopback，即上面的部署；代理在别处时用 `--trustedProxies` 指定。头部无法按地址解读、或对端不受信时，服务器回落到 socket 地址并说明一次，因此「标志没生效」不会是无声的。默认只假定一跳可信。格式非法的 `--authFailureLimit` 在启动时被拒绝，而不是静默关闭检查；只有 `0` 才是关闭。
 
-An IPv6 client is told apart by its /64 rather than its full address, for both budgets. A
-/64 is usually the smallest block a subscriber is handed, so hosts that share one — a home
-or office network, or customers a hosting provider places on one /64 — share a budget, the
-way hosts behind one IPv4 NAT do. An IPv6 address that carries an IPv4 address (IPv4-mapped,
-or the NAT64 prefix `64:ff9b::/96`) counts as that IPv4 client. A NAT64 or SIIT translator
-that uses a prefix of its own is not recognised: every IPv4 client it translates shares that
-prefix's /64, and so one budget.
+IPv6 客户端按其 /64 而非完整地址区分，两种预算皆然。/64 通常是运营方分配给用户的最小块，因此共享一个 /64 的主机——同一家庭或办公网络、或托管商放在同一 /64 的客户——共享一份预算，如同一个 IPv4 NAT 后面的主机。携带 IPv4 地址的 IPv6 地址（IPv4-mapped，或 NAT64 前缀 `64:ff9b::/96`）按那个 IPv4 客户端计。使用自有前缀的 NAT64 或 SIIT 转换器无法识别：其转换的所有 IPv4 客户端共享该前缀的 /64，即共享一份预算。
 
-**Always terminate TLS at a reverse proxy** (Caddy/nginx). The server listens on `127.0.0.1` only.
+**务必在反向代理（Caddy/nginx）终结 TLS。** 服务器只监听 `127.0.0.1`。
 
 ---
 
 ## Docker
 
 ```bash
-# Build
+# 构建
 docker build -t ssh-mcp .
 
-# Run (config file + env vars for credentials)
+# 运行（配置文件 + 环境变量提供凭据）
 docker run -i \
   -v ./config.toml:/home/appuser/.config/ssh-mcp/config.toml:ro \
   -e SSH_MCP_PASSWORD=secret \
   ssh-mcp
 ```
 
-Or with docker-compose:
+或使用 docker-compose：
 
 ```bash
 docker-compose --profile app up
 ```
 
-The Docker image runs as non-root UID 65532, with a minimal `node:22-slim` base.
+Docker 镜像以非 root 的 UID 65532 运行，基础镜像为最小化的 `node:22-slim`。
 
 ---
 
-## CLI Flags (v2)
+## CLI 标志（v2）
 
-Secrets are **never** passed as CLI arguments.
+机密**绝不**通过 CLI 参数传递。
 
-| Flag | Default | Description |
+| 标志 | 默认值 | 说明 |
 |------|---------|-------------|
-| `--config` | platform config dir (see [Configure](#2-configure)) | Path to TOML config file |
-| `--host` | — | Quick start: SSH host (creates single-profile config) |
-| `--user` | — | Quick start: SSH username |
-| `--port` | 22 | Quick start: SSH port |
-| `--key` | — | Quick start: Path to private key |
-| `--workdir` | — | Quick start: Working directory for commands and sessions |
-| `--group` | prod | Quick start: Policy tier — `prod`, `staging` or `dev` |
-| `--timeout` | 60000 | Command timeout in ms |
-| `--maxChars` | 5000 | Max command length (`none` or `0` disables the limit; in a config file the same setting is `commandMaxChars = 0`) |
-| `--sessionMax` | 5 | Max concurrent sessions per connection |
-| `--sessionTtl` | 600000 | Idle timeout of an SSH session in ms |
-| `--transport` | stdio | `stdio` or `http` |
-| `--httpPort` | 3000 | HTTP transport port |
-| `--httpHost` | 127.0.0.1 | HTTP bind address |
-| `--bearerToken` | — | Bearer token for HTTP transport auth (required for `--transport=http`) |
-| `--rateLimit` | 0 | Max authenticated requests per minute, per client (0 = unlimited) |
-| `--httpSessionTtl` | 1800000 | Idle timeout of an MCP client session over HTTP, in ms (a session with a request in flight or an open SSE stream does not expire). At the 64-session cap a new client evicts the least recently active session with no request in flight, one holding an SSE stream only when no other can go |
-| `--authFailureLimit` | 10 | Failed bearer-auth attempts allowed per client per minute (0 = off) |
-| `--trustProxy` | false | Read the client address from `X-Forwarded-For`, but only when the peer is the proxy — bare means a loopback peer |
-| `--trustedProxies` | — | Comma-separated peer addresses allowed to send `X-Forwarded-For`. Empty means loopback only |
-| `--allowedHosts` | bind address + localhost | Comma-separated Host headers accepted by the DNS-rebinding guard |
-| `--hostKeyMode` | `tofu` | `tofu \| strict \| insecure`. `strict` accepts only hosts pinned with `trustedHostKey`. See [SECURITY.md](./SECURITY.md#host-key-trust-does-not-survive-a-restart) |
-| `--insecureHostKey` | false | Disable host key verification for hosts with no `trustedHostKey` — a pin still refuses (test only!) |
-| `--allowUncheckedConfigAcl` | false | Windows: report every ACL finding and refuse none |
-| `--strictConfigAcl` | false | Windows: refuse on every ACL finding, including a read-only over-grant |
-| `--disableApproval` | false | Skip the approval gate (quick start profile only) |
-| `--opaUrl` | — | OPA sidecar URL for external policy |
-| `--opaFailClosed` | false | Refuse every command while OPA is unreachable, instead of falling back to local policy |
-| `--opaTimeoutMs` | 10000 | How long to wait for the OPA sidecar. Lower makes the fail-open cheaper to reach; higher makes an outage slower to notice |
-| `--commandQuota` | 0 (off) | Max commands per rolling 24h per profile |
-| `--approvalGrantTtl` | 0 (off) | Auto-approve an identical command for this many ms after approval |
-| `--auditEntropyScan` | false | Enable entropy-based secret scanning in audit |
-| `--auditTamperEvident` | false | Enable hash-chained tamper-evident audit log |
-| `--otelEndpoint` | — | OTLP/HTTP endpoint for OpenTelemetry traces |
-| `--otelServiceName` | ssh-mcp | Service name reported on trace spans |
-| `--dumpToolHashes` | — | Print SHA-256 hashes of the tool descriptions and exit |
+| `--config` | 平台配置目录（见[配置](#2-配置)） | TOML 配置文件路径 |
+| `--host` | — | 快速启动：SSH 主机（生成单 profile 配置） |
+| `--user` | — | 快速启动：SSH 用户名 |
+| `--port` | 22 | 快速启动：SSH 端口 |
+| `--key` | — | 快速启动：私钥路径 |
+| `--workdir` | — | 快速启动：命令与会话的工作目录 |
+| `--group` | prod | 快速启动：策略层级——`prod`、`staging` 或 `dev` |
+| `--timeout` | 60000 | 命令超时，单位 ms |
+| `--maxChars` | 5000 | 命令最大长度（`none` 或 `0` 关闭上限；配置文件中同一设置为 `commandMaxChars = 0`） |
+| `--sessionMax` | 5 | 每连接最大并发会话数 |
+| `--sessionTtl` | 600000 | SSH 会话空闲超时，单位 ms |
+| `--transport` | stdio | `stdio` 或 `http` |
+| `--httpPort` | 3000 | HTTP 传输端口 |
+| `--httpHost` | 127.0.0.1 | HTTP 绑定地址 |
+| `--bearerToken` | — | HTTP 传输认证用 Bearer 令牌（`--transport=http` 时必填） |
+| `--rateLimit` | 0 | 每客户端每分钟已认证请求上限（0 = 不限制） |
+| `--httpSessionTtl` | 1800000 | HTTP 上 MCP 客户端会话的空闲超时，单位 ms（有请求在途或 SSE 流打开的会话不过期）。达到 64 会话上限时，新客户端会逐出最久不活跃且无请求在途的会话；仅当无其他可逐出时才逐出持有 SSE 流的会话 |
+| `--authFailureLimit` | 10 | 每客户端每分钟允许的认证失败次数（0 = 关闭） |
+| `--trustProxy` | false | 从 `X-Forwarded-For` 读取客户端地址，但仅在对端是代理时——裸标志意味着对端为 loopback |
+| `--trustedProxies` | — | 允许发送 `X-Forwarded-For` 的对端地址，逗号分隔。为空表示仅 loopback |
+| `--allowedHosts` | 绑定地址 + localhost | DNS 重绑定防护接受的 Host 头，逗号分隔 |
+| `--hostKeyMode` | `tofu` | `tofu \| strict \| insecure`。`strict` 只接受用 `trustedHostKey` 固定的主机。见 [SECURITY.md](./SECURITY.md#主机密钥信任不跨重启保留) |
+| `--insecureHostKey` | false | 对没有 `trustedHostKey` 的主机关闭主机密钥验证——已固定的主机依然拒绝（仅限测试！） |
+| `--allowUncheckedConfigAcl` | false | Windows：报告全部 ACL 发现，不拒绝任何情况 |
+| `--strictConfigAcl` | false | Windows：对每项 ACL 发现都拒绝，包括只读过度授权 |
+| `--disableApproval` | false | 跳过审批门（仅限快速启动 profile） |
+| `--opaUrl` | — | 外部策略用 OPA sidecar URL |
+| `--opaFailClosed` | false | OPA 不可达期间拒绝一切命令，而不是回落本地策略 |
+| `--opaTimeoutMs` | 10000 | 等待 OPA sidecar 的时长。调低让 fail-open 更早触发；调高让故障更迟被发现 |
+| `--commandQuota` | 0（关闭） | 每 profile 每 24h 滚动窗口的最大命令数 |
+| `--approvalGrantTtl` | 0（关闭） | 批准后该时长（ms）内自动批准完全相同的命令 |
+| `--auditEntropyScan` | false | 在审计中启用基于熵的机密扫描 |
+| `--auditTamperEvident` | false | 启用哈希链防篡改审计日志 |
+| `--otelEndpoint` | — | OpenTelemetry 追踪的 OTLP/HTTP 端点 |
+| `--otelServiceName` | ssh-mcp | 追踪 span 上报的服务名 |
+| `--dumpToolHashes` | — | 打印工具描述的 SHA-256 哈希后退出 |
 
 ---
 
-## Migrating from v1
+## 从 v1 迁移
 
-v2 is a breaking release. Passing a removed flag now fails at startup with the
-replacement, rather than failing later as a confusing auth error.
+v2 是破坏性版本。传入已移除的标志现在会在启动时失败并给出替代方式，而不是拖到之后才报一个莫名其妙的认证错误。
 
-### Tools
+### 工具
 
-| v1 | v2 | Notes |
+| v1 | v2 | 说明 |
 |----|----|-------|
-| `exec` | `read-command` | Allowlisted read-only commands. Prefer this for reads. |
-| `exec` | `run-command` | Arbitrary commands. Destructive and privileged ones go through the approval gate, unless `approvalPolicy = "auto"`. |
-| `sudo-exec` | `privileged-command` | Requires approval unless `approvalPolicy = "auto"`. Password is piped via stdin. |
-| `description` parameter | — | Removed. It was an injection vector (#44) and never reached the host. |
+| `exec` | `read-command` | 白名单内的只读命令。读取操作请优先用它。 |
+| `exec` | `run-command` | 任意命令。破坏性与特权命令经审批门，除非 `approvalPolicy = "auto"`。 |
+| `sudo-exec` | `privileged-command` | 需审批，除非 `approvalPolicy = "auto"`。密码经 stdin 管道传入。 |
+| `description` 参数 | — | 已移除。它是注入向量（#44），且从未到达过主机。 |
 
-**Command results now carry status.** In v1 a failed command rejected with
-`Error (code N)`. In v2 a non-zero exit comes back as an error result including
-the exit code and stderr — so an empty response no longer means "it worked".
+**命令结果现在携带状态。** v1 中失败的命令以 `Error (code N)` 拒绝。v2 中非零退出码会作为错误结果返回，包含退出码与 stderr——空响应不再意味着「成功了」。
 
-### Flags
+### 标志
 
-| v1 flag | Replacement |
+| v1 标志 | 替代方式 |
 |---------|-------------|
-| `--password` | `SSH_MCP_PASSWORD` env var (or `SSH_MCP_<PROFILE>_PASSWORD`) |
-| `--suPassword` | `SSH_MCP_SUDO_PASSWORD` env var |
-| `--sudoPassword` | `SSH_MCP_SUDO_PASSWORD` env var |
-| `--disableSudo` | Use a role/policy that disallows the `privileged` class |
+| `--password` | 环境变量 `SSH_MCP_PASSWORD`（或 `SSH_MCP_<PROFILE>_PASSWORD`） |
+| `--suPassword` | 环境变量 `SSH_MCP_SUDO_PASSWORD` |
+| `--sudoPassword` | 环境变量 `SSH_MCP_SUDO_PASSWORD` |
+| `--disableSudo` | 使用禁止 `privileged` 类别的角色/策略 |
 
-Credentials moved off the command line because CLI arguments are world-readable
-via `/proc/<pid>/cmdline` on Linux (CWE-214). Credentials now resolve through an
-SSH agent → OS keychain → env var → key file cascade.
+凭据移出命令行，是因为在 Linux 上 CLI 参数经 `/proc/<pid>/cmdline` 对全体用户可读（CWE-214）。凭据现在经 SSH agent → 操作系统密钥链 → 环境变量 → 密钥文件的级联解析。
 
-### Example
+### 示例
 
 ```jsonc
 // v1
 { "command": "npx", "args": ["ssh-mcp", "--host=1.2.3.4", "--user=root", "--password=hunter2"] }
 
-// v2 — credentials via env
+// v2 —— 凭据走环境变量
 {
   "command": "npx",
   "args": ["ssh-mcp", "--host=1.2.3.4", "--user=root"],
@@ -1069,37 +746,29 @@ SSH agent → OS keychain → env var → key file cascade.
 }
 ```
 
-For more than one host, move to a TOML config file (see [Configuration](#configuration))
-and pass `--config <path>`; profiles carry per-host roles and approval policy.
+多台主机时，请改用 TOML 配置文件（见[配置](#配置)）并传 `--config <path>`；profile 承载每台主机的角色与审批策略。
 
-### Host key verification
+### 主机密钥验证
 
-v1 did not verify host keys. v2 defaults to trust-on-first-use and records the
-key **in memory, for the life of the process**; a later mismatch in that same
-process fails the connection. Nothing is written to disk and `~/.ssh/known_hosts`
-is not consulted, so a restart accepts afresh — see
-[SECURITY.md](./SECURITY.md#host-key-trust-does-not-survive-a-restart). Pin
-explicitly with `trustedHostKey` in a profile, which is the only control here that
-survives a restart — and which no host key mode overrides, so `--insecureHostKey`
-is an opt-out only for hosts you have not pinned (test environments only).
+v1 不验证主机密钥。v2 默认 trust-on-first-use，并把密钥记录**在内存中、进程存续期内**；同一进程内之后的失配会使连接失败。任何东西都不落盘，也不查询 `~/.ssh/known_hosts`，因此重启后重新接受——见 [SECURITY.md](./SECURITY.md#主机密钥信任不跨重启保留)。请用 profile 里的 `trustedHostKey` 显式固定，这是这里唯一能跨重启保留的控制，且任何主机密钥模式都不能覆盖它——因此 `--insecureHostKey` 只是针对未固定主机的选择退出（仅限测试环境）。
 
 ---
 
-## Testing
+## 测试
 
 ```bash
-# Start test SSH servers. --build matters: compose reuses an existing image, and a
-# fixture change (such as the alpine target's AcceptEnv line) then never lands,
-# which shows up as a product failure in the integration suite.
+# 启动测试 SSH 服务器。--build 很重要：compose 会复用已有镜像，
+# fixture 的改动（比如 alpine 目标的 AcceptEnv 行）就永远不会生效，
+# 在集成套件里表现为产品故障。
 docker compose --profile test up -d --build
 
-# Run all tests
+# 运行全部测试
 npm test
 
-# Run only unit tests
+# 仅运行单元测试
 npm test -- test/unit/
 
-# Run with coverage
+# 带覆盖率运行
 npm run coverage
 ```
 
@@ -1111,16 +780,17 @@ npm run inspect
 
 ---
 
-## Contributing
+## 参与贡献
 
-See [CONTRIBUTING.md](./CONTRIBUTING.md). Please follow the [security checklist](./SECURITY.md#security-checklist-for-contributors) in all PRs.
+见 [CONTRIBUTING.md](./CONTRIBUTING.md)。所有 PR 请遵循[安全检查清单](./SECURITY.md#贡献者安全检查清单)。
 
-## Support
+## 支持
 
-If you find SSH MCP Server helpful, consider starring the repository or [sponsoring](https://github.com/sponsors/tufantunc)!
+如果 SSH MCP Server 对你有帮助，欢迎给仓库点星或[赞助](https://github.com/sponsors/tufantunc)！
 
-## Listed on
+## 收录于
 
 [![SSH MCP Server on Glama](https://glama.ai/mcp/servers/tufantunc/ssh-mcp/badge)](https://glama.ai/mcp/servers/tufantunc/ssh-mcp)
 
-Also on the [official MCP registry](https://registry.modelcontextprotocol.io) as `io.github.tufantunc/ssh-mcp`.
+同时收录于[官方 MCP registry](https://registry.modelcontextprotocol.io)，条目为 `io.github.tufantunc/ssh-mcp`。
+

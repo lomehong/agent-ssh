@@ -12,7 +12,7 @@ export function isKeychainAvailable(): boolean {
 
 export async function initKeychain(): Promise<boolean> {
   try {
-    // @ts-ignore — optional dependency, may not be installed
+    // @ts-ignore —— 可选依赖，可能未安装
     const mod: any = await import('@napi-rs/keyring');
     keyringGet = async (service: string, account: string) => {
       const entry = new mod.Entry(service, account);
@@ -42,9 +42,9 @@ export async function resolveCredentials(profile: Profile): Promise<ResolvedCred
     creds.agentSocket = process.env.SSH_AUTH_SOCK;
   }
 
-  // Warn rather than silently walking down to a weaker credential source: a
-  // profile that asked for the OS keychain and got an env var instead has a
-  // different security posture than the operator configured.
+  // 降到更弱的凭据来源时必须告警而不是静默：申请 OS 密钥链的 profile
+  // 若实际拿到的是环境变量，其安全姿态已不同于运维的配置意图。
+  // 这种偏离必须显式暴露给运维。
   if (profile.auth === 'keychain' && !keyringGet) {
     console.error(
       `Profile "${profile.name}" requests auth = "keychain" but @napi-rs/keyring is unavailable ` +
@@ -108,9 +108,9 @@ export async function resolveCredentials(profile: Profile): Promise<ResolvedCred
   }
 
   if (!creds.password && !creds.privateKey && !creds.agentSocket) {
-    // Naming the method the profile asked for, rather than listing all four,
-    // is the difference between "fix the one you chose" and "pick whichever is
-    // easiest" — and the easiest is a plaintext password in the environment.
+    // 指出 profile 申请的是哪种方式，而不是罗列全部四种——
+    // 这就是「修好你选的那个」与「哪个省事选哪个」的差别，
+    // 而最省事的就是环境里的明文密码。
     const asked = profile.auth;
     const why: Record<string, string> = {
       agent: 'SSH_AUTH_SOCK is unset or the agent holds no usable key',

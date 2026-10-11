@@ -12,8 +12,8 @@ const MAX_BODY_SIZE = 1_048_576; // 1MB
 /** Cap on concurrent MCP sessions, so unauthenticated-adjacent churn can't grow the map without bound. */
 const MAX_SESSIONS = 64;
 /**
- * How long an MCP session may receive no requests before it is reclaimed. Cleanup is lazy,
- * so an idle server costs nothing and there is no interval to clean up.
+ * MCP 会话在被回收前可多长时间不收到请求。清理是惰性的，
+ * 空闲服务器零成本，也没有需要清理的间隔。
  */
 export const DEFAULT_SESSION_IDLE_TTL_MS = 30 * 60_000;
 
@@ -41,16 +41,16 @@ function availableTokens(bucket: Bucket, maxTokens: number): number {
 }
 
 /**
- * How long until this bucket earns its next token, for `Retry-After`.
+ * 到此桶赚到下一个令牌的时长，用于 Retry-After。
  *
- * Exact, where it used to be the fixed `REFILL_INTERVAL_MS / maxTokens`. That is how long
- * one token takes, so a client refused halfway through the interval was told to wait
- * twice as long as it had to. Bounded on both sides: below at a second, because
- * `Retry-After` is whole seconds and `0` reads as "retry now"; above at one token's
- * interval, because a clock that stepped backwards puts `lastRefill` in the future, and
- * the raw difference would then advertise an arbitrarily long wait. Rounded up to whole
- * milliseconds: a limit that does not divide a minute gives a fractional interval, and
- * rounding down would name a moment at which the token has not yet arrived.
+ * 精确值，替代过去固定的 REFILL_INTERVAL_MS / maxTokens。那是
+ * 一个令牌所需的时间，因此在间隔中途被拒的客户端被告知等待
+ * 两倍于必要的时间。两侧有界：下限一秒，因为 Retry-After 是
+ * 整秒且 0 读作「立即重试」；上限为一个令牌的间隔，因为
+ * 时钟回拨使 lastRefill 落在未来，原始差值会宣告任意长的等待。
+ * 向上取整到毫秒：除不尽一分钟的限额给出分数间隔，
+ * 向下取整会指向令牌尚未到达的时刻。
+ *
  */
 function nextTokenWaitMs(bucket: Bucket, maxTokens: number): number {
   const interval = REFILL_INTERVAL_MS / maxTokens;
@@ -58,17 +58,17 @@ function nextTokenWaitMs(bucket: Bucket, maxTokens: number): number {
 }
 
 /**
- * The tracked key whose bucket holds the most tokens *after refill*: the entry with the
- * least worth remembering, so the one to evict.
+ * 补充后持有最多令牌的跟踪键：最不值得记住的条目，即要逐出的。
  *
- * Refilled, not stored. A key that stops sending keeps its stored count forever, so
- * ranking by `tokens` treated a bucket spent an hour ago as still spent. A table that
- * was saturated once was then judged saturated for good, which was measured.
  *
- * Linear in the table, and left that way: it runs only when a new key arrives at a full
- * table, and stops early at the first full bucket. The worst case, every bucket partly
- * spent, measured about 46µs per new key at 1024 entries (Apple M4 Max, Node 24), and
- * the same for both limiters.
+ * 用补充后的值而非存储值。停止发送的键永远保留存储计数，按 tokens
+ * 排名会把一小时前花光的桶当成仍在花。曾经饱和一次的表
+ * 就被永久判定为饱和——已实测。
+ *
+ * 表内线性，刻意保持：仅在新键到达满表时运行，
+ * 在第一个满桶处提前停止。最坏情形——所有桶部分花费——
+ * 在 1024 条目时每个新键约 46µs（Apple M4 Max, Node 24），
+ * 两个限流器相同。
  */
 function fullestBucket(
   buckets: Map<string, Bucket>,
@@ -84,10 +84,10 @@ function fullestBucket(
 }
 
 /**
- * One token-bucket step, shared by the two limiters so the refill arithmetic exists once.
+ * 一步令牌桶操作，两个限流器共享使补充运算只存在一份。
  *
- * Mutates the bucket. Refills proportionally to elapsed time rather than on a timer, so an
- * idle server costs nothing and there is no interval to clean up.
+ * 修改桶。按经过时间成比例补充而非计时器，
+ * 空闲服务器零成本，也没有需要清理的间隔。
  */
 function consume(bucket: Bucket, maxTokens: number): { allowed: boolean; retryAfterMs: number } {
   const refilled = tokensEarned(bucket, maxTokens);
@@ -105,19 +105,19 @@ function consume(bucket: Bucket, maxTokens: number): { allowed: boolean; retryAf
 }
 
 /**
- * A request bucket per client, so `--rateLimit` means N requests per minute *per caller*.
+ * 每客户端一个请求桶，--rateLimit 意为每调用方每分钟 N 个请求。
  *
- * It was one bucket for the process: one client spent `--rateLimit` for every other, and
- * a client that had sent nothing was refused (#187, measured). Keyed by `clientKey()`,
- * the same key the failure budget uses, and charged only after the token check passes,
- * so unauthenticated traffic cannot create entries or drain anyone's budget.
+ * 之前是全进程一个桶：一个客户端为所有人花光 --rateLimit，
+ * 未发送任何东西的客户端也被拒（#187，已实测）。以 clientKey() 为键，
+ * 与失败预算同一键，且仅在令牌检查通过后计费，
+ * 未认证流量无法创建条目或耗干他人预算。
  *
- * Bounded like `AuthFailureLimiter`, and it evicts the fullest bucket for the same reason.
- * Where it differs: an arriving key always starts full, even when every tracked bucket is
- * spent. Saturating this table takes 1024 addresses that hold the token, and a token
- * holder with that many addresses already has that many budgets. The refund opens nothing
- * new, while starting empty would refuse a legitimate client's first request because of
- * other clients' traffic.
+ * 有界如 AuthFailureLimiter，逐出最满桶的理由相同。
+ * 差异：到达的键总是满启动，即使所有跟踪桶都已花光。
+ * 饱和此表需要 1024 个持有令牌的地址，
+ * 已有那么多地址的令牌持有者本来就有那么多预算。
+ * 退款不开新口，而空启动会因他人流量拒绝
+ * 合法客户端的第一个请求。
  */
 export class ClientRateLimiter {
   private buckets = new Map<string, Bucket>();
@@ -139,21 +139,21 @@ export class ClientRateLimiter {
 }
 
 /**
- * A bucket per client, for throttling failed authentication.
+ * 每客户端一个桶，用于限流认证失败。
  *
- * Separate from the request limiter on purpose. The auth check returned before the request
- * limiter was reached, so a wrong bearer token consumed nothing and guessing ran at network
- * speed with no backoff — measured as twelve 401s and zero 429s against `--rateLimit=3`.
- * Moving the request limiter above the auth check would have closed that and opened
- * something worse: its 429 would answer a guess without evaluating it, and unauthenticated
- * traffic reaching a request bucket could spend a victim's budget under a spoofable key.
+ * 刻意与请求限流器分离。认证检查先于请求限流器返回，
+ * 错误 bearer 令牌不消耗任何东西，猜令牌以网络速度无退避运行——
+ * 实测 --rateLimit=3 下 12 个 401、0 个 429。把请求限流器上移
+ * 虽堵住此洞但开了更糟的：其 429 会在不评估猜测的情况下应答，
+ * 且未认证流量到达请求桶可能以可伪造的键花掉受害者的预算。
  *
- * Only failures consume a token, so a working client never builds a budget up and is never
- * throttled by its own traffic — which is what makes this safe to have on by default. It
- * is not a promise that a correct token always passes: once an address has spent its
- * budget, everything from that address waits, correct tokens included. That is the whole
- * point. Charging only after the comparison would leave the guess itself evaluated and the
- * status code would still tell the attacker which token was right.
+ *
+ * 只有失败消耗令牌，正常客户端永不积累预算、
+ * 也永远不会被自己的流量限流——这正是默认开启安全的原因。
+ * 它不承诺正确令牌总是通过：地址一旦耗尽预算，
+ * 来自该地址的一切都要等，正确令牌也不例外。
+ * point. 在比较之后才计费会让猜测本身被评估，
+ * 状态码仍会告诉攻击者哪个令牌是对的。
  */
 export class AuthFailureLimiter {
   private buckets = new Map<string, Bucket>();
@@ -176,23 +176,23 @@ export class AuthFailureLimiter {
       if (this.buckets.size >= MAX_TRACKED_CLIENTS) {
         // Evict the *fullest* entry, not the oldest. An exhausted bucket has the oldest
         // `lastRefill` by construction, so evicting by age evicted the locked-out client
-        // first and then handed its key a fresh budget: minting enough keys cleared a
-        // lockout, which was measured end to end. A full bucket is the one with nothing
-        // worth remembering.
+        // 然后又给它的键一份新预算：铸造足够多的键清除了锁定，
+        // 端到端实测。满桶是唯一没有值得记住的东西的。
+        //
         const fullest = fullestBucket(this.buckets, this.maxTokens);
         if (fullest !== undefined) this.buckets.delete(fullest.key);
-        // Every tracked client is spent, so the table itself is the signal and a new key
-        // does not get a full budget.
+        // 所有跟踪客户端都已花光，表本身就是信号，新键
+        // 不会拿到满预算。
         //
-        // The cost, stated because it is real and cannot be softened here: while the table
-        // is saturated an arriving client has one attempt rather than the full budget, so
-        // a first typo leaves its correct token waiting. Seeding one token instead of zero
-        // looks like it would help and does not — `consume` spends it immediately, and
-        // `peek` already allows a key it has never seen, so the first attempt is free
-        // either way and the second is refused either way. Measured both, identical.
-        // Giving an arriving key a real budget is the refund this rule exists to stop.
-        // Saturation needs 1024 addresses that have each spent a full budget *recently*:
-        // `fullestBucket` ranks by refilled tokens, so the condition ends once they refill.
+        // 代价在此声明因为是真实的且无法软化：表饱和时
+        // 到达的客户端只有一次尝试而非全部预算，
+        // 第一次笔误就让正确令牌等待。播种一个令牌而非零
+        // 看似有帮助实则没有——consume 立刻花掉它，
+        // peek 本就允许从未见过的键，第一次尝试免费
+        // 第二次被拒，两种播种结果相同。均已实测。
+        // 给到达键真实预算正是本规则要阻止的退款。
+        // 饱和需要 1024 个地址各自*最近*花光全部预算：
+        // fullestBucket 按补充后排rank，条件在补充后即结束。
         if (fullest === undefined || fullest.available <= 0) bucket = { tokens: 0, lastRefill: Date.now() };
       }
       this.buckets.set(key, bucket);
@@ -202,10 +202,10 @@ export class AuthFailureLimiter {
 }
 
 /**
- * Which client an attempt is charged to: the address `chargedAddress` settles on, grouped
- * into a key by `keyOf`. Grouped here, once, so no path through the header logic can hand
- * back an ungrouped address — and trust is decided in there, on the exact peer, before any
- * grouping happens.
+ * 一次尝试计费到哪个客户端：chargedAddress 解析出的地址，
+ * 由 keyOf 分组成键。只在此分组一次，使 header 逻辑的
+ * 任何路径都无法交回未分组的地址——信任在内部决定，
+ * 基于确切对端，在任何分组发生之前。
  */
 export function clientKey(
   req: IncomingMessage,
@@ -217,23 +217,23 @@ export function clientKey(
 }
 
 /**
- * The exact address an attempt is charged to.
+ * 一次尝试计费到的确切地址。
  *
- * The socket's remote address, which is the real client on a direct connection — how this
- * server is normally run. `X-Forwarded-For` is read only when a proxy is explicitly
- * trusted: honouring it unconditionally would let any client forge its own key and so opt
- * out of the limit entirely.
+ * 套接字的远程地址，直连时即真实客户端——本服务器的
+ * 正常运行方式。X-Forwarded-For 仅在代理被显式信任时读取：
+ * 无条件采信会让任何客户端伪造自己的键，
+ * 从而完全绕开限制。
  *
- * When it is read, the **rightmost** entry is the one taken, not the leftmost. A proxy
- * appends the address it saw, so the rightmost entry is what the nearest trusted proxy
- * observed while every entry to its left came from the client. Reading the leftmost was
- * worse than having no limit: a client sending `X-Forwarded-For: 10.0.0.1` minted a fresh
- * budget per request — measured as nine wrong tokens and zero 429s — and sending a
- * victim's address burned *their* budget instead, locking out a correct token.
+ * 读取时取**最右**条目而非最左。代理追加它看到的地址，
+ * 最右条目是最近受信代理观察到的，左侧全部来自客户端。
+ * 读最左比没有限制更糟：发 X-Forwarded-For: 10.0.0.1 的客户端
+ * 每次请求铸造新预算——实测九个错误令牌零 429——发受害者
+ * 地址则烧*他们的*预算，锁死正确令牌。
  *
- * This assumes exactly one trusted proxy in front, which is what `--trustProxy` means. A
- * chain of two would need the second-from-right, and this does not try to guess the depth.
- * Anything that is not an IP address is discarded rather than used as a map key.
+ *
+ * 假定恰好一个受信代理在前，即 --trustProxy 的含义。两个的链
+ * 需要倒数第二个，此处不猜深度。非 IP 地址一律丢弃
+ * 而非用作映射键。
  */
 function chargedAddress(
   req: IncomingMessage,
@@ -244,11 +244,11 @@ function chargedAddress(
   const forwarded = req.headers['x-forwarded-for'];
   if (!trustProxy || forwarded === undefined) return { address: peer, forwardedIgnored: false };
 
-  // The rightmost entry is proxy-authored only if a proxy actually appended one. Nothing
-  // about the header says whether it did, so the *peer* has to be the proxy — otherwise a
-  // client reaching the listener directly sends one forged entry, that entry is the
-  // rightmost, and it picks its own key. Both attacks this keying was fixed to stop came
-  // back alive in exactly that configuration.
+  // 最右条目是代理写的仅当代理确实追加了。头部本身
+  // 不说明是否如此，所以*对端*必须是代理——否则
+  // 直达监听器的客户端发送一条伪造条目，该条目即最右，
+  // 它自选键。此键控修复要阻止的两个攻击恰在该配置下复活。
+  //
   if (!isTrustedPeer(peer, trustedProxies)) {
     return { address: peer, forwardedIgnored: true };
   }
@@ -262,17 +262,17 @@ function chargedAddress(
 }
 
 /**
- * The key an address is charged to: an IPv4 address as itself, an IPv6 address by its /64.
+ * 地址计费到的键：IPv4 按自身，IPv6 按 /64。
  *
- * A subscriber is usually handed at least a /64, so the /64 is the client. Where a provider
- * puts several customers on one /64 they share a budget, as hosts behind one IPv4 NAT do.
+ * 用户通常至少分配一个 /64，/64 即客户端。提供商将多个客户
+ * 放在同一 /64 时共享预算，如 IPv4 NAT 后的主机。
  *
- * Three IPv6 ranges are not a client's own /64 but a way of carrying an IPv4 address, and
- * are keyed by that address: IPv4-mapped `::ffff:0:0/96` in any spelling, the NAT64
- * well-known prefix `64:ff9b::/96` under which a translated deployment sees every IPv4
- * client, and IPv4-compatible `::/96`. Grouped by /64 instead, each of them would put every
- * IPv4 client on one key. A translator using a prefix of its own is not recognised, and its
- * IPv4 clients share that prefix's /64. Loopback stays `::1`, however it is written.
+ * 三个 IPv6 范围不是客户端自己的 /64 而是携带 IPv4 地址的方式，
+ * 按那个地址键控：IPv4 映射 ::ffff:0:0/96 各种拼写、NAT64
+ * 知名前缀 64:ff9b::/96 下转换部署看到的每个 IPv4 客户端、
+ * 以及 IPv4 兼容 ::/96。按 /64 分组则每个都会把所有 IPv4
+ * 客户端放到一个键上。使用自有前缀的转换器不被识别，
+ * 其 IPv4 客户端共享该前缀的 /64。回环保持 ::1，无论拼写。
  */
 function keyOf(address: string): string {
   if (isIP(address) !== 6) return address;
@@ -288,9 +288,9 @@ function keyOf(address: string): string {
 }
 
 /**
- * An IPv6 address as its eight 16-bit groups, whatever the spelling: zone dropped, `::`
- * expanded, a dotted IPv4 tail read as the last two groups, case and leading zeros gone by
- * reading each group as a number. Expects an address `net.isIP` has already accepted.
+ * IPv6 地址为其八个 16 位组，不论拼写：区域丢弃、::
+ * 展开、点分 IPv4 尾读作最后两组、大小写和前导零由
+ * 按数值读每组消除。期望 net.isIP 已接受的地址。
  */
 function ipv6Groups(address: string): number[] {
   const [head, tail] = address.split('%')[0].split('::');
@@ -309,12 +309,12 @@ function ipv6Groups(address: string): number[] {
 }
 
 /**
- * Whether the peer may speak for other clients.
+ * 对端是否可以代表其他客户端说话。
  *
- * Bare `--trustProxy` means a loopback peer, which is the deployment the README asks for:
- * the server binds to 127.0.0.1 and a proxy on the same host terminates TLS. A proxy
- * somewhere else has to be named, because "trust whoever connected" is the assumption that
- * made the header forgeable again.
+ * 裸 --trustProxy 意味着回环对端，即 README 要求的部署：
+ * 服务器绑 127.0.0.1，同主机代理终结 TLS。别处的代理
+ * 必须具名，因为「信任连接者」正是让头部可伪造的假设。
+ *
  */
 function isTrustedPeer(peer: string, trustedProxies?: string[]): boolean {
   if (trustedProxies !== undefined && trustedProxies.length > 0) {
@@ -324,18 +324,18 @@ function isTrustedPeer(peer: string, trustedProxies?: string[]): boolean {
 }
 
 /**
- * One `X-Forwarded-For` entry as an address, or undefined if it is not one.
+ * 一条 X-Forwarded-For 条目作为地址，非地址则为 undefined。
  *
- * `net.isIP` rejects the bracketed and port-suffixed spellings, which is how IPv6 usually
- * appears in this header — and rejecting silently collapsed every client onto the proxy's
- * key, which is worse than not keying at all.
+ * net.isIP 拒绝带括号和端口后缀的拼写，IPv6 在此头部
+ * 通常是那样出现的——拒绝静默把所有客户端折叠到代理的键上，
+ * 比不键控还糟。
  */
 function forwardedAddress(entry: string): string | undefined {
   let candidate = entry;
   const bracketed = /^\[([^\]]+)\](?::\d+)?$/.exec(candidate);
   if (bracketed) candidate = bracketed[1];
-  // A trailing `:port` only when what is left is not itself an IPv6 literal: `::1` has
-  // colons of its own and must not be truncated.
+  // 尾随 :port 仅当剩余部分不是 IPv6 字面量：::1 自有冒号，
+  // 不得截断。
   else if (isIP(candidate) === 0 && /^[^:]+:\d+$/.test(candidate)) {
     candidate = candidate.slice(0, candidate.lastIndexOf(':'));
   }
@@ -344,13 +344,13 @@ function forwardedAddress(entry: string): string | undefined {
 }
 
 /**
- * `::ffff:127.0.0.1` and `127.0.0.1` are the same client; key them the same way.
+ * ::ffff:127.0.0.1 和 127.0.0.1 是同一客户端；键控相同。
  *
- * Only that spelling, and only when what follows is IPv4: `::ffff:c000:280` stripped to
- * `c000:280` was no address at all, and the request fell back to the proxy's key. Every
- * other spelling of a mapped address reaches its IPv4 key through `keyOf`, by value. The
- * case is left as it came, because this is also the peer the trust check compares with
- * `--trustedProxies` — a zone such as `%WAN` must still match as written.
+ * 仅该拼写且后续为 IPv4 时：::ffff:c000:280 剥离为
+ * c000:280 就不是地址了，请求回落到代理的键。映射地址
+ * 其余拼写经 keyOf 按值到达 IPv4 键。
+ * 大小写保留原样，因为这也是信任检查对照 --trustedProxies
+ * 的对端——%WAN 这样的区域必须按写法匹配。
  */
 function canonicalAddress(address: string): string {
   return address.startsWith('::ffff:') && isIP(address.slice(7)) === 4 ? address.slice(7) : address;
@@ -364,32 +364,32 @@ export interface HttpTransportOpts {
   /** MCP session idle timeout. Defaults to `DEFAULT_SESSION_IDLE_TTL_MS`. */
   sessionIdleTtlMs?: number;
   /**
-   * Authenticated requests allowed per client per minute, on every route but
-   * `GET /health`. 0 or unset disables the limit. Clients are keyed as for
-   * `authFailureLimit`.
+    * 每客户端每分钟已认证请求上限，GET /health 以外的所有路由。
+    * 0 或未设置禁用限制。客户端键控方式同 authFailureLimit。
+    *
    */
   rateLimit?: number;
   /**
-   * Failed bearer-auth attempts allowed per client per minute. Defaults to
-   * `DEFAULT_AUTH_FAILURE_LIMIT`; 0 disables the check. A correct token never consumes from
-   * this budget, so a working client never throttles itself; a client sharing an address
-   * with a failing one does wait, which is what the limit is for.
+    * 每客户端每分钟允许的认证失败次数。默认
+    * DEFAULT_AUTH_FAILURE_LIMIT；0 禁用检查。正确令牌永不从此预算消耗，
+    * 正常客户端不会限流自己；与失败者共享地址的客户端确实要等，
+    * 这正是该限制的用途。
    */
   authFailureLimit?: number;
   /**
-   * Whether to read the client address from `X-Forwarded-For`. Off by default, because a
-   * client that can set that header can otherwise choose its own rate-limit key.
+    * 是否从 X-Forwarded-For 读取客户端地址。默认关，因为
+    * 能设置该头部的客户端可以自选限流键。
    */
   trustProxy?: boolean;
   /**
-   * Peer addresses allowed to speak for other clients via `X-Forwarded-For`. Empty means
-   * a loopback peer only, which is the deployment the README describes.
+    * 允许经 X-Forwarded-For 代表其他客户端的对端地址。空即仅回环，
+    * 即 README 所述部署。
    */
   trustedProxies?: string[];
   /**
-   * Host headers accepted by the DNS-rebinding guard. Defaults to the bind
-   * address and localhost; set this when running behind a reverse proxy that
-   * presents a different hostname.
+    * DNS 重绑定防护接受的 Host 头。默认为绑定地址和 localhost；
+    * 在呈现不同主机名的反向代理后运行时设置。
+    *
    */
   allowedHosts?: string[];
 }
@@ -400,9 +400,9 @@ function jsonRpcError(res: ServerResponse, status: number, code: number, message
 }
 
 /**
- * @param createMcpServer Builds a fresh McpServer per MCP session. An McpServer
- *   binds to exactly one transport, so a shared instance would let only the
- *   first client initialize — and would stay unusable after that client left.
+ * @param createMcpServer 每个 MCP 会话构建新的 McpServer。McpServer
+ *   绑定恰好一个传输，共享实例只会让第一个客户端初始化——
+ *   该客户端离开后保持不可用。
  */
 export async function startHttpServer(
   createMcpServer: () => McpServer | Promise<McpServer>,
@@ -422,12 +422,12 @@ export async function startHttpServer(
     ? new AuthFailureLimiter(authFailureLimit)
     : null;
 
-  // Said once, when it turns out to matter. Behind a proxy with `--trustProxy` off, every
-  // client is keyed on the proxy's socket address and so shares one failure budget and one
-  // request budget — ten failures from anyone locks out everyone, and one busy client
-  // starves the rest. The README tells operators to terminate TLS at a proxy, so this is
-  // the configuration it recommends, and the collapse is invisible until a legitimate
-  // client is refused.
+  // 只说一次，在确实要紧时。--trustProxy 关闭时代理后部署中每个
+  // 客户端都键控在代理的套接字地址上，共享一份失败预算和一份
+  // 请求预算——任何人十次失败锁死所有人，一个忙碌客户端
+  // 饿死其余。README 让运维在代理终结 TLS，所以这是它推荐的
+  // 配置，折叠在合法客户端被拒前不可见。
+  //
   let warnedSharedBudget = false;
   const warnSharedBudget = () => {
     if (warnedSharedBudget) return;
@@ -446,10 +446,10 @@ export async function startHttpServer(
     ? new ClientRateLimiter(opts.rateLimit)
     : null;
 
-  // DNS rebinding: a page the user visits can make their browser POST to a
-  // localhost server, and the bearer token does not help if the browser is
-  // tricked into attaching it. Validating the Host header is what stops it.
-  // GHSA-w48q-cv73-mx4w is exactly this, and the SDK leaves it to the caller.
+  // DNS 重绑定：用户访问的页面可以让其浏览器 POST 到 localhost 服务器，
+  // bearer 令牌在浏览器被诱导附上时也帮不了忙。
+  // 验证 Host 头正是阻止它的方式。
+  // GHSA-w48q-cv73-mx4w 正是这个问题，SDK 留给调用方。
   const allowedHosts = opts.allowedHosts?.length
     ? opts.allowedHosts
     : [`${host}:${port}`, `localhost:${port}`, `127.0.0.1:${port}`, `[::1]:${port}`];
@@ -494,11 +494,11 @@ export async function startHttpServer(
   const sessions = new Map<string, Session>();
   const pendingReservations = new Set<PendingSessionReservation>();
   /**
-   * Eviction candidates set aside for initializes at the cap that are not admitted yet,
-   * so concurrent ones each count on a different session and the 503 comes when none
-   * is left. A claim evicts no one: room is made only once an initialize is admitted,
-   * so one the SDK goes on to refuse (bad Host, wrong Accept) or whose client
-   * disconnects costs no other client its session.
+    * 在上限处为尚未接纳的 initialize 留出的逐出候选，
+    * 并发的各自依赖不同会话，全无剩余时 503。声明不逐出任何人：
+    * 空间只在 initialize 被接纳时腾出，SDK 后来拒绝的
+    *（坏 Host、错 Accept）或客户端断开的
+    * 不会让其他客户端失去会话。
    */
   const evictionClaims = new Set<Session>();
 
@@ -552,7 +552,7 @@ export async function startHttpServer(
     if (session.closing) return;
     session.closing = true;
     if (session.id && sessions.get(session.id) === session) sessions.delete(session.id);
-    // Gone for another reason before its claimant was admitted: the slot is free.
+    // 在其声明者被接纳之前因其他原因消失：槽位空闲。
     evictionClaims.delete(session);
     session.pending = false;
     session.releasePending();
@@ -573,10 +573,10 @@ export async function startHttpServer(
   }
 
   /**
-   * Idle means nothing of the client's is open on this server: no request in flight
-   * and no SSE stream. A held stream is how a connected Streamable-HTTP client waits
-   * for notifications, and it stamps activity only when it opens, so judging by
-   * `lastActivity` alone expired connected clients first.
+    * 空闲意味着客户端在此服务器上无任何打开的东西：无请求在途
+    * 也无 SSE 流。持有的流是已连接 Streamable-HTTP 客户端等待通知的
+    * 方式，它只在打开时标记活动，因此仅按 lastActivity 判断
+    * 会让已过期但仍连接的客户端排在最前。
    */
   function isIdle(session: Session, now: number): boolean {
     return session.finiteInFlight === 0
@@ -591,11 +591,11 @@ export async function startHttpServer(
   }
 
   /**
-   * The session to evict at the cap: never one with a request in flight, and one
-   * without an open stream before one holding a stream, oldest first within each.
-   * Stream holders stay evictable as the last resort because a client that vanished
-   * without FIN/RST keeps its stream open until a write to it fails, which can take
-   * many minutes, and 64 such sessions would refuse every new client until then.
+    * 上限时逐出的会话：绝不在途请求的，无打开流的先于持流的，
+    * 各自内最老的在前。持流者作为最后手段仍可逐出，因为客户端
+    * 未发 FIN/RST 就消失会保持流打开直到写入失败，
+    * 可能需要很多分钟，64 个这样的会话在那之前拒绝每个新客户端。
+    *
    */
   function pickEvictionCandidate(): Session | undefined {
     let best: Session | undefined;
@@ -664,9 +664,9 @@ export async function startHttpServer(
 
     closeExpiredSessions(Date.now());
 
-    // At the cap, claim a session to make room with; `pickEvictionCandidate` skips
-    // sessions another initialize has already claimed, so concurrent initializes at
-    // the cap each claim a different one, and the 503 comes only when none is left.
+    // 在上限处声明一个会话来腾空间；pickEvictionCandidate 跳过
+    // 另一个 initialize 已声明的会话，并发的各自声明不同的，
+    // 全无剩余时才 503。
     let claim: Session | undefined;
     if (sessions.size + pendingReservations.size >= MAX_SESSIONS) {
       claim = pickEvictionCandidate();
@@ -707,12 +707,12 @@ export async function startHttpServer(
           }
           releaseClaim();
           if (session!.closing) return;
-          // Admitted: now make room, counting only admitted sessions, since another
-          // initialize still in progress may yet be refused. The claim only reserved a
-          // candidate; the least recently active session is taken now, which may since
-          // have become a different one. If every session is busy the cap is exceeded
-          // rather than refusing a client already admitted, and the next admission
-          // brings the count back under it.
+          // 已接纳：现在腾空间，只数已接纳的会话，另一个仍在途的
+          // initialize 可能还会被拒。声明只保留了候选；现在取的是
+          // 最久不活跃的会话，可能已变成不同的一个。如果所有会话
+          // 都忙则超出上限而非拒绝已接纳的客户端，下次接纳
+          // 会把计数拉回上限之下。
+          //
           while (sessions.size >= MAX_SESSIONS) {
             const victim = pickEvictionCandidate();
             if (!victim) break;
@@ -733,7 +733,7 @@ export async function startHttpServer(
         releasePending,
         releaseEvictionClaim: releaseClaim,
       };
-      // Covers transport teardown that isn't a DELETE (client disconnect, error).
+      // 覆盖非 DELETE 的传输拆除（客户端断连、错误）。
       transport.onclose = () => {
         detachSession(session!, 'transport-close');
       };
@@ -777,8 +777,8 @@ export async function startHttpServer(
   }
 
   /**
-   * The request handlers' last stop for a throw, such as a server factory that fails.
-   * Without it the rejection went unhandled and the client never got an answer.
+    * 没有它拒绝未处理、客户端永远得不到回答。
+    *
    */
   async function serveMcpRequest(
     req: IncomingMessage,
@@ -796,9 +796,9 @@ export async function startHttpServer(
   const httpServer = createServer(async (req, res) => {
     const url = new URL(req.url || '/', `http://${req.headers.host}`);
 
-    // Liveness probes are conventionally unauthenticated, and the README lists
-    // /health without an auth caveat. It exposes "process is up" and whether any profile
-    // is configured — see the handler below for why that second bit is not a secret.
+    // 存活探针惯例上不认证，README 列出 /health 无认证警告。它暴露
+    // 「进程存活」和是否有 profile 被配置——见下方 handler 为何
+    // 第二位不是秘密。
     const isHealthProbe = req.method === 'GET' && url.pathname === '/health';
 
     if (!isHealthProbe) {
@@ -806,20 +806,20 @@ export async function startHttpServer(
       if (authFailureLimiter || rateLimiter) {
         const resolved = clientKey(req, opts.trustProxy === true, opts.trustedProxies);
         key = resolved.key;
-        // Warned in both directions. Without `--trustProxy` a proxied deployment shares
-        // one budget; *with* it, an entry that could not be read leaves the same collapse
-        // in place, and that case used to be the silent one — the operator had set the
-        // flag and had no way to know it was not taking effect.
-        // Resolved for either limiter: with only `--rateLimit` on, skipping this charged
-        // every client to one key and kept the warning silent.
+        // 两个方向都告警。无 --trustProxy 时代理后部署共享
+        // 一份预算；*有*它时无法读取的条目使同样的折叠保持，
+        // 该情况曾是静默的——运维设了标志却无从知道它未生效。
+        // 两个限流器都解析：仅 --rateLimit 开时跳过这步
+        // 使每个客户端键控到同一个键且告警保持静默。
+        //
         if (resolved.forwardedIgnored || (opts.trustProxy !== true && req.headers['x-forwarded-for'])) {
           warnSharedBudget();
         }
       }
-      // Checked before the token is compared, not after — so an exhausted budget answers
-      // 429 without evaluating the guess. Gating only the 401 path instead would throttle
-      // nothing: the comparison would still happen and a correct token would still be
-      // served, so the status code would still tell an attacker which guess was right.
+      // 在对照令牌之前检查，而非之后——耗尽的预算
+      // 不评估猜测就答 429。仅限流 401 路径则什么也限不了：
+      // 比较仍会发生、正确令牌仍被服务，状态码仍告诉攻击者
+      // 哪个猜测是对的。
       if (authFailureLimiter) {
         const { allowed, retryAfterMs } = authFailureLimiter.peek(key);
         if (!allowed) {
@@ -848,9 +848,9 @@ export async function startHttpServer(
         timingSafeEqual(authBuf, expectedBuf);
       if (!match) {
         authFailureLimiter?.recordFailure(key);
-        // RFC 7235: a 401 must say how to authenticate. MCP clients also parse
-        // JSON-RPC envelopes on this route, so 401 speaks the same dialect as
-        // the 429 and 413 responses rather than a bare {error}.
+        // RFC 7235：401 必须说明如何认证。MCP 客户端也在此路由上
+        // 解析 JSON-RPC 信封，401 与 429 和 413 说同样的方言
+        // 而非裸 {error}。
         res.writeHead(401, {
           'Content-Type': 'application/json',
           'WWW-Authenticate': 'Bearer realm="ssh-mcp"',
@@ -863,11 +863,11 @@ export async function startHttpServer(
         return;
       }
 
-      // Charged after the token check, never before: a request bucket is per client, but
-      // unauthenticated traffic reaching it could still spend a victim's budget under a
-      // spoofable key, and its 429 would answer a guess without evaluating it. Every
-      // authenticated route spends from it, `/status` and 404s included: `/status` was
-      // unlimited, so a token holder could poll it without bound.
+      // 令牌检查之后计费，永不之前：请求桶按客户端，但
+      // 未认证流量到达它可能以可伪造的键花掉受害者的预算，
+      // 其 429 会在不评估猜测的情况下应答。每条已认证路由
+      // 都从此消耗，含 /status 和 404：/status 过去无限制，
+      // 令牌持有者可以无界轮询。
       if (rateLimiter) {
         const { allowed, retryAfterMs } = rateLimiter.tryConsume(key);
         if (!allowed) {
@@ -897,17 +897,17 @@ export async function startHttpServer(
         if (body.length > MAX_BODY_SIZE) {
           if (!bodyTooLarge) {
             bodyTooLarge = true;
-            // Connection: close is load-bearing, not cosmetic. Without it a
-            // keep-alive client (Node's default agent since v19) returns this
-            // socket to its pool, and the destroy below then kills the pooled
-            // socket — so the client's *next* request fails with EPIPE.
+            // Connection: close 是承重的不是装饰。没有它 keep-alive
+            // 客户端（v19 起 Node 默认 agent）将套接字归还池，
+            // 下方 destroy 杀死池中的套接字——客户端*下一个*
+            // 请求以 EPIPE 失败。
             res.writeHead(413, {
               'Content-Type': 'application/json',
               'Connection': 'close',
             });
-            // Destroy only once the 413 has flushed; destroying immediately
-            // races the response and the client sees a bare connection reset
-            // instead of the status telling it what went wrong.
+            // 413 冲刷后才 destroy；立即 destroy 与响应竞速，
+            // 客户端看到裸连接重置而非告知原因的状态。
+            //
             res.end(
               JSON.stringify({
                 jsonrpc: '2.0',
@@ -957,16 +957,16 @@ export async function startHttpServer(
     }
 
     if (req.method === 'GET' && url.pathname === '/health') {
-      // `configured` is liveness telling the truth about readiness. Since the server
-      // learned to start with nothing configured, an HTTP deployment whose config bind
-      // mount silently did not attach comes up, binds the port, and fails 100% of tool
-      // calls — while this probe said `healthy: true` and the explaining stderr warning
-      // scrolled past at boot. The status stays 200 so an existing probe does not start
-      // failing on upgrade; the field is what an operator can alert on.
+      // configured 是存活探针对就绪状态说的真话。服务器学会
+      // 无配置启动后，配置 bind mount 静默没挂上的 HTTP 部署
+      // 照常启动、绑端口、100% 工具调用失败——此探针却说
+      // healthy: true，解释性的 stderr 告警在启动时滚过。
+      // 状态保持 200 让已有探针不因升级开始失败；
+      // 字段是运维可以告警的东西。
       //
-      // It widens what this unauthenticated route discloses by exactly one bit, and that
-      // bit is worth little to anyone: a server with no profile is one that cannot reach
-      // any host. `/status` carries the profile list itself and stays behind the token.
+      // 它将此未认证路由披露的内容恰好扩大一位，
+      // 那一位对谁都价值有限：无 profile 的服务器是无法到达
+      // 任何主机的服务器。/status 携带 profile 列表本身且在令牌之后。
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ healthy: true, configured: registry.listAllProfiles().length > 0 }));
       return;
@@ -980,16 +980,16 @@ export async function startHttpServer(
     void Promise.all(Array.from(sessions.values(), (session) => closeSession(session, 'transport-close')));
   });
 
-  // Previously listen() had no error handler, so EADDRINUSE surfaced as an
-  // unhandled 'error' event and a raw stack — and startHttpServer resolved
-  // immediately regardless, so the caller carried on as if the server was up.
+  // 此前 listen() 无错误处理器，EADDRINUSE 以未处理 error 事件
+  // 和裸堆栈浮出——且 startHttpServer 不管怎样都立即 resolve，
+  // 调用方继续仿佛服务器已启动。
   await new Promise<void>((resolve, reject) => {
     httpServer.once('error', (err: NodeJS.ErrnoException) => {
-      // OperatorError, not Error: every listen failure at this point is about how the
-      // server was invoked — a port already taken, a privileged port, a mistyped
-      // --httpHost. Leaving them on the defect path printed a stack and exited 1, which
-      // under this codebase's rule invites the operator to report their own port choice
-      // as a bug.
+      // OperatorError 而非 Error：此处的每次 listen 失败都关于
+      // 服务器如何被调用——端口已被占用、特权端口、拼错 --httpHost。
+      // 留在缺陷路径打印堆栈并以 1 退出，在本代码库的规则下
+      // 是邀运维把自己的端口选择报为 bug。
+      //
       reject(new OperatorError(
         err.code === 'EADDRINUSE'
           ? `Cannot bind ${host}:${port} — address already in use.`

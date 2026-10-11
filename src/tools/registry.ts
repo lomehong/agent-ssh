@@ -10,19 +10,19 @@ import { registerTransferTools } from './transfer-tools.js';
 import { registerPtyTools } from './pty-tools.js';
 import { registerForwardTools } from './forward-tools.js';
 
-// Re-exported so existing importers keep a single entry point for the tool layer.
+// 重新导出，让既有引用方对工具层保持单一入口。
 export { TOOL_DESCRIPTIONS, getToolHashes } from './descriptions.js';
 export { registerResources } from './resources.js';
 
 /**
- * Wire every MCP tool onto the server.
+ * 把全部 MCP 工具装配到服务器上。
  *
- * The handlers live in four groups by subject (sessions, commands, text-mode
- * file transfer, streaming file transfer) and share one audited pipeline, built
- * here. Splitting them up is what keeps the
- * pipeline the only route from caller input to a remote command: a handler that
- * wanted to bypass policy or audit would have to reach past `pipeline` for the
- * registry, which it is not given.
+ * handler 按主题分为四组（会话、命令、文本式
+ * 文件传输、流式文件传输），共用一条经审计的管线——在这里构建。
+ * 正是这种拆分保证了管线是
+ * 「调用方输入 → 远程命令」的唯一通路：想绕过策略或审计的 handler，
+ * 必须越过 `pipeline` 去够 registry，
+ * 而它并没有被给予 registry。
  */
 export function registerTools(
   server: McpServer,

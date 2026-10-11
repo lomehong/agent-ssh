@@ -3,9 +3,9 @@ import { createRequire } from 'module';
 const require = createRequire(import.meta.url);
 
 /**
- * Single source of truth for the version reported over MCP (`initialize`) and
- * on `GET /status`. Read from package.json at runtime so a changesets release
- * bump can't leave hardcoded literals behind, disagreeing with the installed
- * package. Resolves to the repo root from both `src/` and `build/`.
+ * MCP（`initialize`）与 `GET /status` 上所报告版本的唯一事实来源。
+ * 运行时从 package.json 读取，因此 changesets 发布提升版本后，
+ * 不会残留与已安装包不一致的硬编码字面量。
+ * 从 `src/` 与 `build/` 均可解析到仓库根目录。
  */
 export const SERVER_VERSION: string = (require('../package.json') as { version: string }).version;

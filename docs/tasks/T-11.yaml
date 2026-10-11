@@ -1,8 +1,13 @@
 id: T-11
 title: 审批队列 Windows ACL 强制检查
 level: L1
-status: 待执行
-root: E:\\Development\\Code\\nodejs\\agent-ssh
+status: 待确认
+root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 08:41:58
+claimedBy: digital-architect
+reportedAt: 2026-10-11 08:51:29
+reportSummary: queue 流程等待前强制 assertQueueDirPrivate(win32 委托上游,POSIX chmod 已有),失败 fail-closed APPROVAL_UNAVAILABLE+privacy check;inspect 注入使本机 tmp 测试可行;broad/unknown 拒绝语义归上游自有测试。单测+管线 glue 19/19。待主人 confirm。
 events:
   - 2026-10-11 08:41:58 | create | by=lome | level=L1 | accept=①queue 模式在等待决策前对队列目录执行 assertPrivateOnWindows 检查,写暴露→拒绝等待 fail-closed(unavailable 送达)②测试注入开关(opts)使本机 tmp 目录测试可行③生产默认开启——出处：T-04 残留(主人裁决不接受)
+  - 2026-10-11 08:46:25 | claim | by=digital-architect
+  - 2026-10-11 08:51:29 | report | by=digital-architect

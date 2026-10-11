@@ -1,19 +1,19 @@
 /**
- * A remote path as a `[policy].denylist` pattern should also see it (#230).
+ * 一个远程路径，按 `[policy].denylist` 模式也应当看到的样子（#230）。
  *
- * Lexical only: nothing is asked of the target, so a relative path stays relative and a
- * symlink is not followed. What it removes is the spelling that keeps a rule from seeing
- * a path it was written for — `//`, `/./`, `..`, a trailing separator — and it reads `\`
- * as a separator too, so a Windows target's `C:\Users\a\.ssh\authorized_keys` is also
- * seen as `C:/Users/a/.ssh/authorized_keys`. On a POSIX target a filename containing `\`
- * can then match where it did not before; that only ever widens a refusal.
+ * 纯词法：不向目标机请求任何东西，因此相对路径保持相对，
+ * 符号链接不跟随。它去掉的是「让规则看不见本来要针对的路径」的拼写——
+ * `//`、`/./`、`..`、结尾分隔符——还把反斜杠 `\`
+ * 也读作分隔符，于是 Windows 目标的 `C:\Users\a\.ssh\authorized_keys`
+ * 也被看作 `C:/Users/a/.ssh/authorized_keys`。在 POSIX 目标上，
+ * 含反斜杠的文件名可能因此在过去不会命中的地方命中；这只会放大拒绝面。
  *
- * An absolute path — `/…`, or one starting with a drive letter — cannot climb above its
- * root. A relative path keeps a leading `..` it has nothing to resolve against.
+ * 绝对路径——`/…` 或以盘符开头——不可能爬到自己的根之上。
+ * 相对路径保留开头的 `..`，它没有任何可解析的对象。
  *
- * Not `node:path`: `posix.normalize` lets `..` climb above a drive root (`C:/../x` →
- * `x`) and keeps a trailing separator, and `win32.normalize` answers in backslashes —
- * while a deny rule needs one reading, in forward slashes, that never climbs.
+ * 不用 `node:path`：`posix.normalize` 让 `..` 爬过盘根（`C:/../x` →
+ * `x`）并保留结尾分隔符，`win32.normalize` 返回反斜杠——
+ * 而拒绝规则需要的是一种读法：正斜杠、永不向上爬。
  */
 const DRIVE_LETTER = /^[A-Za-z]:$/;
 
@@ -44,38 +44,38 @@ export function normalizeRemotePath(path: string): string {
 }
 
 /**
- * The same path as Win32 would resolve it, for a denylist that must not depend on how
- * the caller spelled the file (#230).
+ * 同一路径按 Win32 会解析成的样子，供不想依赖调用方拼写方式的
+ * denylist 使用（#230）。
  *
- * Every transformation here was measured over SFTP on the Windows test VM (Windows 11
- * build 26200): the spellings below reached the same file as the canonical one, so a
- * rule that caught one spelling and not the other was a bypass, not a distinction.
+ * 这里的每一步变换都在 Windows 测试虚拟机（Windows 11
+ * build 26200）上经 SFTP 实测：下列拼写与规范拼写抵达同一个文件，
+ * 因此「抓得住一种拼写、放走另一种」的规则是绕过，不是区别。
  *
- * - `\` is read as `/`, as above.
- * - A trailing run of dots and spaces is dropped from every segment (`authorized_keys.`
- *   and `authorized_keys..` are the same file). A segment that is nothing but dots
- *   (`a.../b`) therefore disappears, the way Win32 reads it.
- * - A `::` suffix is cut (`authorized_keys::$DATA` is the file's default stream, not a
- *   different file). A single `:` is left alone: that names a different stream, and the
- *   measurement showed it does not reach the same bytes.
- * - A drive-relative spelling (`C:x/…`, resolved against the drive's current directory
- *   on Windows) is rooted at the drive. Where it actually resolves depends on process
- *   state this server cannot see; rooting is the fail-closed reading.
- * - `\\?\` and `\\.\` device prefixes are dropped. SFTP itself rejects them, but a rule
- *   should not have to know that.
- * - A UNC spelling keeps its root (`\\server\share\…` → `//server/share/…`), which the
- *   plain reading collapses; `..` cannot climb above the share.
+ * - `\` 读作 `/`，同上。
+ * - 每段结尾的成串点与空格被去除（`authorized_keys.` 与
+ *   `authorized_keys..` 是同一个文件）。只由点组成的段
+ *   （`a.../b`）因此整段消失，Win32 就是这么读的。
+ * - `::` 后缀被切掉（`authorized_keys::$DATA` 是文件的默认流，
+ *   不是另一个文件）。单个 `:` 原样保留：它命名的是另一个流，
+ *   实测表明它到达的不是同一组字节。
+ * - 盘符相对拼写（`C:x/…`，Windows 上相对该盘当前目录解析）
+ *   锚定到盘符。实际解析到哪取决于本服务器看不见的进程状态；
+ *   锚定是 fail-closed 的读法。
+ * - `\\?\\` 与 `\\.\\` 设备前缀被去掉。SFTP 本身拒绝它们，但一条规则
+ *   不应该非得知道这件事。
+ * - UNC 拼写保留根（`\\server\\share\…` → `//server/share/…`），
+ *   而普通读法会把它折叠掉；`..` 爬不过共享名。
  *
- * Case is deliberately untouched — the engine tests this reading case-insensitively,
- * which also covers a case-variant spelling of an otherwise identical path.
+ * 大小写刻意不动——引擎以不区分大小写的方式测试这一读法，
+ * 这也顺带覆盖了同一路径的大小写变体拼写。
  *
- * Two Windows equivalences remain outside any lexical reading, because resolving them
- * needs the target's own directory state, and are documented residuals in the README:
- * 8.3 short names (`AUTHOR~1`), and symlinks.
+ * 两种 Windows 等价形式在任何词法读法之外，因为解析它们需要
+ * 目标机自己的目录状态，它们是 README 里登记的残留项：
+ * 8.3 短名（`AUTHOR~1`）与符号链接。
  *
- * On a POSIX target these readings can only widen a refusal: a file genuinely named
- * `authorized_keys.` is a different file there, but refusing it is the safe direction,
- * exactly as with `\` above.
+ * 在 POSIX 目标上这些读法只会放大拒绝：真叫 `authorized_keys.` 的文件
+ * 在那是另一个文件，但拒绝它是安全的方向，
+ * 与上面的反斜杠同理。
  */
 export function normalizeRemotePathForWindows(path: string): string {
   let slashed = path.replace(/\\/g, '/');
@@ -85,7 +85,7 @@ export function normalizeRemotePathForWindows(path: string): string {
   let root: string | null = null;
   let rest = segments;
   if (segments[0] === '' && segments[1] === '') {
-    // A UNC root: the share is as high as `..` may climb.
+    // UNC 根：共享名就是 `..` 能爬到的最高处。
     root = `//${segments[2] ?? ''}/${segments[3] ?? ''}`;
     rest = segments.slice(4);
   } else if (segments[0] === '') {

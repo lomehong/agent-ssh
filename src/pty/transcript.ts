@@ -4,20 +4,20 @@ import { redactText } from '../guard/redactor.js';
 import { getAuditLogPath } from '../audit/store.js';
 
 /**
- * Redacted per-session transcript for raw PTY sessions.
+ * 裸 PTY 会话的按会话脱敏转录。
  *
- * Layer ② of the PTY safety plan (technical scheme §6 U2, ratified by master
- * on 2026-10-11): a raw PTY is a byte stream, so nothing on it can pass the
- * command classifier — the compensating control is that everything on it is
- * auditable. The transcript records each input write and each output chunk,
- * redacted with the same engine as the audit log, into one file per session
- * next to the audit log.
+ * PTY 安全计划第 ② 层（技术方案 §6 U2，主人 2026-10-11 批准）：
+ * 裸 PTY 是字节流，其上的任何内容都无法通过命令分类器——
+ * 补偿性控制是其上的一切皆可审计。转录记录每条输入写入与每个输出块，
+ * 用与审计日志相同的引擎脱敏，
+ * 每会话一个文件，
+ * 存放在审计日志旁边。
  *
- * The transcript is best-effort by design: an I/O failure must never break the
- * session it observes, so append errors are swallowed after being reported to
- * `onError`. A `maxBytes` cap stops runaway output from filling the disk; past
- * the cap the file is frozen and the drop is counted (and surfaced on the
- * session's info) rather than silently truncating mid-line forever.
+ * 转录设计上尽力而为：I/O 故障绝不能破坏它所观察的会话，
+ * 因此追加错误在上报 `onError` 后被吞掉。`maxBytes` 上限防止失控输出
+ * 塞满磁盘；越过上限后文件冻结，丢失被计数（并体现在
+ * 会话信息中），
+ * 而不是永远在行中间静默截断。
  */
 
 export interface PtyTranscript {
@@ -36,7 +36,7 @@ export class FilePtyTranscript implements PtyTranscript {
   private size = 0;
   private freezeState = false;
   private dirEnsured = false;
-  /** Serialise appends so interleaved in/out chunks stay ordered in the file. */
+   /** 串行化追加操作，使交错的输入/输出块在文件中保持有序。 */
   private queue: Promise<void> = Promise.resolve();
 
   private constructor(
@@ -79,8 +79,8 @@ export class FilePtyTranscript implements PtyTranscript {
 
   append(direction: 'in' | 'out', text: string): void {
     if (this.freezeState || text.length === 0) return;
-    // Redact with the audit engine — a device banner or a pasted secret must
-    // not land in a log file just because this stream is "not a command".
+    // 用审计引擎脱敏——设备横幅或粘贴进来的机密不能仅因
+    // 「这条流不是命令」就落进日志文件。
     const line = JSON.stringify({
       t: new Date().toISOString(),
       dir: direction,
@@ -104,7 +104,7 @@ export class FilePtyTranscript implements PtyTranscript {
   }
 }
 
-/** Probe used by tests and startup logging; null when the directory is absent. */
+/** 供测试与启动日志使用的探针；目录不存在时为 null。 */
 export async function transcriptDirExists(): Promise<boolean> {
   try {
     await stat(getTranscriptDir());

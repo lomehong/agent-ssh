@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// Compares two differential runs. The invariant this harness measures over its
-// corpus: a command's
-// class either stays or rises — nothing drops (a stricter reading may cost an
-// approval; it may never cost a refusal).
+// 比较两次差分运行。本装置在语料上度量的不变量：一条命令的
+// 类别要么不变、要么上升——绝不下降
+// （更严格的读法可能多要一次批准；
+// 但绝不会多拒绝一条）。
 import { readFileSync } from 'node:fs';
 
 const RANK = { 'read-only': 0, safe: 1, destructive: 2, privileged: 3 };

@@ -32,10 +32,10 @@ export class AuditStore {
   private writeStream: WriteStream | null = null;
   private dirEnsured = false;
   private recordCount = 0;
-  /** Bytes in the open log file; -1 means "read the baseline from disk". */
+  /** 已打开日志文件中的字节数；-1 表示「从磁盘读取基线」。 */
   private bytesWritten = -1;
   private writeQueue: Promise<void> = Promise.resolve();
-  /** Rotation threshold; injectable so tests exercise it without a 100MB file. */
+  /** 轮转阈值；可注入，测试无须真造 100MB 文件即可触发。 */
   private maxFileSize: number;
 
   constructor(logPath?: string, entropyScan = false, tamperEvident = false, maxFileSize = MAX_FILE_SIZE) {
@@ -111,7 +111,7 @@ export class AuditStore {
     }
 
     this.writeStream = createWriteStream(this.logPath, { flags: 'a' });
-    // Force a fresh baseline read for the newly opened file.
+    // 为新打开的文件强制重读一次基线。
     this.bytesWritten = -1;
     try { await chmod(this.logPath, 0o600); } catch { /* may not exist yet */ }
     return this.writeStream;
@@ -137,7 +137,7 @@ export class AuditStore {
       const lastLine = JSON.parse(lines[lines.length - 1]);
       this.lastHash = lastLine.selfHash || '';
     } catch {
-      // File doesn't exist or can't be read — start fresh
+      // 文件不存在或不可读——从头开始
     } finally {
       // The old code closed the handle only on the success path, leaking one
       // per failed read.
@@ -155,7 +155,7 @@ export class AuditStore {
   private async rotateIfNeeded(incomingBytes: number): Promise<void> {
     try {
       if (this.bytesWritten < 0) {
-        // First write on this stream — establish the baseline once.
+        // 该流上的首次写入——只建立一次基线。
         this.bytesWritten = await stat(this.logPath).then((s) => s.size).catch(() => 0);
       }
       if (this.bytesWritten + incomingBytes < this.maxFileSize) return;

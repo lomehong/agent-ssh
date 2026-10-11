@@ -13,22 +13,22 @@ import { OperatorError } from '../errors.js';
 export interface PolicyRules {
   roleBindings: Record<string, Record<string, CommandClass[]>>;
   /**
-   * Extra deny patterns supplied by the operator, as regex source strings.
-   * The canonical never-allowed list (FORBIDDEN_PATTERNS) lives in
-   * classifier.ts and is always applied on top of these — not repeated here.
+    * 运维提供的额外拒绝模式，正则源字符串。
+    * 正统「永不放行」清单（FORBIDDEN_PATTERNS）在 classifier.ts 中，
+    * 且始终叠加在这些之上——此处不重复。
    */
   denylist?: string[];
 }
 
 /**
- * How long to wait for the OPA sidecar before treating it as unavailable.
+ * 等待 OPA sidecar 多久后才视为不可用。
  *
- * Bounded because an unbounded wait held every tool call for undici's five-minute header
- * timeout. Ten seconds and not two: in the default mode a timeout falls back to the local
- * decision, so the budget is also the price of turning an explicit OPA *deny* into an
- * allow — at two seconds a sidecar under load crosses it by accident, and anyone who can
- * add latency crosses it on purpose. Ten is above a loaded sidecar's p99 and still thirty
- * times cheaper than the hang it replaced. `--opaTimeoutMs` moves it: lower makes the
+ * 有界是因为无界等待曾让每次工具调用等 undici 的五分钟头超时。
+ * 十秒而非两秒：默认模式下超时回落到本地决定，所以此预算
+ * 也是把显式 OPA *拒绝*变成放行的代价——两秒时负载中的 sidecar
+ * 意外就越界，能加延迟的人则故意越界。十秒高于负载 sidecar 的 p99，
+ * 仍比它替代的挂起便宜三十倍。--opaTimeoutMs 可调：
+ * 调低让 fail-open 更早触发，调高让故障更迟被发现。
  * fail-open cheaper to reach, higher makes an outage slower to notice.
  */
 const DEFAULT_OPA_TIMEOUT_MS = 10_000;
@@ -37,10 +37,10 @@ const DEFAULT_OPA_TIMEOUT_MS = 10_000;
 export const HOST_GROUPS = ['prod', 'staging', 'dev'] as const;
 
 export const DEFAULT_RULES: PolicyRules = {
-  // Null-prototype for the reason spelled out at `mergePolicyRules`: a role name is
-  // a free string, and this object is indexed by it. `mergePolicyRules` returns this
-  // one unchanged when there is no override, so fixing only the merged copy would
-  // leave the commonest path — no `[policy]` section at all — on a plain object.
+  // Null 原型，理由见 mergePolicyRules 处：角色名是自由字符串，
+  // 本对象以它为键。mergePolicyRules 在无覆盖时原样返回此对象，
+  // 所以只修合并后的副本会让最常见路径——完全无 [policy] 节——
+  // 仍留在普通对象上。
   roleBindings: Object.assign(Object.create(null), {
     viewer: {
       prod: ['read-only'],
@@ -61,24 +61,24 @@ export const DEFAULT_RULES: PolicyRules = {
 };
 
 /**
- * Layer an operator's `[policy]` section over the compiled-in defaults.
+ * 将运维的 [policy] 节叠加到编译期内置默认之上。
  *
- * The merge is at role → group depth, not role depth. Replacing a whole role's
- * bindings from a partial table is the trap here: a config naming only
- * `admin.prod` would otherwise wipe `admin.staging` and `admin.dev` back to
- * nothing, widening or narrowing two tiers the operator never mentioned.
+ * 合并深度是 role 内的 group，不是 role 级。用部分表替换整个角色的
+ * 绑定是这里的陷阱：只写 admin.prod 的配置会把 admin.staging 和
+ * admin.dev 清空回无绑定，无声放宽或收紧运维从未提及的两个层级。
  *
- * Roles and groups absent from the override keep their defaults, and a role or
- * tier the defaults have never heard of is added rather than rejected. That is
- * what makes a custom `group = "tier-1"` resolve to real bindings.
  *
- * `denylist` replaces rather than appends, because the defaults carry none and
- * FORBIDDEN_PATTERNS is applied on top by the engine regardless.
+ * 覆盖中缺席的角色和层级保留默认值；默认值没听过的角色或层级
+ * 会被新增而非拒绝。这正是自定义 group = tier-1 能解析到
+ * 真实绑定的机制。
  *
- * With nothing to layer, `base` is returned as-is rather than copied. The
- * result is read-only either way — PolicyEngine only reads `rules`, and the
- * copying below exists so a *later* merge cannot reach DEFAULT_RULES through a
- * shared tier object, not because callers are expected to mutate what they get.
+ * denylist 是替换而非追加，因为默认值不带任何拒绝清单，
+ * FORBIDDEN_PATTERNS 由引擎始终叠加在其上。
+ *
+ * 无可叠加时原样返回 base 而非拷贝。结果两种方式都是只读的——
+ * PolicyEngine 只读 rules；下方拷贝的存在是为了后续合并不能
+ * 通过共享的 tier 对象触及 DEFAULT_RULES，
+ * 而不是因为调用方被期望修改拿到的结果。
  */
 export function mergePolicyRules(
   base: PolicyRules,
@@ -86,26 +86,26 @@ export function mergePolicyRules(
 ): PolicyRules {
   if (!override?.roleBindings && !override?.denylist) return base;
 
-  // Copy every tier map: assigning base's objects straight through would let a
-  // later merge mutate DEFAULT_RULES, which is a module-level singleton.
+  // 拷贝每个 tier 映射：直接透传 base 的对象会让后续合并
+  // 修改模块级单例 DEFAULT_RULES。
   //
-  // `Object.create(null)`, not `{}`, because the loop below assigns a key the
-  // operator chose: `roleBindings[role] = ...` with `role === '__proto__'` invokes
-  // the prototype setter on a plain object rather than creating a key. Measured, the
-  // effect is not global — `Object.prototype` is untouched — but this object's own
-  // prototype is replaced by the operator's tier map, after which `roleBindings.prod`
-  // resolves through the chain as though `prod` were a role. Reported as
-  // https://github.com/tufantunc/ssh-mcp/issues/172.
+  // 用 Object.create(null) 而非 {}：下方循环赋值运维选的键，
+  // roleBindings[role] = ... 且 role === __proto__ 时
+  // 普通对象走的是原型 setter 而非创建键。实测影响不是全局的——
+  // Object.prototype 未被动——但本对象自身的原型被运维的 tier 映射
+  // 替换，此后 roleBindings.prod 沿原型链解析如同 prod 是一个角色。
+  // 报告为 github.com/tufantunc/ssh-mcp/issues/172。
   //
-  // Reaching it needs the schema guard in config/schema.ts to be bypassed first, and
-  // that guard is exactly what zod 4 silently disabled once already (2.5.0 rebuilt
-  // it). Insurance in the authorization engine is worth one function call.
   //
-  // It also removes a second case with no config involved: on a plain object,
-  // `roleBindings['toString']` returns a function, so a profile whose role is named
-  // after an `Object.prototype` member found a truthy "binding". That failed closed —
-  // `findPolicyProblems` still refused it and evaluation floored at read-only — but it
-  // took a different branch than an unknown role, for no reason a reader could see.
+  // 触发它需要先绕过 config/schema.ts 的 schema 守卫，
+  // 而该守卫正是 zod 4 已经静默禁用过一次的（2.5.0 重建了它）。
+  // 授权引擎里的保险值得一次函数调用。
+  //
+  // 它还消除了无配置介入的第二种情况：普通对象上
+  // roleBindings[toString] 返回一个函数，角色名为 Object.prototype
+  // 成员的 profile 会找到一个真值「绑定」。那会 fail-closed——
+  // findPolicyProblems 仍拒绝且评估下限为 read-only——但走了
+  // 与未知角色不同的分支，读者看不出为什么。
   const roleBindings: Record<string, Record<string, CommandClass[]>> =
     Object.create(null);
   for (const [role, groups] of Object.entries(base.roleBindings)) {
@@ -122,18 +122,18 @@ export function mergePolicyRules(
 }
 
 /**
- * Which tier's role binding applies to this profile.
+ * 本 profile 适用哪个层级的角色绑定。
  *
- * `profile.group` is authoritative. Without it we still infer from the name
- * for convenience, but an unrecognised name resolves to the most restrictive
- * tier: the previous default sent every unrecognised profile to `dev`, so a
- * production host merely named "web-01" silently received the loosest
- * permissions in the matrix.
+ * profile.group 是权威。缺省时为方便仍从名称推断，
+ * 但无法识别的名称解析为最严格层级：以前的默认把每个
+ * 未识别的 profile 送到 dev，一个仅仅叫 web-01 的生产主机
+ * 就静默拿到矩阵中最宽松的权限。
  *
- * Exported rather than kept private because startup validation has to reach the
- * same answer the engine will reach, inference included. Checking only the
- * explicit `group` would pass every profile that never set one, which is where
- * the widening below actually happens.
+ *
+ * 导出而非私有，因为启动校验必须到达引擎将到达的同一答案，
+ * 推断包含在内。只查显式 group 会放过每个没设它的 profile，
+ * 而下方正是放宽发生的地方。
+ *
  */
 export function resolveProfileGroup(profile: Profile): string {
   if (profile.group) return profile.group;
@@ -148,20 +148,20 @@ export function resolveProfileGroup(profile: Profile): string {
 }
 
 /**
- * Every way a config's policy can mean something other than what it says.
+ * 配置的策略可以偏离其字面意思的每一种方式。
  *
- * Checked in both directions, because a silent no-op is reachable from either:
- * a profile can name a role or tier that nothing defines, and a `[policy]`
- * block can define a role or tier that no profile can reach. #95 was the second
- * kind (written, parsed, dropped), and the first kind lands on `['read-only']`,
- * which at runtime is indistinguishable from a deliberate policy decision.
+ * 双向检查，因为静默空操作从两侧都可达：
+ * profile 可以命名一个无人定义的角色或层级，[policy]
+ * 块也可以定义一个没有 profile 能达到的角色或层级。
+ * #95 是第二种（写了、解析了、丢了），第一种落到
+ * read-only，运行时与刻意的策略决定无法区分。
  *
- * The `[policy]` side is checked against `override`, never the merged table:
- * the merge carries the three compiled-in roles, and no real config references
- * all of them.
+ * [policy] 侧对照 override 检查，绝不对照合并后的表：
+ * 合并携带三个编译期内置角色，真实配置不会引用全部。
  *
- * Returns every problem rather than the first, matching the config validation
- * error in loader.ts. An operator fixing a config file wants the whole list.
+ *
+ * 返回所有问题而非第一个，与 loader.ts 的配置校验错误一致。
+ * 修配置文件的运维想要完整清单。
  */
 export function findPolicyProblems(
   merged: PolicyRules,
@@ -218,13 +218,13 @@ export function findPolicyProblems(
 }
 
 /**
- * The rules main() runs on: the compiled-in defaults, the operator's overrides
- * layered on top, and a refusal to start when the two do not describe the same
+ * main() 运行的规则：编译期内置默认、运维覆盖叠加其上，
+ * 以及两者描述的不是同一个世界时拒绝启动。
  * world.
  *
- * Refusing rather than warning. A warning here goes to stderr, which for a
- * stdio MCP server means a log file the operator is not reading, and "written,
- * ignored, nothing said" is the whole of #95.
+ * 拒绝而非告警。告警走 stderr，对 stdio MCP 服务器那是
+ * 运维不读的日志文件，「写了、忽略了、什么都没说」
+ * 正是 #95 的全部。
  */
 export function resolvePolicyRules(
   profiles: Profile[],
@@ -243,11 +243,11 @@ export function resolvePolicyRules(
 }
 
 /**
- * What a call acts on, beyond its command string. Only the SFTP tools pass anything:
- * their command string is one this server composes, so a `[policy].denylist` rule
- * written for the path is also tested against the path itself (#230). The same value
- * lands in the OPA input's `resource` — the name follows that vocabulary, where the
- * resource is what is acted on and the subject is the profile doing the acting.
+ * 调用作用的对象，超出命令字符串。只有 SFTP 工具传任何东西：
+ * 其命令字符串是本服务器编排的，为路径写的 [policy].denylist
+ * 规则也对照路径本身测试（#230）。同一个值进入 OPA 输入的
+ * resource——名称沿用该词汇表：resource 是被作用的对象，
+ * subject 是执行动作的 profile。
  */
 export interface PolicyResource {
   remotePath?: string;
@@ -260,15 +260,15 @@ export class PolicyEngine {
   /** Rate-limits the fail-open warning so one outage can't flood stderr. */
   private lastOpaWarning = 0;
   /**
-   * The operator's patterns, compiled once — each twice: as written, and
-   * case-insensitively for the Windows reading of a remote path, where a
-   * case variant reaches the same file (#230). The built-ins live in classifier.ts.
+    * 运维的模式，只编译一次——每个两次：按原样，以及
+    * 不区分大小写（远程路径的 Windows 读法，大小写变体
+    * 到达同一文件（#230））。内建清单在 classifier.ts 中。
    */
   private readonly userPatterns: ReadonlyArray<{ exact: RegExp; caseInsensitive: RegExp }>;
 
   constructor(private rules: PolicyRules = DEFAULT_RULES) {
-    // Compile eagerly: a deny rule that silently degrades (the old code fell
-    // back to substring-matching the command against the regex *source*) is
+    // 急切编译：静默降级的拒绝规则（旧代码把命令对照正则*源文本*
+    // 做子串匹配）比启动失败更糟，因为没有任何东西暴露降级。
     // worse than a startup failure, because nothing surfaces the degradation.
     this.userPatterns = (rules.denylist ?? []).map((pattern) => {
       try {
@@ -283,9 +283,9 @@ export class PolicyEngine {
 
   setOpaUrl(url: string | null, failClosed = false, timeoutMs = DEFAULT_OPA_TIMEOUT_MS): void {
     this.opaTimeoutMs = timeoutMs;
-    // Reset the warning throttle when the mode changes, or the one warning per minute can
-    // be the *previous* mode's sentence — "commands OPA would deny may now be allowed"
-    // printed while the engine refuses everything.
+    // 模式变化时重置告警节流，否则每分钟一条的告警可能是
+    // *上一个*模式的句子——引擎在拒一切时打印
+    // 「OPA 会拒绝的命令现在可能被放行」。
     if (failClosed !== this.opaFailClosed || url !== this.opaUrl) this.lastOpaWarning = 0;
     this.opaUrl = url;
     this.opaFailClosed = failClosed;
@@ -299,10 +299,10 @@ export class PolicyEngine {
     const parsed = classifyCommand(command);
     const allowedClasses = this.getAllowedClasses(profile);
     const classAllowed = allowedClasses.includes(parsed.class);
-    // Copied onto every branch below rather than just the role-binding one:
-    // `read-command`'s `enforceClass` check reads it off an `allow` decision,
-    // since a grammar-rejected reader is allowed as `safe` for most roles and
-    // only refused one layer up, in the tool itself.
+    // 复制到下方每个分支而非仅角色绑定分支：
+    // read-command 的 enforceClass 检查从 allow 决定上读取它，
+    // 因为文法拒绝的 reader 对多数角色允许为 safe，
+    // 仅在工具层上一级被拒。
     const readOnlyRejection = parsed.readOnlyRejection;
 
     const denied = this.findDenyMatch(command, resource);
@@ -334,8 +334,8 @@ export class PolicyEngine {
     }
 
     if (approvalRequired) {
-      // approvalPolicy "deny" rejects outright instead of prompting — otherwise
-      // it would behave exactly like ask-destructive and never deny anything.
+      // approvalPolicy deny 直接拒绝而非提示——否则行为与
+      // ask-destructive 完全相同，永远不拒绝任何东西。
       if (profile.approvalPolicy === 'deny') {
         return {
           decision: 'deny',
@@ -383,9 +383,9 @@ export class PolicyEngine {
 
     try {
       const parsed = classifyCommand(command);
-      // The path as given, plus both readings the local denylist tests, so a Rego rule
-      // can match a canonical spelling without reimplementing either here. Undefined for
-      // every tool but the SFTP ones — and for an empty path, which means no path — and
+      // 按原样的路径，加上本地 denylist 用的两种读法，让 Rego 规则
+      // 能匹配规范拼写而无需在此重新实现任一读法。非 SFTP 工具
+      // 及空路径为 undefined，JSON 会省略键。
       // JSON drops the keys then.
       const remotePath = resource.remotePath || undefined;
       const input = {
@@ -406,10 +406,10 @@ export class PolicyEngine {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ input }),
-        // A sidecar that accepts the connection and never answers is the canonical way
-        // OPA is "unreachable", and without this the call ran to undici's five-minute
-        // header timeout while every tool call waited on it. The abort lands in the catch
-        // below, so both modes reach their own answer inside the budget.
+        // 接受连接但永不回答的 sidecar 是 OPA「不可达」的典型方式，
+        // 没有这行的话调用会跑到 undici 的五分钟头超时，
+        // 每次工具调用都在等它。中止落入下方 catch，
+        // 两种模式都在预算内到达各自的答案。
         signal: AbortSignal.timeout(this.opaTimeoutMs),
       });
 
@@ -418,18 +418,18 @@ export class PolicyEngine {
       }
 
       const payload: unknown = await resp.json();
-      // Guarded, not cast. `as { result?: unknown }` is a lie for a `null` body — reading
-      // `.result` off it threw, so the cause on stderr read as a defect in this server
-      // rather than as the "no decision" condition it names below.
+      // 加守卫而非强转。as { result?: unknown } 对 null body 是谎言——
+      // 读 .result 会抛，stderr 上的原因被读成本服务器的缺陷，
+      // 而不是下方标名的「无决定」条件。
       const result = typeof payload === 'object' && payload !== null
         ? (payload as { result?: unknown }).result
         : undefined;
       if (typeof result !== 'boolean') {
-        // A 200 carrying no decision is how OPA answers for an undefined document, which
-        // is what a wrong package path, an unactivated bundle, or an `allow` rule written
-        // without `default allow := false` all produce. Reading that as consent meant
-        // `--opaFailClosed` did not cover the way an OPA gate actually goes down: six of
-        // seven response shapes allowed, with no warning at all.
+        // 200 但无决定是 OPA 对未定义文档的回答——错误包路径、
+        // 未激活的 bundle、或没写 default allow := false 的 allow 规则
+        // 都会产生。读成同意意味着 --opaFailClosed 无法覆盖
+        // OPA 门真正倒下的方式：七种应答形态六种放行，无任何告警。
+        //
         return this.onOpaUnavailable('no boolean `result` in the response', local);
       }
       if (result === false) {
@@ -449,14 +449,14 @@ export class PolicyEngine {
   }
 
   /**
-   * What an OPA outage means, which is the operator's choice rather than ours.
+    * OPA 故障意味着什么，是运维的选择而非我们的。
    *
-   * Falling back to the local decision is the default and stays the default: OPA is an
-   * additional deny layer, and an outage that stopped all work would be a worse failure
-   * than one that narrows the policy. But an operator who deployed OPA *as* the
-   * authorization gate has a control that disappears during an outage, and the only signal
-   * is a stderr line that MCP clients usually discard. `--opaFailClosed` lets them say
-   * that the gate being down means no.
+    * 回落到本地决定是默认且保持默认：OPA 是额外拒绝层，
+    * 停掉全部工作的故障比缩小策略更糟。但把 OPA *当作*
+    * 授权门部署的运维，拥有的控制会在故障期间消失，
+    * 唯一信号是 MCP 客户端通常丢弃的 stderr 行。
+    * --opaFailClosed 让他们说：门倒了就是不行。
+    *
    */
   private onOpaUnavailable(cause: string, local: PolicyEvaluation): PolicyEvaluation {
     this.warnOpaUnavailable(cause);
@@ -466,19 +466,19 @@ export class PolicyEngine {
       commandClass: local.commandClass,
       binary: local.binary,
       ruleId: 'opa-unavailable',
-      // Fixed string. `cause` goes to stderr, where the operator is; this `reason` is
-      // rethrown as the tool's error text and written to the audit record, and it carried
-      // `this.opaUrl` — an internal hostname, and any credential embedded in it — out to
-      // the MCP client on every refusal.
+      // 固定字符串。cause 走 stderr 给运维；此 reason 重抛为
+      // 工具错误文本并写入审计记录，它携带了 this.opaUrl——
+      // 内部主机名和其中嵌入的任何凭据——到每次拒绝时的
+      // MCP 客户端。
       reason: 'OPA evaluation unavailable and --opaFailClosed is set',
     };
   }
 
   /**
-   * OPA is an *additional* deny layer, so an outage falls back to the local
-   * decision rather than blocking all work. That is a deliberate trade-off, but
-   * it must be loud: an operator who deployed OPA as a hard authorization gate
-   * would otherwise have no signal that the gate is down while commands it
+    * 这是刻意的取舍，但必须响亮：把 OPA 当硬授权门部署的运维
+    * 否则无从得知门倒了、而它本会拒绝的命令仍在跑。
+    *
+    *
    * would have denied keep running.
    */
   private warnOpaUnavailable(cause: string): void {
@@ -494,17 +494,17 @@ export class PolicyEngine {
   }
 
   /**
-   * Say which three things produced the refusal, not one of them.
+    * 说清楚产生拒绝的三件事，而不是只说一件。
    *
-   * The message used to read `Role "admin" cannot run "privileged" commands`,
-   * which names the role and the class but not the host group — and the group
-   * is usually what decided, because `admin` has `privileged` on staging and
-   * dev but not on prod. A reader concludes their role is simply incapable of
-   * sudo and goes looking for a bigger role that does not exist (#91).
+    * 消息过去是 Role admin cannot run privileged commands，
+    * 点名了角色和类别但没提主机组——而通常是组在起决定作用：
+    * admin 在 staging 和 dev 有 privileged 但 prod 没有。读者得出
+    * 「我的角色就是不能 sudo」的结论去找不存在的大角色（#91）。
+    *
    *
-   * The inferred case matters most: a profile with no group set has its tier
-   * guessed from its name, so the reason is something the operator never wrote
-   * down anywhere and cannot see.
+    * 推断的情形最要紧：没设 group 的 profile 从名称猜层级，
+    * 原因因此是运维从未在任何地方写下、也无法看到的东西。
+    *
    */
   private explainRoleDenial(profile: Profile, parsed: ParsedCommand): string {
     const commandClass = parsed.class;
@@ -523,11 +523,11 @@ export class PolicyEngine {
         `(allowed: ${allowed}).`;
 
       if (inferred) {
-        // Not "defaulted to the most restrictive tier": the name is matched
-        // against prod/staging/dev first, so a profile called "staging-web" lands
-        // on staging and the old wording described a fallback that did not
-        // happen. What the operator needs to know is that nothing they wrote
-        // chose this tier.
+        // 不是「回落到最严格层级」：名称先匹配 prod/staging/dev，
+        // 叫 staging-web 的 profile 落在 staging，旧措辞描述了一个
+        // 并未发生的回落。运维需要知道的是没有任何他们写的东西
+        // 选择了这个层级。
+        //
         reason +=
           ` No group is set for profile "${profile.name}", so the tier was inferred from its name as "${group}".` +
           ` Set group explicitly on the profile, or pass --group, if that is not where this host belongs.`;
@@ -536,10 +536,10 @@ export class PolicyEngine {
       }
     }
 
-    // A `safe` command refused here is often not a hard "no" — it is one
-    // argv word away from `read-only`, and without this the reader concludes
-    // the binary is forbidden outright and never learns which spelling would
-    // have worked.
+    // 在此被拒的 safe 命令往往不是硬「不」——离 read-only 只差
+    // 一个 argv 词，没有这句读者会断定该二进制整体被禁，
+    // 永远不知道哪种写法能通过。
+    //
     if (parsed.readOnlyRejection) {
       reason += ` ${formatReadOnlyRejection(parsed.readOnlyRejection)}`;
     }
@@ -555,40 +555,40 @@ export class PolicyEngine {
     if (!roleBinding) {
       return ['read-only'];
     }
-    // No hop to another tier when this one has no bindings. While roleBindings
-    // were compiled in, falling back to HOST_GROUPS[0] meant falling back to
-    // that role's *strictest* cell, so the old comment here was true. Once a
-    // [policy] block can write the prod cell, the same hop hands an unresolved
-    // tier whatever prod was granted. That is a widening, and a silent one.
+    // 此层级无绑定时绝不跳到其他层级。roleBindings 还是编译期
+    // 内置时，回落到 HOST_GROUPS[0] 意味着回落到该角色*最严格*的
+    // 格子，旧注释因此为真。一旦 [policy] 块能写 prod 格子，同样的
+    // 跳转就把未解析的层级交给 prod 被授予的任何东西。
+    // 那是放宽，且是无声的。
     //
-    // An unresolved tier is a startup error now (resolvePolicyRules), so
-    // reaching this line means the engine was constructed directly rather than
-    // from a config file. Fail closed.
+    // 未解析层级现在是启动错误（resolvePolicyRules），
+    // 走到这行说明引擎被直接构造而非来自配置文件。fail-closed。
     //
-    // `??` rather than `||`: an empty class list is a deliberate lockdown, and
-    // whether it survives should not rest on `[]` being truthy.
+    // 用 ?? 而非 ||：空类别列表是刻意的锁定，
+    // 它是否存活不应取决于 [] 是否为真值。
+    //
     return roleBinding[resolveProfileGroup(profile)] ?? ['read-only'];
   }
 
   /**
-   * Whether this command trips the profile's approval gate. What happens at the
-   * gate — prompt or deny — is decided by evaluate() from the approvalPolicy.
+    * 由 evaluate() 根据 approvalPolicy 决定。
+    *
    */
   private requiresApproval(profile: Profile, needsApproval: boolean): boolean {
     const mode: ApprovalMode = profile.approvalPolicy;
     if (mode === 'auto') return false;
     if (mode === 'ask-all') return true;
-    // ask-destructive and deny both gate on destructive/privileged commands.
+    // ask-destructive 和 deny 都以 destructive/privileged 设门。
     return needsApproval;
   }
 
   /**
    * Which deny rule refused this command, worded so the reader can act on it.
-   *
-   * The old message was `Command matches denylist pattern` and named nothing —
-   * not the rule, not where it came from, not whether the operator could change
-   * it. A user who hit it had no way to tell a built-in refusal from one they
-   * had written themselves (#91). explainRoleDenial already names the role, the
+    * 旧消息是 Command matches denylist pattern，什么都不点名——
+    * 不说规则、不说来源、不说运维能否改。遇到它的用户无法区分
+    * 内置拒绝与自己写的拒绝（#91）。explainRoleDenial 已点名角色、
+    * 组、类别和允许集；这条路径一直没得到同样待遇。
+    *
    * group, the class and the allowed set; this path never got the same
    * treatment.
    */
@@ -599,13 +599,13 @@ export class PolicyEngine {
         `This list cannot be switched off — the [policy].denylist key adds patterns, it does not remove these.`;
     }
 
-    // Nothing below can match: skip reading the path at all, which is the commonest
-    // config — the defaults carry no denylist.
+    // 下方不可能匹配：跳过路径读取——这是最常见的配置，
+    // 默认不带 denylist。
     if (this.userPatterns.length === 0) return null;
 
-    // The path is tested on its own as well as inside the command string, because for the
-    // SFTP tools that string is ours to lay out and a rule written for the path should not
-    // depend on where we put it (#230). An empty path means none was passed.
+    // 路径本身也单独测试，不仅仅在命令字符串内：SFTP 工具的
+    // 字符串由我们编排，为路径写的规则不应取决于我们放在哪（#230）。
+    // 空路径意味着没传路径。
     const remotePath = resource.remotePath || undefined;
     const normalized = remotePath === undefined ? undefined : normalizeRemotePath(remotePath);
     const windows = remotePath === undefined ? undefined : normalizeRemotePathForWindows(remotePath);
@@ -623,9 +623,9 @@ export class PolicyEngine {
         return `Remote path ${quotePath(remotePath)} (read as ${quotePath(normalized!)}) ` +
           `matches /${exact.source}/, ${fromConfig}`;
       }
-      // The Windows reading runs even when it string-equals the plain one, because the
-      // pattern is tested case-insensitively here and exactly above: on Windows the case
-      // variants are the same file (measured, see remote-path.ts).
+      // Windows 读法即使与普通读法字符串相等也运行，
+      // 因为此处和不区分大小写地测试模式：Windows 上
+      // 大小写变体是同一个文件（实测，见 remote-path.ts）。
       if (caseInsensitive.test(windows!)) {
         return `Remote path ${quotePath(remotePath)} (read as ${quotePath(windows!)}, the Windows reading) ` +
           `matches /${caseInsensitive.source}/i, ${fromConfig}`;
@@ -637,9 +637,9 @@ export class PolicyEngine {
 }
 
 /**
- * A path as it may appear in a refusal, capped. The paths are caller-supplied and can be
- * as long as `MAX_REMOTE_PATH_CHARS` (4096); the refusal is rethrown to the MCP client
- * and written into the audit record, where the command string already carries the full
+ * 可长达 MAX_REMOTE_PATH_CHARS（4096）；拒绝会重抛给 MCP 客户端
+ * 并写入审计记录，那里命令字符串已带完整拼写——所以尾部
+ * 不放弃运维需要的任何东西，拒绝也不再是引擎最冗长的句子。
  * spelling — so the tail gives up nothing an operator needs, and a refusal stops being
  * the engine's most verbose sentence by an order of magnitude.
  */

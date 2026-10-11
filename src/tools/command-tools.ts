@@ -5,7 +5,7 @@ import { commandOutput, textResult } from './results.js';
 import { PolicyRefusedError, type ToolDeps, type Pipeline } from './pipeline.js';
 import type { CommandResult } from '../types.js';
 
-/** Tools that run a command on the remote host. */
+/** 在远程主机上执行命令的工具。 */
 export function registerCommandTools(
   { server, registry, policy }: ToolDeps,
   pipeline: Pipeline,
@@ -46,7 +46,7 @@ export function registerCommandTools(
         command,
         { toolName: 'run-command', failureClass: 'safe', profile, session, extra },
         async (rt) => {
-          // A session run keeps the caller's shell state; a plain exec does not.
+          // 会话运行会保留调用方的 shell 状态；普通 exec 不会。
           let audited: CommandResult;
           if (session) {
             const sess = rt.conn.getSession(session);
@@ -80,13 +80,13 @@ export function registerCommandTools(
           failureClass: 'privileged',
           profile,
           extra,
-          // Evaluate the bare command too: the sudo wrapper would otherwise
-          // hide a forbidden command inside a quoted `sh -c` argument.
+          // 也要对裸命令本身做评估：否则 sudo 包装器
+          // 会把被禁命令藏进带引号的 `sh -c` 参数里。
           preCheck: (cleanCmd) => {
-            // Resolved here rather than before `runAudited`: `defaultProfileName` reaches
-            // `registry.getProfile()`, which refuses on an unconfigured server, and outside
-            // the pipeline's try that refusal escaped without an audit record. `preCheck`
-            // runs inside it.
+            // 在这里解析而不是在 `runAudited` 之前：`defaultProfileName` 会触达
+            // `registry.getProfile()`——它在未配置的服务器上会拒绝；若在管线
+            // 的 try 之外，该拒绝会逃逸且不留审计记录。`preCheck`
+            // 在其内部运行。
             const rawEval = policy.evaluate(
               cleanCmd,
               registry.getProfile(defaultProfileName(profile)),
@@ -124,8 +124,8 @@ export function registerCommandTools(
         { toolName: 'signal-process', failureClass: 'destructive', profile, extra, synthetic: true },
         async (rt) => {
           const { audited, output } = await execAndReport()(rt);
-          // `kill` is silent on success — confirm what was sent rather than
-          // returning an empty result.
+          // `kill` 成功时是静默的——因此要确认已发送的信号，
+          // 而不是返回空结果。
           const silentSuccess = !output.isError && !audited.stdout.trim() && !audited.stderr.trim();
           return {
             audited,

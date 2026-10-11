@@ -1,45 +1,45 @@
 #!/usr/bin/env node
 /**
- * Copies package.json's version into server.json, the MCP registry entry.
+ * 把 package.json 的版本复制进 server.json（MCP registry 登记条目）。
  *
- * The version lives there twice, and both have to agree with the version that
+ * 版本在那里出现两次，两者都必须与到达 npm 的版本一致：
  * reaches npm:
  *
- *   version            the registry listing's own version. The registry refuses
- *                      to publish a version of a server it already has, so a
- *                      stale value here fails the publish outright.
- *   packages[].version the npm version the listing points at. The registry
- *                      resolves it against `registry.npmjs.org/<identifier>/<version>`
- *                      and reads `mcpName` out of that exact manifest — so a
- *                      stale value either 404s or, worse, lists a version other
- *                      than the one that just shipped.
+ *   version            登记条目自身的版本。registry 拒绝重复发布
+ *                      已有服务器的同版本，所以这里的过期值
+ *                      会让发布直接失败。
+ *   packages[].version 登记条目指向的 npm 版本。registry 拿它去
+ *                      `registry.npmjs.org/<identifier>/<version>` 解析，
+ *                      并从那份确切的清单里读 `mcpName`——因此过期值
+ *                      要么 404，要么更糟：列出的不是刚发布的那一版。
  *
- * Wired to the `version` npm script, which is what changesets/action runs when
- * it opens or updates the "Version Packages" pull request. It commits whatever
- * the version command left in the working tree, so the rewrite lands in that PR
- * alongside the package.json bump and the CHANGELOG entry — and main is already
- * correct by the time the release job publishes from it.
  *
- * Nothing else in the repo carries the version: src/version.ts reads it from
- * package.json at runtime.
+ * 接在 `version` npm script 上——changesets/action 打开或更新
+ * "Version Packages" PR 时运行的就是它。它提交 version 命令
+ * 留在工作树里的一切，所以重写结果随 package.json 提升与
+ * CHANGELOG 条目一起进入那个 PR——发布任务从 main 发布时，
+ * main 已经是对的。
  *
- * `--check` reports staleness instead of fixing it, for the release job to run
- * before it publishes a listing. `git diff --exit-code server.json` was the
- * first shape of that check and is a trap: git diff says nothing about an
- * untracked file, so the check passes on exactly the machine where server.json
- * is missing from the index.
+ * 仓库里再无别处携带版本：src/version.ts 运行时从
+ * package.json 读取。
  *
- * What this script does *not* do is validate server.json against its schema.
- * An earlier version reimplemented the 100-character `title`/`description` caps
- * as a literal, on the belief that mcp-publisher only reports them at publish
- * time. It does not: `mcp-publisher validate` checks the whole schema without
- * publishing, against an endpoint that needs no credentials, and the release
- * workflow runs it. Two of the schema's rules copied into a constant here would
- * have gone stale the first time the pinned schema URL moved, while still
- * missing the name pattern, the required fields and the rest. The caps that
- * matter for the values a human edits are asserted on the real files in
- * test/unit/sync-server-json.test.ts, which fails on the pull request that
- * writes them rather than on the release two merges later.
+ * `--check` 报告过期而不修复，供发布任务在发布登记前运行。
+ * `git diff --exit-code server.json` 是它的第一个形态，也是个陷阱：
+ * git diff 对未跟踪文件只字不提，于是检查恰好在
+ * server.json 没进索引的那台机器上通过。
+ *
+ *
+ * 本脚本*不做*的是把 server.json 对着 schema 校验。
+ * 更早的版本把 100 字符的 `title`/`description` 上限重新实现成字面量，
+ * 理由是以为 mcp-publisher 只在发布时报告它们。并非如此：
+ * `mcp-publisher validate` 无需发布即可对整个 schema 校验，
+ * 走的是免凭据的端点，发布工作流也运行它。
+ * 把 schema 的两条规则抄成本文件常量，固定的 schema URL 一动就会过期，
+ * 而 name 模式、必填字段与其余规则仍然漏掉。
+ * 对人工编辑的值真正要紧的上限，由
+ * test/unit/sync-server-json.test.ts 在真实文件上断言，
+ * 写它们的那个 PR 就会红，
+ * 而不是两次合并之后的发布才红。
  */
 import { readFileSync, writeFileSync } from 'node:fs';
 
@@ -52,10 +52,10 @@ const pkg = JSON.parse(readFileSync(new URL('package.json', root), 'utf8'));
 const registry = JSON.parse(readFileSync(registryFile, 'utf8'));
 
 /**
- * A mismatch here is the registry's "ownership validation failed. Expected
- * mcpName '<a>', got '<b>'" — discovered after npm has already published, at
- * the one step of the release that cannot be undone by re-running it. It costs
- * a comparison to find it while the version bump is still a pull request.
+ * 此处失配就是 registry 的 "ownership validation failed. Expected
+ * mcpName '<a>', got '<b>'"——发现时 npm 已经发布，正卡在发布流程里
+ * 唯一无法靠重跑挽回的一步。在版本提升还是 PR 的时候
+ * 花一次比较就能抓住它。
  */
 if (pkg.mcpName !== registry.name) {
   console.error(
@@ -66,22 +66,22 @@ if (pkg.mcpName !== registry.name) {
 }
 
 const npmPackage = registry.packages?.find((p) => p.registryType === 'npm');
-// Refuse rather than guess: silently skipping would hand the release job a
-// server.json pointing at whatever version was there before.
+// 拒绝而不是猜：静默跳过会把一个指向旧版本的
+// server.json 交给发布任务。
 if (!npmPackage) {
   console.error('sync-server-json: server.json has no npm package entry to update');
   process.exit(1);
 }
 
 /**
- * The identifier is the other half of the same ownership check.
+ * identifier 是同一所有权检查的另一半。
  *
- * `mcpName` above proves we own the package the listing claims; this is the
- * package it actually resolves — the registry fetches
- * `registry.npmjs.org/<identifier>/<version>` and reads `mcpName` out of *that*
- * manifest. A rename or typo here fails the same way and just as late, so it
- * gets the same guard rather than being the one copied field with nothing
- * behind it.
+ * 上面的 `mcpName` 证明我们拥有登记条目所声称的包；这里是
+ * 它实际解析到的包——registry 去
+ * `registry.npmjs.org/<identifier>/<version>` 取回并从*那份*
+ * 清单里读 `mcpName`。这里的改名或笔误以同样方式、同样迟地失败，
+ * 所以它得到同样的守卫，而不是唯一一个抄了却无人
+ * 验证的字段。
  */
 if (npmPackage.identifier !== pkg.name) {
   console.error(

@@ -1,10 +1,13 @@
 id: T-10
 title: PTY 内容级告警 + 设备编码解码（GBK）
 level: L1
-status: 执行中
+status: 待确认
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 08:41:58
 claimedBy: digital-architect
+reportedAt: 2026-10-11 08:45:20
+reportSummary: ①pty-write 输入逐行 classifyCommand,命中入审计 ptyAlert+stderr 告警(单测:命中/无害/空白)②ptyEncoding=utf8|gbk 走 TextDecoder 流式解码,跨 chunk 多字节不乱(单测),零新依赖③管线透传修正(auditResult 显式构造丢字段)。全量回归见后续 T-12 终轮。待主人 confirm。
 events:
   - 2026-10-11 08:41:58 | create | by=lome | level=L1 | accept=①pty-write 输入逐行过分类器,destructive/privileged 命中→审计记录 ptyAlert 字段+stderr 告警(单测)②profile 可设 ptyEncoding=gbk,PTY 输出按 TextDecoder 解码(单测,Node ICU)③默认 utf8 不变——出处：方案 P2 告警+档案编码缺口(主人 2026-10-11 裁决不接受挂起)
   - 2026-10-11 08:42:34 | claim | by=digital-architect
+  - 2026-10-11 08:45:20 | report | by=digital-architect

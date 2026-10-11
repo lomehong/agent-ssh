@@ -1,16 +1,16 @@
-# A forwarding-enabled SSH fixture, built from a pinned base so the config is
-# deterministic at IMAGE BUILD time.
+# 一个开启转发的 SSH 夹具，基于固定版本的基底构建，
+# 让配置在镜像构建时就是确定的。
 #
-# Why this exists: the stock linuxserver openssh-server image ships
-# AllowTcpForwarding no, and its /custom-cont-init.d hooks run BEFORE the sshd
-# service generates /config/sshd/sshd_config — measured on this repo's compose
-# (2026-10-11): the hook's `[ -f ]` guard fails silently and every forwarded
-# channel is refused, which is exactly the failure mode the ProxyJump tests
-# existed to catch. Patching at init time cannot win that race; owning the
-# image build does.
+# 存在原因：原版 linuxserver openssh-server 镜像自带
+# AllowTcpForwarding no，且其 /custom-cont-init.d 钩子运行于
+# sshd 服务生成 /config/sshd/sshd_config 之前——本仓库 compose
+# 实测（2026-10-11）：钩子的 `[ -f ]` 守卫静默失败，所有转发
+# 通道被拒，恰是 ProxyJump 测试要抓的故障形态。
+# 在 init 期打补丁赢不了这场竞速；自己 owning 镜像构建才行。
 #
-# Two services build this image (ssh-bastion for ProxyJump, ssh-forward for the
-# forwarding tools); both users are baked in so the services differ only by
+#
+# 两个服务构建此镜像（ssh-bastion 用于 ProxyJump，ssh-forward
+# 用于转发工具）；两个用户都烘焙进镜像，服务间只差端口映射。
 # port mapping.
 FROM alpine:3.20@sha256:d9e853e87e55526f6b2917df91a2115c36dd7c696a35be12163d44e6e2a4b6bc
 

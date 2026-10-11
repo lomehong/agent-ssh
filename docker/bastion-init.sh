@@ -1,12 +1,12 @@
 #!/bin/sh
-# linuxserver.io custom-cont-init hook.
+# linuxserver.io custom-cont-init 钩子。
 #
-# The base openssh-server image ships AllowTcpForwarding no, which makes
-# direct-tcpip channels (what ProxyJump / `profile.via` uses) fail with
-# "Channel open failure: open failed". This host exists purely so the
-# integration suite can exercise the bastion path against a real sshd.
+# 基础 openssh-server 镜像自带 AllowTcpForwarding no，会让
+# direct-tcpip 通道（ProxyJump / `profile.via` 所用）以
+# "Channel open failure: open failed" 失败。这台主机存在的唯一意义，
+# 是让集成套件对着真实 sshd 练堡垒机路径。
 #
-# Test fixture only — do not model a production bastion on this.
+# 仅测试夹具——不要把它当生产堡垒机的样板。
 CONFIG=/config/sshd/sshd_config
 
 if [ -f "$CONFIG" ]; then

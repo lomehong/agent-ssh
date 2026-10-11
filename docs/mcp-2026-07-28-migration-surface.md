@@ -1,25 +1,24 @@
-# MCP 2026-07-28: what it will cost us, and what to do until then
+# MCP 2026-07-28：它将让我们付出什么，以及在那天之前该做什么
 
-> Written 2026-08-24 against spec revision [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/changelog)
-> and the [roadmap](https://modelcontextprotocol.io/development/roadmap) as of 2026-08-22.
-> Nothing in this document is actionable as code today — see [Why there is nothing to upgrade](#why-there-is-nothing-to-upgrade).
-> Its purpose is that the day the SDK catches up, we are not rediscovering this list.
+> 撰写于 2026-08-24，依据规范修订版 [2026-07-28](https://modelcontextprotocol.io/specification/2026-07-28/changelog)
+> 及截至 2026-08-22 的 [路线图](https://modelcontextprotocol.io/development/roadmap)。
+> 本文今天没有任何可落地为代码的内容——见[为什么现在无东西可升级](#为什么现在无东西可升级)。
+> 它的目的是：等 SDK 追上来的那一天，我们不必重新发现这份清单。
 
-## Why there is nothing to upgrade
+## 为什么现在无东西可升级
 
 | | |
 |---|---|
-| Current spec revision | **2026-07-28** |
-| Installed SDK | `@modelcontextprotocol/sdk@1.30.0` |
-| Newest published SDK | **1.30.0** — the only dist-tag, no prerelease |
-| That SDK's newest protocol | `LATEST_PROTOCOL_VERSION = '2025-11-25'` (default negotiated: `2025-03-26`) |
+| 当前规范修订版 | **2026-07-28** |
+| 已安装 SDK | `@modelcontextprotocol/sdk@1.30.0` |
+| 最新发布 SDK | **1.30.0** —— 唯一的 dist-tag，无预发布版 |
+| 该 SDK 支持的最新协议 | `LATEST_PROTOCOL_VERSION = '2025-11-25'`（默认协商：`2025-03-26`） |
 
-The TypeScript SDK was published **2026-07-27**, one day before the spec revision, and has not
-caught up. We are already on the newest release; the gap is upstream.
+TypeScript SDK 发布于 **2026-07-27**，比规范修订早一天，至今没有跟上。我们已经在最新版本上；差距在上游。
 
-How far upstream, measured against `node_modules/@modelcontextprotocol/sdk/dist/esm/`:
+差距有多大，以 `node_modules/@modelcontextprotocol/sdk/dist/esm/` 为准实测：
 
-| symbol | files |
+| 符号 | 命中文件数 |
 |---|---|
 | `tasks/get` | 7 |
 | `input_required` | 5 |
@@ -30,9 +29,7 @@ How far upstream, measured against `node_modules/@modelcontextprotocol/sdk/dist/
 | `cacheScope` | 0 |
 | `Mcp-Method` | 0 |
 
-The `tasks/*` and `input_required` hits are the **2025-11-25** experimental Tasks feature — which
-2026-07-28 moved *out* of core into the `io.modelcontextprotocol/tasks` extension and redesigned.
-None of the 2026-07-28 core has been started. Re-run the table before trusting it:
+`tasks/*` 与 `input_required` 的命中来自 **2025-11-25** 的实验性 Tasks 特性——2026-07-28 已把它*移出*核心、放进 `io.modelcontextprotocol/tasks` 扩展并重新设计。2026-07-28 的核心内容一行都还没开始。信任这张表之前请重跑一遍：
 
 ```bash
 for s in resultType server/discover input_required inputRequests subscriptions/listen cacheScope Mcp-Method tasks/get; do
@@ -40,136 +37,125 @@ for s in resultType server/discover input_required inputRequests subscriptions/l
 done
 ```
 
-## What lands on us
+## 会落到我们头上的
 
-Ordered by how much is our code rather than the SDK's.
+按「多少是我们的代码而非 SDK 的代码」排序。
 
-### 1. Elicitation becomes Multi Round-Trip Requests — the big one
+### 1. Elicitation 变为 Multi Round-Trip Requests——最大的一件
 
-**Spec:** MRTR ([SEP-2322](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2322))
-replaces server-initiated requests, `elicitation/create` included. The server returns an
-`InputRequiredResult` (`resultType: "input_required"`) carrying `inputRequests`; the client answers
-by **retrying the original request** with `inputResponses`.
+**规范：** MRTR（[SEP-2322](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2322)）
+取代服务器发起的请求，含 `elicitation/create`。服务器返回携带 `inputRequests` 的
+`InputRequiredResult`（`resultType: "input_required"`）；客户端以携带 `inputResponses` 的方式
+**重试原始请求**来作答。
 
-**Us:** `src/guard/elicitation.ts` and `checkPolicyAndApprove` in `src/tools/pipeline.ts` block
-*inside* a single tool call awaiting `server.elicitInput()`. MRTR inverts that: the call returns,
-and a later call carries the answer.
+**我们的现状：** `src/guard/elicitation.ts` 与 `src/tools/pipeline.ts` 中的 `checkPolicyAndApprove`
+在单次工具调用*内部*阻塞等待 `server.elicitInput()`。MRTR 把这个模型倒转：调用先返回，
+答案由之后的一次调用带来。
 
-Consequences worth knowing before touching this area:
+在动这块之前值得知道的后果：
 
-- `approvalGrantTtlMs` stops being a convenience and becomes the mechanism that makes the retry
-  cheap — a grant is what lets the second attempt through without asking again.
-- The spec removed `notifications/elicitation/complete` and `elicitationId`, and says servers that
-  need to correlate an elicitation across retries "encode their own identifier in `requestState`".
-  We use neither today, so there is nothing to unwind.
-- One decision already paid off: `elicitation.ts` uses the SDK's typed `elicitInput()` rather than a
-  hand-built envelope, deliberately, so that "a protocol change breaks the build instead". This is
-  the protocol change it was written for.
+- `approvalGrantTtlMs` 不再只是便利项，而成为让重试变便宜的机制——授权正是让第二次尝试不必再次询问就能通过的东西。
+- 规范移除了 `notifications/elicitation/complete` 与 `elicitationId`，并说需要跨重试关联 elicitation 的服务器应「把自己的标识符编码进 `requestState`」。我们今天两者都没用，没有需要回退的东西。
+- 一个早已收回回报的决定：`elicitation.ts` 刻意使用 SDK 的类型化 `elicitInput()`，而不是手工构造信封，为的就是「协议变更时坏掉的是构建而不是运行时」。这就是它为之而写的那次协议变更。
 
-### 2. Protocol-level sessions are removed
+### 2. 协议层会话被移除
 
-**Spec:** [SEP-2567](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2567) removes
-sessions and the `Mcp-Session-Id` header from Streamable HTTP; list endpoints no longer vary per
-connection. Servers needing cross-call state use "explicit, server-minted handles passed as ordinary
-tool arguments".
+**规范：** [SEP-2567](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2567) 从
+Streamable HTTP 中移除 sessions 与 `Mcp-Session-Id` 头；list 端点不再随连接而不同。需要跨调用
+状态的服务器改用「显式的、由服务器铸造的、作为普通工具参数传递的句柄」。
 
-**Us:** `src/transport/http.ts` keeps a `Map<string, StreamableHTTPServerTransport>` keyed by
-`mcp-session-id`, with `MAX_SESSIONS`, a DELETE path, and the `-32000`/`-32001` session errors. All
-of it becomes dead weight.
+**我们的现状：** `src/transport/http.ts` 维护以 `mcp-session-id` 为键的
+`Map<string, StreamableHTTPServerTransport>`，带 `MAX_SESSIONS`、DELETE 路径和 `-32000`/`-32001`
+会话错误。这些全部变成死重。
 
-**The design survives.** `open-session name=…` already *is* a server-minted handle passed as a tool
-argument — the thing the new spec asks for. Only the transport plumbing goes.
+**设计本身存活。** `open-session name=…` 本来就*是*一个作为工具参数传递的服务器铸造句柄——
+正是新规范要求的东西。要走的只是传输层的管道。
 
-### 3. The HTTP GET endpoint is replaced by `subscriptions/listen`
+### 3. HTTP GET 端点被 `subscriptions/listen` 取代
 
-The GET endpoint and `resources/subscribe`/`unsubscribe` are gone, replaced by a single long-lived
-POST-response stream. `src/transport/http.ts` matches `req.method === 'GET'` on `/` in the rate
-limiter and for the health probe; the first needs revisiting, the second is ours and unaffected.
+GET 端点与 `resources/subscribe`/`unsubscribe` 消失，由单一的长连接 POST 响应流取代。
+`src/transport/http.ts` 在限流器与健康探针中对 `/` 匹配 `req.method === 'GET'`；前者需要重审，
+后者是我们自己的，不受影响。
 
-Note the spec is explicit that request-scoped notifications — `notifications/progress`, which we
-send from `pipeline.ts` — **continue to flow on the response stream of their own request**, not the
-subscription stream. Our progress path is unaffected.
+注意规范明确：请求作用域的通知——我们从 `pipeline.ts` 发出的 `notifications/progress`——
+**继续流经其自身请求的响应流**，而非订阅流。我们的进度路径不受影响。
 
-### 4. `ttlMs` and `cacheScope` become required on list and read results
+### 4. `ttlMs` 与 `cacheScope` 成为 list 与 read 结果的必填项
 
-[SEP-2549](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2549) requires both on
-`tools/list`, `prompts/list`, `resources/list`, `resources/read` and `resources/templates/list`.
+[SEP-2549](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2549) 要求
+`tools/list`、`prompts/list`、`resources/list`、`resources/read` 与 `resources/templates/list`
+同时携带两者。
 
-**Do not confuse this with our own `ttlMs`** in `src/types.ts` — that is a session idle TTL and has
-nothing to do with `CacheableResult`.
+**不要与我们在 `src/types.ts` 里自己的 `ttlMs` 混淆**——那是会话空闲 TTL，与
+`CacheableResult` 毫无关系。
 
-Our resources (`ssh://connections`, `ssh://connections/{profile}`, `ssh://sessions/{profile}/{session}`)
-return live, caller-specific state. The honest answer is `cacheScope: "private"` with a short
-`ttlMs`, and it is worth choosing deliberately rather than accepting whatever the SDK defaults to —
-a shared intermediary caching a connection list would be a disclosure, not a papercut.
+我们的 resources（`ssh://connections`、`ssh://connections/{profile}`、
+`ssh://sessions/{profile}/{session}`）返回的是实时的、随调用方而异的状态。诚实的答案是
+`cacheScope: "private"` 配一个较短的 `ttlMs`，而且这值得深思熟虑地选择，而不是接受 SDK 的
+随便什么默认值——一个共享中间层缓存连接列表是信息泄露，不是小划伤。
 
-### 5. Required request headers
+### 5. 必填请求头
 
-`Mcp-Method` and `Mcp-Name` become required on Streamable HTTP POSTs
-([SEP-2243](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2243)), which touches
-the auth and rate-limiting middleware in `src/transport/http.ts`.
+`Mcp-Method` 与 `Mcp-Name` 成为 Streamable HTTP POST 的必填头
+（[SEP-2243](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2243)），触及
+`src/transport/http.ts` 中的认证与限流中间件。
 
-### The SDK's problem, not ours
+### 那是 SDK 的问题，不是我们的
 
-Statelessness and the removal of the `initialize` handshake; `server/discover` (a **MUST** for
-servers); `resultType` on every result; the error-code renumbering.
+无状态化与 `initialize` 握手的移除；`server/discover`（对服务器是 **MUST**）；每个结果上的
+`resultType`；错误码重编号。
 
-## What we get for free
+## 我们白拿到的
 
-Not luck — most of these are positions we already took for other reasons.
+不是运气——其中大半是我们出于别的原因早已采取的立场。
 
-- **Sampling, Roots and Logging are all deprecated, and we use none of them.** The suggested
-  migration for Logging is "log to `stderr` (stdio) or use OpenTelemetry" — both of which we already
-  do.
-- **HTTP+SSE is now formally Deprecated**; we are on Streamable HTTP.
-- **Our custom JSON-RPC codes are grandfathered.** The new allocation policy keeps `-32000`–`-32019`
-  implementation-defined; our `-32000`/`-32001` sit inside it. (The spec renumbered its own
-  `HeaderMismatch` from `-32001` to `-32020` for the same reason.)
-- **We return no `structuredContent`**, so the `tools/call` result-shape redesign on the roadmap
-  cannot break us. If we ever want structured output, that is the moment to adopt it — not before.
-- We use neither `elicitationId` nor `notifications/elicitation/complete`, both removed.
+- **Sampling、Roots 与 Logging 全部被弃用，而我们一个都没用。** Logging 的建议迁移路径是
+  「记录到 `stderr`（stdio）或使用 OpenTelemetry」——两条我们都在做。
+- **HTTP+SSE 被正式标记为 Deprecated**；我们已在 Streamable HTTP 上。
+- **我们的自定义 JSON-RPC 码被 grandfathered。** 新的分配政策把 `-32000`–`-32019` 保留为
+  实现自定义区；我们的 `-32000`/`-32001` 正在其中。（规范出于同样理由把它自己的
+  `HeaderMismatch` 从 `-32001` 改到 `-32020`。）
+- **我们不返回 `structuredContent`**，因此路线图上 `tools/call` 的结果形态重设计伤不到我们。
+  如果哪天想要结构化输出，那就是采纳的时机——不必更早。
+- `elicitationId` 与 `notifications/elicitation/complete` 我们都没用，而两者都被移除了。
 
-## Roadmap items aimed at what we are
+## 路线图上正对着我们的条目
 
-- **Agent Identity (priority 3).** The roadmap says, in as many words, that existing servers "lean on
-  pasted API keys and long-lived refresh tokens". That is our HTTP bearer token. The direction is
-  DPoP, Workload Identity Federation ([SEP-1933](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933)),
-  ID-JAG and RFC 8693 token exchange. None of it is implementable today — but it is reason enough not
-  to invest further in the current auth path.
-- **Tasks (priority 1, [SEP-2663](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2663)).**
-  Background sessions + progress + cancellation is a hand-rolled version of this extension. The
-  redesign polls via `tasks/get` and takes client input via `tasks/update`. Long term it may replace
-  `open-session type="background"`.
-- **HTTP over stdio (priority 2).** Streamable HTTP as the single binding, spoken over stdin/stdout.
-  Would collapse our two transports into one. Nothing to do now, and an argument against writing more
-  transport-specific code in the meantime.
-- **Progressive discovery (priority 4).** For servers with large catalogues. We have 14 tools; not
-  our problem yet.
-- **Conformance test suite (priority 5).** Worth running against ourselves once it exists.
+- **Agent Identity（优先级 3）。** 路线图原话：现有服务器「依赖粘贴的 API key 与长期
+  refresh token」。那说的就是我们的 HTTP bearer 令牌。方向是 DPoP、Workload Identity Federation
+  （[SEP-1933](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/1933)）、
+  ID-JAG 与 RFC 8693 令牌交换。今天没有一样可实现——但足以成为不再为现有认证路径继续投入的理由。
+- **Tasks（优先级 1，[SEP-2663](https://github.com/modelcontextprotocol/modelcontextprotocol/pull/2663)）。**
+  后台会话 + 进度 + 取消，就是这个扩展的手工版。重设计经 `tasks/get` 轮询、经 `tasks/update`
+  接收客户端输入。长期看它可能取代 `open-session type="background"`。
+- **HTTP over stdio（优先级 2）。** Streamable HTTP 成为唯一绑定，跑在 stdin/stdout 上。
+  会把我们的两种传输合而为一。现在无事可做，但它是一条「在此期间别再写更多传输专属代码」的理由。
+- **渐进式发现（优先级 4）。** 面向工具目录庞大的服务器。我们只有 14 个工具；暂时与我们无关。
+- **一致性测试套件（优先级 5）。** 出现之后值得对我们自己跑一遍。
 
-## What to do, and what not to
+## 该做什么，不该做什么
 
-**Now:**
+**现在：**
 
-1. Keep this document current. It is the whole point of writing it.
-2. **Do not build anything new on elicitation or on session-scoped transport state.** Both are being
-   removed. This is the one action available today that actually saves work later.
+1. 让本文保持最新。这正是写它的全部意义。
+2. **不要再基于 elicitation 或会话作用域的传输状态构建任何新东西。** 两者都在被移除。
+   这是今天就能做、且真正能为以后省力的唯一动作。
 
-**A decision, not code:** whether to track DPoP for the HTTP transport's bearer token. It determines
-how much more we are willing to invest in the current auth path.
+**一个决策，而非代码：** 是否为 HTTP 传输的 bearer 令牌跟进 DPoP。它决定我们还愿意在现有
+认证路径上投入多少。
 
-**Explicitly not now:** implementing 2026-07-28 against an SDK that does not support it. Our HTTP
-transport is built on `StreamableHTTPServerTransport`; forking or shimming it would open a large,
-high-risk surface for a spec whose SDK support has not started. When the SDK ships it, most of
-sections 1–5 above become an SDK upgrade plus a focused change to `src/transport/http.ts` and the
-approval path.
+**明确不做：** 在一个尚不支持 2026-07-28 的 SDK 上实现 2026-07-28。我们的 HTTP 传输构建在
+`StreamableHTTPServerTransport` 之上；fork 或 shim 它会打开一大片高风险表面，换来的规范的
+SDK 支持还没有开始。等 SDK 发布时，上文第 1–5 节的大部分会变成「一次 SDK 升级 + 对
+`src/transport/http.ts` 与审批路径的一次聚焦修改」。
 
-## Re-checking this document
+## 如何复核本文
 
 ```bash
-npm view @modelcontextprotocol/sdk dist-tags --json          # is there a newer release or a prerelease?
+npm view @modelcontextprotocol/sdk dist-tags --json          # 是否有更新的发布或预发布？
 grep -n "LATEST_PROTOCOL_VERSION\|SUPPORTED_PROTOCOL_VERSIONS" \
-  node_modules/@modelcontextprotocol/sdk/dist/esm/types.js   # what does it actually speak?
+  node_modules/@modelcontextprotocol/sdk/dist/esm/types.js   # 它实际说的是哪个协议？
 ```
 
-The day `LATEST_PROTOCOL_VERSION` reads `2026-07-28`, this list stops being theory.
+当 `LATEST_PROTOCOL_VERSION` 读出 `2026-07-28` 的那一天，这份清单就不再是理论。
+

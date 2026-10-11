@@ -1,9 +1,9 @@
 #!/usr/bin/env node
-// Builds the differential corpus: every quoted literal in the policy suites
-// (each is a valid classification probe, whatever it was written for), plus
-// deterministic backslash rewrites of each, so the run covers inputs the
-// suites never wrote on purpose. Output is sorted and de-duplicated so the
-// same corpus can be classified by two revisions of the tree.
+// 构建差分语料：策略测试套件中的每个带引号字面量
+// （无论当初为什么写，都是有效的分类探针），加上每个的
+// 确定性反斜杠改写，让运行覆盖套件从没刻意写过的输入。
+// 输出排序去重，让同一份语料
+// 能被树的两个修订版各自分类。
 import { readFileSync, writeFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 

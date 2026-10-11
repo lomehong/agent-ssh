@@ -3,23 +3,23 @@ import type { Client, ClientChannel } from 'ssh2';
 import type { Profile } from '../types.js';
 
 /**
- * Port-forwarding manager (agent-ssh T-06): local (-L), remote (-R) and dynamic
- * (-D, SOCKS5 CONNECT) tunnels over one SSH connection, with explicit lifecycle.
+ * 端口转发管理器（agent-ssh T-06）：一条 SSH 连接上的 local（-L）、
+ * remote（-R）与 dynamic（-D，SOCKS5 CONNECT）隧道，生命周期显式。
  *
- * Authorization model (layered, matching the plan):
- * - `forward:open` classifies destructive (classifier synthetic floor), so the
- *   role×tier matrix and the approval gate apply to every tunnel — a `viewer`
- *   holds no destructive class anywhere, which IS "viewer 禁转发".
- * - The denylist matches the synthesized command string, which embeds the full
- *   listen/target pair — an operator rule like `internal-db:5432` refuses the
- *   tunnel before it opens, the same way SFTP paths are denied.
- * - Dynamic forwarding is additionally gated by `allowDynamicForwarding`
- *   (default false): an open SOCKS listener is a generic egress path and stays
- *   opt-in even where destructive commands are approved.
+ * 授权模型（分层，与计划一致）：
+ * - `forward:open` 归类为 destructive（分类器合成下限），因此
+ *   角色×层级矩阵与审批门作用于每条隧道——`viewer` 在任何层级
+ *   都不持有 destructive 类别，这正是「viewer 禁转发」。
+ * - denylist 匹配合成命令字符串，其中嵌有完整的
+ *   监听/目标对——`internal-db:5432` 这样的运维规则能在隧道
+ *   建立前拒绝它，与 SFTP 路径被拒同路。
+ * - dynamic 转发额外受 `allowDynamicForwarding` 把门
+ *   （默认 false）：开放的 SOCKS 监听是不分目标的出网通道，
+ *   即使破坏性命令可被批准，它也保持 opt-in。
  *
- * The SOCKS5 implementation below is CONNECT-only with no auth, hand-rolled
- * because the only npm option (mscdex/socksv5) is unmaintained and the protocol
- * subset a tunnel needs is ~60 lines — a supply-chain decision, recorded here.
+ * 下面的 SOCKS5 实现仅 CONNECT、无认证、手写，
+ * 原因是 npm 上唯一选项（mscdex/socksv5）无人维护，而隧道需要的
+ * 协议子集约 60 行——一条供应链决定，在此登记。
  */
 
 export type ForwardMode = 'local' | 'remote' | 'dynamic';
@@ -27,9 +27,9 @@ export type ForwardMode = 'local' | 'remote' | 'dynamic';
 export interface ForwardInfo {
   id: string;
   mode: ForwardMode;
-  /** What this machine listens on. */
+  /** 本机监听什么。 */
   listen: string;
-  /** Where the far end lands (absent until a dynamic tunnel's peer names one). */
+  /** 远端落到哪（dynamic 隧道的对端点名之前为空）。 */
   target?: string;
   activeConnections: number;
   closed: boolean;
@@ -61,7 +61,7 @@ interface ForwardEntry {
   sockets: Set<Socket>;
 }
 
-/** Wire one local socket to one SSH channel, counting the pair on the entry. */
+/** 把一个本地套接字接到一条 SSH 通道，并在条目上为这对计数。 */
 function pairSockets(entry: ForwardEntry, a: Socket, b: ClientChannel): void {
   entry.active++;
   entry.sockets.add(a);
@@ -74,7 +74,7 @@ function pairSockets(entry: ForwardEntry, a: Socket, b: ClientChannel): void {
   a.pipe(b).pipe(a);
   const kill = () => {
     a.destroy();
-    // ssh2 channels have close(); a bare Duplex (tests) has destroy.
+    // ssh2 通道有 close()；裸 Duplex（测试）有 destroy。
     if (typeof (b as { close?: () => void }).close === 'function') (b as { close: () => void }).close();
     else b.destroy();
   };
@@ -121,9 +121,9 @@ export class ForwardManager {
     const bindHost = request.listenHost ?? '127.0.0.1';
     const entry = this.newEntry('remote', bindHost, request.listenPort, request.targetHost, request.targetPort);
     const client = this.client();
-    // One 'tcp connection' listener per client dispatches by bound port; the
-    // manager registers it lazily and keeps it for the life of the client —
-    // ssh2 gives no per-request correlation beyond the destination port.
+    // 每客户端一个 'tcp connection' 监听器，按绑定端口分发；
+    // 管理器惰性注册它并在客户端存续期保留——
+    // 除目的端口外 ssh2 不提供逐请求的关联。
     client.on('tcp connection', (info, accept, reject) => {
       const target = [...this.entries.values()].find(
         (e) => e.mode === 'remote' && !e.closed && e.listenPort === info.destPort,
@@ -171,8 +171,8 @@ export class ForwardManager {
     if (!entry) return { outcome: 'not-found' };
     entry.closed = true;
     if (entry.mode === 'remote') {
-      // Best effort: the server may refuse the cancel (or never answer); the
-      // local bookkeeping is authoritative for this manager either way.
+      // 尽力而为：服务器可能拒绝取消（或永不回答）；
+      // 无论哪种，本地簿记对本管理器都是权威。
       await new Promise<void>((resolve) => {
         try {
           this.opts.getClient().unforwardIn(entry.listenHost, entry.listenPort, () => resolve());
@@ -231,10 +231,10 @@ export class ForwardManager {
 }
 
 /**
- * Minimal SOCKS5 server handshake on one client socket: method negotiation
- * (no-auth only), then CONNECT. Everything else — BIND, UDP, auth methods —
- * replies with the standard error code and drops, because a forwarding tool
- * that needs BIND should say so in a design, not in a protocol corner.
+  * 单个客户端套接字上的最小 SOCKS5 服务器握手：方法协商
+  * （仅 no-auth），然后 CONNECT。其余一切——BIND、UDP、其他认证方式——
+  * 以标准错误码应答后断开：需要 BIND 的转发工具
+  * 应该在设计文档里说，而不是藏在协议角落。
  */
 function socksConnect(socket: Socket, onConnect: (host: string, port: number) => void): void {
   let stage: 'greet' | 'request' = 'greet';

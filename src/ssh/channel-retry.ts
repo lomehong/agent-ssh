@@ -1,22 +1,22 @@
 /**
- * Retry opening an SSH channel a couple of times before giving up.
+ * 放弃之前，把「打开 SSH 通道」重试几次。
  *
- * Not every server allocates a channel reliably on the first ask. Dropbear in
- * particular fails intermittently right after a previous channel was released —
- * reproduced with raw ssh2, no code of ours involved:
+ * 不是每台服务器都能在第一次请求时可靠地分配通道。Dropbear 尤其如此——
+ * 在上一个通道刚释放后它会间歇性失败。用原生 ssh2 即可复现，
+ * 与我们的代码无关：
  *
  *   cycle #1: ok
  *   cycle #2: FAIL - Unable to request a pseudo-terminal
  *   cycle #3: ok
  *
- * The same happens for the SFTP subsystem. Without a retry, opening a session
- * or transferring a file is a coin flip on a whole class of hosts (embedded
- * targets, routers, minimal images) — and the failure surfaces to the user as a
- * flat "failed to open interactive session".
+ * SFTP 子系统同理。不重试的话，在整类主机上（嵌入式设备、
+ * 路由器、极简镜像）开会话或传文件就是掷硬币——
+ * 而且失败只会以一句干巴巴的
+ * 「failed to open interactive session」呈现给用户。
  *
- * Retrying an *open* is safe: a failed open created nothing. The budget is
- * deliberately small, so a genuinely broken host still fails fast rather than
- * stalling behind retries.
+ * 重试*打开*是安全的：失败的打开没有创建任何东西。预算刻意
+ * 很小，因此真正坏掉的主机仍会快速失败，
+ * 而不是卡在重试后面。
  */
 export interface RetryOptions {
   attempts?: number;

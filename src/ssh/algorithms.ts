@@ -32,30 +32,30 @@ export const FROZEN_ALGORITHMS = {
   ],
 };
 
-// ─── Profile overrides (network-device compatibility axis) ──────────────────
+// ─── Profile 覆盖（网络设备兼容轴）──────────────────────────
 //
-// The frozen list above is the security floor. A profile may widen it for hosts
-// that only speak legacy SSH (older network gear ships ssh-rsa / CBC / DH-group1
-// era defaults), and that widening is deliberately resolved HERE rather than
-// handed to ssh2 as `{ append, prepend, remove }`:
+// 上面的冻结清单是安全下限。profile 可以只为「只会说老式 SSH 的主机」放宽它
+// （老旧网络设备的出厂默认还是 ssh-rsa / CBC / DH-group1 年代的产物），
+// 而这种放宽刻意在这里解析，而不是把 `{ append, prepend, remove }`
+// 直接交给 ssh2：
 //
-// ssh2 applies an adjustment object against *its own* defaults, not against
-// FROZEN_ALGORITHMS — so a passthrough would silently re-admit every algorithm
-// the frozen list exists to refuse, in the same category the operator thought
-// they were scoping. Resolving against the frozen base here keeps the allowlist
-// the single base of record: an override can only name what it changes, and
-// every connection still receives a fully-resolved exact list.
+// ssh2 把调整对象应用于*它自己的*默认值，
+// 而不是 FROZEN_ALGORITHMS——因此原样透传会悄悄放回
+// 冻结清单本要拒绝的每一套算法，而且就在运维以为
+// 自己限定住的类别里。在这里对照冻结基线解析，让白名单保持
+// 唯一的记录基准：覆盖只声明它改了什么，
+// 而每条连接拿到的仍是完整解析后的精确清单。
 
 export type AlgorithmCategory = 'kex' | 'cipher' | 'serverHostKey' | 'hmac';
 
-/** Add or drop names relative to the frozen list for one category. */
+/** 相对冻结清单为一个类别增删名称。 */
 export interface AlgorithmListAdjustment {
   append?: string[];
   prepend?: string[];
   remove?: string[];
 }
 
-/** Exact list replaces the frozen category; adjustment form modifies it. */
+/** 精确清单直接替换冻结类别；调整形式则在其上修改。 */
 export type AlgorithmOverride = Partial<
   Record<AlgorithmCategory, string[] | AlgorithmListAdjustment>
 >;
@@ -72,17 +72,17 @@ function dedupe(list: string[]): string[] {
 }
 
 /**
- * Resolve a profile's algorithm override against the frozen allowlist.
+ * 相对冻结白名单解析某个 profile 的算法覆盖。
  *
- * Deny-wins semantics: the assembled list (frozen + prepend + append) is
- * filtered by `remove` LAST, so an explicit remove cannot be resurrected by an
- * append in the same override, and a prepended name that is also removed stays
- * removed. Removal is the security-relevant operation, so it wins. Deduplication
- * keeps first occurrence on the assembled order, which makes prepend (highest
- * preference) deterministic.
+ * 拒绝优先语义：拼装清单（冻结 + prepend + append）
+ * 最后才按 `remove` 过滤，因此同一覆盖里 append
+ * 复活不了显式的 remove，被 remove 的 prepend 名称也保持移除。
+ * 移除是安全相关操作，所以它赢。去重按拼装顺序保留首次出现，
+ * 这让 prepend（最高优先）具有确定性。
  *
- * Returns fresh arrays every call — the frozen list is never mutated, so one
- * profile's override cannot leak into another profile or into module state.
+ *
+ * 每次调用都返回新数组——冻结清单从不被修改，
+ * 一个 profile 的覆盖因此不会泄入另一个 profile 或模块状态。
  */
 export function resolveAlgorithms(override?: AlgorithmOverride): ResolvedAlgorithms {
   const resolved: ResolvedAlgorithms = {

@@ -1,8 +1,13 @@
 id: T-12
 title: 上游 SBOM 深对账 + Linux 容器内全量测试全绿
 level: L1
-status: 待执行
-root: E:\\Development\\Code\\nodejs\\agent-ssh
+status: 待确认
+root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 08:41:59
+claimedBy: digital-architect
+reportedAt: 2026-10-11 09:20:33
+reportSummary: ①SBOM 深对账:上游 v2.18.0 release sbom.cdx.json 167 组件,本地安装树 0 缺失;4 漂移全解释(2=T-01 安全补丁有意偏离 sdk/proxy-addr,2=传递依赖解析差异,无安全通告)②Linux 容器内 unit+e2e 全绿:80 文件/1912 测试/0 败(node:22-slim+host.docker.internal 连 fixtures+npm run build)③过程中发现并修正 e2e 过时断言(14→23 工具面:tools.e2e/introspection 钉死表/http 计数)④集成 Linux 拓扑属 compose runner 模式(上游 CI 职责),宿主 Windows 集成已绿。自报待主人 confirm。
 events:
   - 2026-10-11 08:41:59 | create | by=lome | level=L1 | accept=①下载上游 v2.18.0 release SBOM,与本地安装树关键依赖对账,结论入报告②Linux 容器(host.docker.internal 连 fixtures)跑全量测试,Windows 平台差失败清零,输出留痕——出处：T-01/T-12 残留(主人裁决不接受)
+  - 2026-10-11 09:20:33 | claim | by=digital-architect
+  - 2026-10-11 09:20:33 | report | by=digital-architect

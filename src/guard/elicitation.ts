@@ -6,39 +6,39 @@ export interface ApprovalResult {
   approved: boolean;
   approver?: string;
   /**
-   * Set when the client could not be asked at all, as opposed to being asked
-   * and saying no. Both deny the command; only one of them is the user's doing,
-   * and telling the reader they declined something they never saw sends them
-   * looking in the wrong place.
+   * 在「根本无法询问客户端」时设置，区别于「问了但被拒」。
+   * 两者都拒绝命令；只有其一是用户亲手所为，
+   * 告诉读者「拒绝了一条他从未见过的命令」会让他
+   * 去找错地方。
    */
   unavailable?: string;
 }
 
 /**
- * How long a person has to read a destructive command and decide.
+  * 一个人读完一条破坏性命令并做出决定，有多长时间。
  *
- * Explicit because the SDK's DEFAULT_REQUEST_TIMEOUT_MSEC is 60 seconds, and
- * inheriting it here set a human's reading time from a default chosen for
- * machine round trips. An operator who stepped away, or who was working out an
- * unfamiliar dialog, had the request expire underneath them and the command
- * refused (#91).
+  * 显式声明是因为 SDK 的 DEFAULT_REQUEST_TIMEOUT_MSEC 是 60 秒，
+  * 在这里继承它，等于让人类的阅读时间继承一个为
+  * 机器往返选的默认值。走开一会儿、或在琢磨一个
+  * 陌生对话框的运维，会眼睁睁看着请求过期、命令
+  * 被拒（#91）。
  *
- * Ten minutes is long enough to be interrupted and come back, and still bounded
- * so a client that never answers cannot pin a tool call open forever.
+  * 十分钟长到足以被打断后回来，仍有边界，
+  * 让永不作答的客户端无法把一次工具调用永久吊着。
  */
 export const APPROVAL_TIMEOUT_MS = 600_000;
 
 /**
- * Ask the MCP client to confirm a destructive or privileged command.
+  * 请 MCP 客户端确认一条破坏性或特权命令。
  *
- * Uses the SDK's typed `Server.elicitInput()` rather than a hand-built
- * `elicitation/create` envelope, so a protocol change breaks the build instead
- * of silently disabling the gate that guards every destructive command.
+  * 用 SDK 的类型化 `Server.elicitInput()` 而不是手搓的
+  * `elicitation/create` 信封，让协议变更炸掉构建，
+  * 而不是静默废掉守着每条破坏性命令的那道门。
  *
- * Fails closed: any error (client without elicitation support, transport
- * failure, timeout, malformed reply) denies the command. The failure is logged,
- * because a gate that always denies for an unnoticed reason is its own kind of
- * outage.
+  * fail-closed：任何错误（客户端不支持 elicitation、传输
+  * 失败、超时、畸形应答）都拒绝命令。失败要记日志，
+  * 因为一个因无人注意的原因而总是拒绝的门，
+  * 本身就是另一种故障。
  */
 export async function requestApproval(
   server: McpServer,
@@ -60,23 +60,23 @@ export async function requestApproval(
               title: 'Approve this command?',
             },
           },
-          // `confirm` is deliberately not required. The protocol already carries
-          // the decision in `action`, where accept and decline are distinct
-          // results, so requiring a boolean on top asked the user to say the
-          // same thing twice — and clients render a required boolean as a
-          // checkbox beside the accept/decline row. Choosing Accept without
-          // ticking it submits a form missing a required field, so the client
-          // can produce no valid result and sends `cancel`, which arrived here
-          // as "User did not approve this command". The user picked Approve and
-          // was told they had declined (#91).
+          // 刻意不要求 `confirm`。协议已在 `action` 里携带
+          // 决定，accept 与 decline 是不同的结果，再要求一个布尔等于
+          // 让用户把同一句话说两遍——而且客户端会把必填布尔
+          // 渲染成 accept/decline 行旁边的复选框。点了 Accept
+          // 却没勾选，提交的是缺必填字段的表单，客户端
+          // 产不出有效结果、只能发 `cancel`，到这里就成了
+          // "User did not approve this command"。用户选的是批准，
+          // 却被告知他拒绝了（#91）。
+          //
         },
       },
       { timeout: APPROVAL_TIMEOUT_MS },
     );
 
-    // `action` decides. An explicit `confirm: false` from a client that still
-    // sends the field is honoured, because refusing to run on an explicit "no"
-    // costs nothing and reading it as approval would be indefensible.
+    // 由 `action` 决定。客户端仍发送该字段时的显式 `confirm: false`
+    // 会被尊重——对明确的「不」拒绝执行毫无成本，
+    // 把它读成批准则无可辩解。
     if (result.action === 'accept' && result.content?.confirm !== false) {
       return { approved: true, approver: 'mcp-client' };
     }
@@ -85,19 +85,19 @@ export async function requestApproval(
     const timedOut = err instanceof McpError && err.code === ErrorCode.RequestTimeout;
     const cause = err instanceof Error ? err.message : String(err);
 
-    // stderr still gets it for the operator's logs, but it cannot be the only
-    // copy: for a stdio MCP server that is a client log file nobody reads, so
-    // the caller gets the diagnosis too and can put it in front of the user.
+    // stderr 仍会打一份进运维日志，但它不能是唯一一份：
+    // 对 stdio MCP 服务器那是一份没人读的客户端日志文件，
+    // 所以调用方也拿到诊断，才能摆到用户面前。
     console.error(
       `Approval request failed for ${evaluation.commandClass} command on "${profileName}" — denying. ` +
       `${timedOut ? `No answer within ${APPROVAL_TIMEOUT_MS / 1000}s.` : 'Does this client support elicitation?'} ` +
       `Cause: ${cause}`,
     );
 
-    // Naming the cause rather than guessing at it. This message was introduced
-    // to stop APPROVAL_DENIED covering two different failures, and then led with
-    // "a client without elicitation support" for every error the catch saw,
-    // timeouts included — the same defect, inside its own fix.
+    // 点名原因，而不是瞎猜。这条消息的引入是为了不让
+    // APPROVAL_DENIED 一词遮住两种不同的失败，结果它自己对
+    // catch 到的每个错误都冠以「客户端不支持 elicitation」，
+    // 超时也不例外——同一个缺陷，长在修复自己的补丁里。
     return {
       approved: false,
       unavailable: timedOut

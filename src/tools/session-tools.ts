@@ -8,21 +8,21 @@ import { syntheticSuccess, textResult } from './results.js';
 import type { ToolDeps, Pipeline } from './pipeline.js';
 import type { PolicyEvaluation } from '../types.js';
 
-/** Connection and session discovery/lifecycle tools. */
+/** 连接与会话的发现/生命周期工具。 */
 /**
- * The evaluation recorded for a session release.
+ * 会话释放所记录的评估结论。
  *
- * Releasing a session is audited but never refused, which is why this is a constant rather
- * than an engine call. The first version of this routed the close through `runAudited`, and
- * that made the stop *refusable*: `session:close <name>` classifies as `safe`, so a
- * `readOnly` profile — which can open a background session, because a `tail -f` classifies
- * `read-only` — was denied permission to close it, and had no other way to stop the
- * command for an hour. `ask-all` prompted on every close, and an exhausted
- * `commandQuotaPerDay` wedged the profile entirely.
+ * 释放会话是审计的但从不拒绝，正因如此它是一个常量而不是
+ * 一次引擎调用。初版把关闭路由经 `runAudited`，那让停止变得
+ * *可拒绝*：`session:close <name>` 归类为 `safe`，于是
+ * `readOnly` profile——它能开后台会话，因为 `tail -f` 归类
+ * `read-only`——会被拒绝关闭它的许可，而且一小时内
+ * 再无别的办法停掉那条命令。`ask-all` 对每次关闭都提示，
+ * 耗尽的 `commandQuotaPerDay` 更是把整个 profile 卡死。
  *
- * A control whose refusal mode is "the thing you asked me to stop keeps running" is worse
- * than the unaudited stop it replaced. The record was the part worth having; the veto was
- * not. `ruleId` says so, so the log distinguishes this from an engine `allow`.
+ * 一个「拒绝的后果是你要停的东西继续跑」的控制，比它替代的
+ * 未经审计的停止更糟。记录是值得留的部分；否决权不是。
+ * `ruleId` 写明了这一点，日志因此能把这与引擎的 `allow` 区分开。
  */
 const RELEASE: PolicyEvaluation = {
   decision: 'allow',
@@ -32,7 +32,7 @@ const RELEASE: PolicyEvaluation = {
   reason: 'A session release is audited but not policy-gated; see SECURITY.md.',
 };
 
-/** What to append to the caller's confirmation for each outcome. */
+/** 每种结果下追加到调用方确认信息之后的内容。 */
 const CLOSE_NOTES: Record<CloseOutcome, string> = {
   closed: '',
   unsignalled: COULD_NOT_SIGNAL,
@@ -53,13 +53,13 @@ export function registerSessionTools(
     {},
     { readOnlyHint: true },
     async () => {
-      // The one tool that reads only `listAllProfiles()` and so never touches
-      // `getProfile`. Without this it answered an unconfigured server with a
-      // zero-length success — on the tool whose own description sends an agent here
-      // first ("discover available hosts before running commands"), and on the one
-      // channel where the startup stderr warning is not visible. The agent saw "no
-      // hosts" rather than "not configured". Refusing here is what makes the claim in
-      // the README, the changeset and the startup warning true of every tool.
+      // 唯一只读 `listAllProfiles()`、从不碰 `getProfile` 的工具。
+      // 没有这个检查，它会以零长度的成功回答未配置的服务器——
+      // 而这个工具自己的描述就让 agent 先来这里
+      // （「运行命令前先发现可用主机」），而且它还是唯一一条
+      // 看不到启动 stderr 告警的通道。agent 看到「没有主机」
+      // 而不是「未配置」。在这里拒绝，才让 README、changeset
+      // 与启动告警里的说法对每个工具都成立。
       registry.assertConfigured();
       const connections = registry.listConnections();
       const profiles = registry.listAllProfiles();
@@ -102,19 +102,19 @@ export function registerSessionTools(
       command: z.string().optional().describe('Command for background sessions'),
       profile: z.string().optional().describe('Profile name (uses default if omitted)'),
     },
-    // No annotations object here on purpose. The SDK's overload resolution
-    // treats an EMPTY object as a Zod raw shape (isZodRawShape returns true for
-    // `{}`), so passing `{}` in the annotations slot made it consume the
-    // callback slot instead — leaving this tool registered with no handler and
-    // failing every call with "cb is not a function".
+    // 这里刻意不放 annotations 对象。SDK 的重载决议把空对象
+    // 当作 Zod raw shape（isZodRawShape 对 `{}` 返回 true），
+    // 在 annotations 槽位传 `{}` 会让它吞掉回调槽位——
+    // 工具注册上了却没有 handler，
+    // 每次调用都报 "cb is not a function"。
     async ({ name, type, command, profile }, extra) => {
       const cleanName = sanitizeSessionName(name);
       const isBackground = type === 'background' && Boolean(command);
 
-      // A background session runs a caller-supplied command, so that command is
-      // what policy must evaluate. An interactive session runs no command yet,
-      // but opening a stateful shell is still a lifecycle event worth auditing
-      // — that branch used to produce no record at all.
+      // 后台会话运行的是调用方提供的命令，所以那条命令才是
+      // 策略要评估的对象。交互式会话暂时不运行任何命令，
+      // 但打开一个有状态 shell 仍是值得审计的生命周期事件
+      // ——该分支过去一条记录都不产生。
       return runAudited(
         isBackground ? command! : `session:open ${type} ${cleanName}`,
         {
@@ -151,11 +151,11 @@ export function registerSessionTools(
     { destructiveHint: true },
     async ({ name, profile }, extra) => {
       const cleanName = sanitizeSessionName(name);
-      // Both the profile name and the connection are resolved inside the try below. They
-      // used to be resolved above it, so a refusal — an unconfigured server, an unknown
-      // profile name — escaped before `auditFailure` could record that a release was
-      // attempted. The placeholders are what the record is filed under if resolution is
-      // itself what failed.
+      // profile 名与连接都在下面的 try 里解析。它们过去在
+      // try 之上解析，于是一次拒绝——未配置的服务器、未知的
+      // profile 名——会在 `auditFailure` 记下「曾尝试释放」之前逃逸。
+      // 若解析本身就是失败原因，记录就登记在这些占位符名下。
+      //
       let profileName = profile ?? '(default)';
       const ctx = makeCtx(extra, profileName, cleanName);
       let command = `session:close unknown ${cleanName}`;
@@ -165,11 +165,11 @@ export function registerSessionTools(
         profileName = defaultProfileName(profile);
         ctx.profile = profileName;
         const conn = await resolveConn(profile);
-        // Recorded with the session's kind, so a remote SIGKILL is greppable in the log and
-        // distinguishable from ending a local shell — `open-session` encodes its type the
-        // same way.
-        // Through `toInfo()` rather than an `instanceof` check: the type is public API, and a
-        // tool handler reaching for a constructor identity is the layer leak this repo's own
+        // 按会话的类型记录，于是远程 SIGKILL 在日志里可 grep，
+        // 与结束本地 shell 可区分——`open-session` 用同一方式
+        // 编码其类型。
+        // 经 `toInfo()` 而不是 `instanceof` 检查：该类型是公共 API，
+        // 工具 handler 去够构造器身份，正是本仓库自己的规则
         // rules call out.
         const kind = conn.getSession(cleanName)?.toInfo().type ?? 'unknown';
         command = `session:close ${kind} ${cleanName}`;

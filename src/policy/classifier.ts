@@ -3,60 +3,60 @@ import { AWK_NAMES, readAwkInvocation, type AwkFindings } from './awk.js';
 import { matchesGrammar, type ArgGrammar } from './reader-grammar.js';
 
 /**
- * Anything through which the shell can start a second command.
+ * shell 经其启动第二条命令的任何东西。
  *
- * This gate decides whether an allowlisted binary counts as read-only, and the
- * allowlist only vouches for the binary — never for what a shell might run
- * beside it. It used to test /[>;|]/, which let `ls $(touch /tmp/x)` through as
- * read-only: `ls` is allowlisted, no listed metacharacter appears, and the
- * remote shell expands the substitution and runs the inner command anyway
- * (GHSA-r8hm-vpm8-cfh6).
+ * 此门决定白名单中的二进制是否算只读，
+ * 白名单只为二进制背书——从不为 shell 可能顺带跑的东西。
+ * 过去测 /[>;|]/，使 ls $(touch /tmp/x) 以只读通过：
+ * ls 在白名单、无列出的元字符出现，而远端 shell 仍展开替换、
+ * 跑内部命令（GHSA-r8hm-vpm8-cfh6）。
  *
- * Listing every dangerous construct is a losing game — `$()`, backticks,
- * `<(...)`, `${x:=...}`, `&&`, a bare newline — so this refuses every character
- * with syntactic meaning to the shell instead, and `$` wholesale rather than
- * just `$(`. The cost is that `echo $HOME` is no longer classified read-only.
- * That is the right trade for the tool whose entire promise is that it cannot
- * write: run-command still accepts it under policy.
+ *
+ * 列举每个危险构造是输定的游戏——$()、反引号、<(...)、
+ * ${x:=...}、&&、裸换行——所以这里改为拒绝一切对 shell
+ * 有语法意义的字符，且 $ 整体拒绝而非仅 $(。
+ * 代价是 echo $HOME 不再被归类只读。
+ * 对整个承诺是「不能写」的工具这是正确的取舍：
+ * run-command 在策略下仍接受它。
  */
 const SHELL_CONTROL_CHARS = /[;&|<>`$(){}\n\r]/;
 
 /**
- * How a host shell reads a backslash.
+ * 主机 shell 如何读反斜杠。
  *
- * `posix`: a backslash escapes the next character — inside double quotes,
- * only `` $ ` " \ `` or a newline. `windows`: a backslash is an ordinary
- * character everywhere, which is cmd.exe's rule; it has no backslash escapes
- * at the shell level at all.
+ * posix：反斜杠转义下一字符——双引号内仅 $、反引号、双引号、
+ * 反斜杠本身或换行。windows：反斜杠处处是普通字符，
+ * 即 cmd.exe 的规则；shell 层完全无反斜杠转义。
  *
- * The classifier cannot know which shell sits at the far end of the
- * connection, so a command containing a backslash is read under both
- * dialects and held to the stricter reading (GHSA-972x-g47g-3922).
+ *
+ * 分类器无法知道连接远端是什么 shell，含反斜杠的命令
+ * 因此按两种方言读取并取更严格的读法（GHSA-972x-g47g-3922）。
+ *
  */
 type ShellDialect = 'posix' | 'windows';
 
 /**
- * The first word in `command` carrying an unquoted, unescaped shell glob
- * character — `*`, `?` or `[` — or null when no word does.
+ * command 中第一个携带未引号、未转义 shell 通配字符——
+ * 星号、问号或左方括号——的词，无则 null。
  *
- * A glob character is not a shell control character (it starts no command),
- * so `SHELL_CONTROL_CHARS` rightly ignores it — but the host shell expands
- * it before the binary sees argv, and the grammar matcher reads dequoted
- * words, where `find -name '*.conf'` and `find -name *.conf` have become the
- * same string. They are not the same command: the quoted word is one operand
- * of data, the unquoted one expands to every matching filename and turns one
- * counted operand into several real ones (`uniq /root/.ssh/id_ed25519*`
- * counted one operand; measured on debian:12, the expansion made the `.pub`
- * uniq's OUTFILE and it was overwritten with the private key). This scan
- * keeps the tokeniser's own quote and escape state, so the judgement happens
- * at the one layer that can still tell the two apart.
+ * 通配字符不是 shell 控制字符（它不开启命令），
+ * SHELL_CONTROL_CHARS 正确地忽略它——但主机 shell 在二进制
+ * 看到 argv 之前展开它，文法匹配器读去引号的词，
+ * find -name 加引号与不加引号的同一字符串已无分别。
+ * 它们不是同一命令：带引号的词是一个数据操作数，
+ * 不带引号的展开为每个匹配文件名，把一个计数操作数
+ * 变成多个真实的（uniq 加通配路径只计一个操作数；
+ * debian:12 实测：展开使 .pub 成为 uniq 的 OUTFILE，
+ * 被私钥覆写）。此扫描保留分词器自己的引号与转义状态，
+ * 判断因此发生在仍能区分两者的唯一一层。
  *
- * Deliberately word-scoped and whole-command: a glob inside `$()` or
- * backticks never reaches this helper's caller (those carry
- * SHELL_CONTROL_CHARS and return early), and a glob in the command word
- * itself makes the allowlist lookup miss, so the caller — the allowlist
- * branch, which only runs when the command words matched a READERS key
- * exactly — never sees one either.
+ *
+ * 刻意词域且全命令：$() 或反引号内的通配永远到不了
+ * 本助手的调用方（那些携带 SHELL_CONTROL_CHARS 并提前返回），
+ * 命令词本身的通配使白名单查找 miss，所以调用方——
+ * 只在命令词精确匹配 READERS 键时才运行的白名单分支——
+ * 也看不到。
+ *
  */
 function firstUnquotedGlobWord(command: string, honorQuotes = true, dialect: ShellDialect = 'posix'): string | null {
   let quote: string | null = null;
@@ -66,14 +66,14 @@ function firstUnquotedGlobWord(command: string, honorQuotes = true, dialect: She
 
   for (const ch of command) {
     if (escaped) {
-      // A backslash-quoted glob character is data the shell passes through.
+      // 反斜杠引出的通配字符是 shell 原样传递的数据。
       word += ch;
       escaped = false;
       continue;
     }
     if (quote) {
-      // Backslash is literal inside single quotes; inside double quotes it
-      // escapes — the same distinction the tokeniser makes.
+      // 反斜杠在单引号内是字面量；双引号内转义——
+      // 与分词器的区分相同。
       if (dialect === 'posix' && ch === '\\' && quote === '"') { escaped = true; continue; }
       if (ch === quote) quote = null;
       else word += ch;
@@ -91,64 +91,64 @@ function firstUnquotedGlobWord(command: string, honorQuotes = true, dialect: She
     word += ch;
   }
 
-  // A quote left open at the end is not a command a shell would run, and the
-  // tokeniser re-reads such a string with quotes demoted to text (see
-  // `tokenizeSegmentsDetailed`). Judge it the same way here: in that reading
-  // the glob character is unquoted.
+  // 末尾留开的引号不是 shell 会跑的命令，分词器把这样的串
+  // 以引号降级为文本重读（见 tokenizeSegmentsDetailed）。
+  // 此处同样判断：那个读法里通配字符是未引号的。
+  //
   if (honorQuotes && quote !== null) return firstUnquotedGlobWord(command, false, dialect);
   return globInWord ? word : null;
 }
 
 /**
- * The binaries this classifier will vouch for, and what it vouches for about them.
  *
- * Three questions, kept apart because one Set answering all of them is how #217
- * turned the interpreter carrier scan off for two verbs by adding them to a list
- * about classes:
  *
- *   readOnly         does this binary only read?  -> decides the class
- *   operandsAreData  can its operands hide a command?  -> decides whether the
- *                    carrier scan runs
- *   grammar          which of its argv words does `matchesGrammar` accept?  ->
- *                    decides `read-only` versus `safe`
+ * 三个问题，分开是因为一个回答全部的 Set 正是 #217 如何
+ * 通过把两个动词加进关于类别的列表、把解释器载体扫描
+ * 对两个动词关掉的方式：
  *
- * `readOnly` and `operandsAreData` are `true` for every entry today. The value is
- * not the contents but that the type will not let the next person add a name
- * without answering all three.
+ *   readOnly         此二进制只读吗？  -> 决定类别
+ *   operandsAreData  其操作数能藏命令吗？  -> 决定载体扫描是否运行
+ *   grammar          matchesGrammar 接受哪些 argv 词？  ->
+ *                    决定 read-only 还是 safe
  *
- * `grammar` decides only that one boundary, not the class outright: a command
- * whose grammar rejects falls no lower than `safe`, and `DISQUALIFYING_ARGS`
- * still runs before the allowlist branch, so it can still raise a rejected — or
- * an accepted — reader past `safe` (`sort -o /tmp/x /etc/passwd` is
- * `destructive` regardless of what `sort`'s grammar says). An `'any'` grammar
- * accepts every word and carries an `audit` string saying why that trust is
- * believed sound; every other entry lists the flags and operand shape its
- * grammar accepts, and starts with none of either — see `reader-grammar.ts`.
  *
- * Two mechanisms answer the second question outside this table and are not
- * affected by it — `DISQUALIFYING_ARGS` and `FIND_EXEC_FLAGS` — which is why
- * `find` can carry `operandsAreData: true` while `find … -exec sudo id +` is
- * still `privileged`.
+ * 今天每个条目 readOnly 和 operandsAreData 都是 true。
+ * 价值不在内容而在类型不允许下一个人不加回答全部三个
+ * 就添加名字。
  *
- * The two-word entries are looked up only for the class: `operandsAreData` reads
- * a single word, so those rows never reach the second question. Their `grammar`
- * reads the words after the two-word prefix (`classifyOuter` applies the offset).
+ * grammar 只决定那一个边界，不直接决定类别：文法拒绝的命令
+ * 落得不比 safe 低，且 DISQUALIFYING_ARGS 仍在白名单分支之前运行，
+ * 所以它仍能把一个被拒的——或被接受的——读者抬过 safe
+ *（sort -o /tmp/x /etc/passwd 无论 sort 的文法说什么都是 destructive）。
+ * any 文法接受每个词，携带 audit 字符串说明为何相信该信任可靠；
+ * 其余每个条目列出其文法接受的旗标和操作数形状，且从零开始
+ *——见 reader-grammar.ts。
+ *
+ *
+ * 两个机制在此表之外回答第二个问题且不受其影响——
+ * DISQUALIFYING_ARGS 和 FIND_EXEC_FLAGS——这正是 find 能携带
+ * operandsAreData: true 而 find 后接 exec sudo id 仍是 privileged
+ * 的原因。
+ *
+ * 双词条目只为类别查找：operandsAreData 读单词，
+ * 所以那些行永远到不了第二个问题。其 grammar 读双词前缀之后的词
+ *（classifyOuter 应用偏移）。
  */
 const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; grammar: ArgGrammar }> = {
-  // arp: `-a`/`-e`/`-n`/`-v` only display; `-H`/`-t` (hardware type) and `-i`
+  // arp：-a、-e、-n、-v 仅显示；-H、-t（硬件类型）和 -i
   // (interface) filter the display, not set anything. Excludes `-d` (deletes an
   // entry), `-s`/`-S` (adds one — BSD man synopsis) and `-f` (loads entries from
   // a file — net-tools arp(8)). Measured: busybox --help + `arp -a`; macOS man
   // arp read; net-tools arp(8) documented only (die.net). Windows 11 build
   // 26200 measurement: `arp.exe` accepts the slash form (`/a` measured),
-  // `/d`/`/s` inferred (not run — a state-changing form is never executed to
-  // confirm it) as delete/add. A `/X` switch is an operand under this POSIX
-  // grammar and cannot be told apart from a path like `/etc`; `each` refuses
-  // any single-segment `/word` operand, with or without a trailing slash
-  // (see the design's Windows section) — the trailing-slash tolerance of
-  // `arp /d/`-style forms cannot be measured without running a state-changing
-  // form, so it is refused fail-closed. The cost is that a legitimate
-  // slash-form display like `arp /a` also falls to `safe`.
+  // /d、/s 被推断（不运行——改变状态的形态绝不执行以确认）为
+  // 删除/添加。/X 开关在此 POSIX 文法下是操作数，
+  // 与 /etc 这样的路径无法区分；each 拒绝任何单词 /word 操作数，
+  // 尾斜杠有无皆然（见设计的 Windows 节）——
+  // arp /d/ 风格形态的尾斜杠容忍度无法在不运行改变状态的
+  // 形态的情况下测量，所以 fail-closed 拒绝。代价是合法的
+  // 斜杠形式显示 arp /a 也落到 safe。
+  //
   "arp":              { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
     flags: ['-a', '-e', '-n', '-v'],
     valueFlags: ['-H', '-t', '-i'],
@@ -157,18 +157,18 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
   "cat":              { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: "measured GNU/busybox/BSD: writes file contents to stdout; BSD's -l is a transient advisory lock on cat's own stdout fd, not a lasting write, and clears at exit" } },
   "comm":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/BSD: compares two sorted files and prints the differences; no output-file operand or flag' } },
   "cut":              { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: "measured GNU/BSD: extracts byte/field ranges to stdout; --output-delimiter only changes what's printed, not where" } },
-  // date: `-u`/`--utc`/`--universal` and `-R`/`--rfc-2822`/`--rfc-email` only
-  // change display format; `-r`/`--reference` reads a file's mtime (GNU) or an
-  // epoch value (BSD); `--rfc-3339` picks a display format; `-v` (BSD) only
-  // shows the adjusted time ("not actually set", man). `-I`/`--iso-8601` is
-  // optional-value (getopt's `::`): it IS listed, in `optionalValueFlags`, so a
-  // bare `-I`/`--iso-8601` or an attached form (`-Iseconds`, `--iso-8601=date`)
-  // stays read-only — the matcher just never consumes a following SEPARATE
-  // word as its value. A bare `+FMT` operand is accepted (`max: 1`, `each:
-  // /^\+/`); excludes `-s`/`--set` (sets the clock),
-  // `-d`/`--date` (read the same way on GNU/busybox but historically set the
-  // kernel DST flag on BSD — man HISTORY / FreeBSD "added and then removed
-  // again" — dropped because implementations disagree) and BSD-only
+  // date：-u/--utc/--universal 与 -R/--rfc-2822/--rfc-email 仅改
+  // 显示格式；-r/--reference 读文件的 mtime（GNU）或 epoch 值（BSD）；
+  // --rfc-3339 选显示格式；-v（BSD）只显示调整后的时间（man 称
+  // 并未真的设置）。-I/--iso-8601 是可选值（getopt 的双冒号）：
+  // 它在 optionalValueFlags 里列出，所以裸 -I/--iso-8601 或附着形态
+  //（-Iseconds、--iso-8601=date）保持只读——匹配器只是从不把后续
+  // 分离词当它的值消费。裸 +FMT 操作数被接受（max 1，each 匹配加号）；
+  // 排除 -s/--set（设置时钟）、-d/--date（GNU/busybox 同样只读
+  // 但在 BSD 历史上设置内核 DST 标志——实现分歧故排除）
+  // 与 BSD 专有 -D、-f、-j、-n。实测：GNU d12+trixie --help、
+  // busybox（date -d 2020-01-01 显示）、macOS man；FreeBSD date(1) 仅文档。
+  //
   // `-D`/`-f`/`-j`/`-n`. Measured: GNU d12+trixie --help, busybox (`date -d
   // 2020-01-01` displayed), macOS man; FreeBSD date(1) documented only.
   "date":             { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -177,17 +177,17 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     optionalValueFlags: ['-I', '--iso-8601'],
     operands: { max: 1, each: /^\+/ } } },
   "df":               { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/busybox/BSD: reports space usage read from mounted filesystems; --output= selects columns to print, not a file' } },
-  // diff: comparison/output-format flags only, plus value flags that read or
-  // match (`-D`/`--ifdef` merges to stdout, not a file). `-C`/`-U` ARE
-  // required-value (`valueFlags`) — GNU, BSD and busybox all take the short
-  // form with a count, attached or as a separate word; only the long
-  // spellings `--context`/`--unified`/`--color` are optional-value
-  // (`optionalValueFlags`: bare or `=value`, never a separate word). Moved
-  // here from the design round's 'any' guess: `-l`/`--paginate` pipes output
-  // through
-  // `/usr/bin/pr` — measured on debian:12, removing `/usr/bin/pr` turns it into
-  // "subsidiary program '/usr/bin/pr' not found", and it runs the absolute path
-  // regardless of PATH, so it is excluded rather than listed. Measured: GNU
+  // diff：仅比较/输出格式旗标，加读取或匹配的值旗标
+  //（-D/--ifdef 合并到 stdout 而非文件）。-C/-U 是必值
+  //（valueFlags）——GNU、BSD、busybox 都收带计数的短形态，
+  // 附着或分离词；仅长拼写 --context/--unified/--color 是可选值
+  //（optionalValueFlags：裸或等号值，绝非分离词）。从设计轮的
+  // any 猜测移来：-l/--paginate 把输出经 /usr/bin/pr 管道——
+  // debian:12 实测：移除 /usr/bin/pr 后变成「找不到辅程序」，
+  // 且无论 PATH 如何都跑绝对路径，所以是排除而非列出。实测：
+  // GNU --help（d12+trixie 3.10）与 -l 行为；BSD man（也有 -l）；
+  // busybox --help（无 -l）。
+  //
   // --help (d12 + trixie 3.10) and the -l behaviour; BSD man (also has -l);
   // busybox --help (no -l).
   "diff":             { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -213,40 +213,40 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
   "du":               { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/busybox/BSD: walks a directory tree and reports disk usage; no write mode' } },
   "echo":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/BSD: writes its arguments to stdout only; a file write needs shell redirection, which the outer gate already refuses' } },
   "false":            { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU: exits 1 immediately; no I/O of any kind' } },
-  // file: display/format flags, plus value flags that name what to read (a list
-  // of files, a magic database, an exclusion). Excludes `-C`/`--compile`, which
-  // was **measured to write**: on the local macOS file 5.41, `file -C -m
-  // /usr/share/file/magic/magic` created `magic.mgc` (2256 bytes) in a
-  // throwaway directory. GNU is documented only (file(1), die.net 5.04: "-C …
-  // is the only option that creates a file") — GNU file is absent from every
-  // measured image (see spec Question 3). Also excludes `-z`/`-Z`
-  // (uncompress/uncompress-noreport — audit.md lists them as no-value):
-  // libmagic may run an external decompressor program when it isn't built
-  // against the matching decompression library (documented, not measured;
-  // the contract forbids executing another program), so they stay off this
-  // list even though audit.md's own per-entry table has them. No
-  // optional-value option in this set; `-p`/`--preserve-date` is excluded as
+  // file：显示/格式旗标，加指名读什么的值旗标（文件列表、magic 库、
+  // 排除项）。排除 -C/--compile，**实测会写**：本机 macOS file 5.41 上
+  // file -C -m /usr/share/file/magic/magic 在临时目录创建了 magic.mgc
+  //（2256 字节）。GNU 仅文档（file(1) die.net 5.04：-C 是唯一创建文件的选项）——
+  // 每个实测镜像中都无 GNU file（见 spec 问题 3）。也排除 -z/-Z
+  //（解压/解压不报告——audit.md 列为无值）：libmagic 在未针对匹配
+  // 解压库构建时可能运行外部解压器（文档化未实测；契约禁止执行
+  // 另一程序），所以即使 audit.md 自己的逐条表有它们也保持排除。
+  // 本集合无可选值选项；-p/--preserve-date 作为不必要而非不安全排除。
+  //
+  // 契约禁止执行另一程序），所以即使 audit.md 自己的逐条表有它们也保持排除。
+  // 本集合无可选值选项；-p/--preserve-date 作为不必要而非不安全排除。
+  //
   // unnecessary rather than unsafe.
   "file":             { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
     flags: ['-b', '--brief', '-c', '--checking-printout', '-i', '--mime', '--mime-type', '--mime-encoding',
       '-k', '--keep-going', '-L', '--dereference', '-h', '--no-dereference', '-n', '--no-buffer',
       '-r', '--raw', '-s', '--special-files', '-0', '--print0'],
     valueFlags: ['-f', '--files-from', '-m', '--magic-file', '-M', '-e', '--exclude', '-F', '--separator'] } },
-  // find: `exact` because find parses its own predicates rather than through
-  // getopt and recognises no clustering or abbreviation — measured, `find .
-  // -exe` is "unknown predicate `-exe`". No-value predicates/operators plus
-  // value predicates that read metadata to test against; `-printf` writes to
-  // stdout, not a file (its file-writing sibling `-fprintf` is excluded, see
-  // below). Excludes the writing/executing family — `-delete`, `-exec`,
-  // `-execdir`, `-ok`, `-okdir` (also caught by DISQUALIFYING_ARGS first),
-  // `-fprint`, `-fprint0`, `-fprintf`, `-fls` (write to a file) — and a handful
-  // of read-only-but-unnecessary predicates left out rather than
-  // exhaustively listed (`-files0-from`, `-quit`, `-prune`, `-fstype`,
-  // `-newerXY`, `-regextype`, `-D`). No operand rule: start paths and `(`/`)`
-  // pass through as operands, and the Windows `find.exe` measurement in the
-  // design round found it read-only, so no `each` rule is needed here.
-  // Measured: GNU d12 --help; busybox (`find /tmp/t -name '*.conf' -type f`
-  // ran; `-ls`/`-printf` are absent from busybox find, which refuses them
+  // find：exact，因为 find 自己解析谓词而非经 getopt，且不识别
+  // 聚簇或缩写——实测 find . -exe 报「未知谓词 -exe」。无值谓词/运算符
+  // 加读取元数据用于测试的值谓词；-printf 写 stdout 而非文件
+  //（写文件的兄弟 -fprintf 被排除，见下）。排除写/执行家族——
+  // -delete、-exec 等见下。
+  //
+  // -execdir、-ok、-okdir（也先被 DISQUALIFYING_ARGS 抓住）、
+  // -fprint、-fprint0、-fprintf、-fls（写文件）——以及少量
+  // 只读但不必要的谓词，留出而非穷尽列出（-files0-from、
+  // -quit、-prune、-fstype、-newerXY、-regextype、-D）。无操作数规则：
+  // 起始路径和括号作为操作数透传，设计轮对 Windows find.exe 的
+  // 测量发现它只读，所以此处无需 each 规则。实测：GNU d12 --help；
+  // busybox（find /tmp/t -name 加通配 -type f 跑了；busybox find
+  // 无 -ls/-printf，自身拒绝它们，fail-closed）；BSD man。
+  //
   // itself, fail-closed); BSD man.
   "find":             { readOnly: true, operandsAreData: true, grammar: { args: 'exact',
     flags: ['-H', '-L', '-P', '-print', '-print0', '-ls', '-not', '-a', '-and', '-o', '-or', '-true', '-false',
@@ -256,14 +256,14 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
       '-ctime', '-cmin', '-newer', '-anewer', '-cnewer', '-links', '-inum', '-maxdepth', '-mindepth',
       '-printf'] } },
   "free":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured busybox; documented (procps free(1)): reports memory usage parsed from /proc; every option only changes units or format' } },
-  // git branch: listing/display flags plus optional-value flags kept out of
-  // valueFlags (rule 1; `--contains HEAD`'s operand is refused by `max: 0`
-  // anyway — an accepted cost). `--sort=<key>` is the one required-value flag.
-  // `max: 0` excludes the operand form: a bare `git branch NAME` CREATES a
-  // branch (measured, `refs/heads/side` was created), so no operand budget is
-  // safe to grant here. Excludes `-d`/`-D` (deletes; `git branch -D main`
-  // measured elsewhere in this advisory round), `-m`/`-M` (moves/renames —
-  // already blocked by `max: 0` since both need an operand) and
+  // git branch：列表/显示旗标加排除在 valueFlags 之外的可选值旗标
+  //（规则 1；--contains HEAD 的操作数无论如何被 max 0 拒绝——接受的代价）。
+  // --sort=键 是唯一必值旗标。max 0 排除操作数形式：裸 git branch NAME
+  // 会*创建*分支（实测 refs/heads/side 被创建），所以这里无操作数预算
+  // 是安全的。排除 -d/-D（删除；git branch -D main 在本轮别处实测）、
+  // -m/-M（移动/改名——两者都需要操作数，已被 max 0 挡住）
+  // 和 --edit-description（打开编辑器）。实测：macOS git 2.55.0。
+  //
   // `--edit-description` (opens an editor). Measured: git 2.55.0 on macOS
   // (`git branch side` + `git for-each-ref`; `--help`).
   "git branch":       { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -271,14 +271,14 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     valueFlags: ['--sort'],
     optionalValueFlags: ['--color', '--contains', '--merged', '--no-merged'],
     operands: { max: 0 } } },
-  // git diff: display/format flags, plus `-M`/`--find-renames`,
-  // `-C`/`--find-copies`, `-U`/`--unified`, `--color`, `--word-diff` and
-  // `--stat` as optional-value (`optionalValueFlags`): `-U5` and `--unified=5` both stay
-  // read-only (the attached value is fine); only a following SEPARATE word is
-  // never consumed as the value, which is why the plain `-u` still exists as
-  // the no-value form. `--diff-filter`/`-S`/`-G`/`-O` all read or search, never
-  // write. No operand
-  // rule (revision/path). Excludes `--output` — **measured to write**: on a
+  // git diff：显示/格式旗标，加 -M/--find-renames、-C/--find-copies、
+  // -U/--unified、--color、--word-diff 和 --stat 为可选值
+  //（optionalValueFlags）：-U5 和 --unified=5 都保持只读（附着值没问题）；
+  // 只有后续分离词从不被当值消费，这正是无值的 -u 仍然存在的原因。
+  // --diff-filter、-S、-G、-O 都是读或搜索，从不写。无操作数规则（修订/路径）。
+  // 排除 --output——**实测会写**：草稿 checkout 上 git diff --output=diffout.txt
+  // 创建了 93 字节文件（设计轮只有文档）。实测：git 2.55.0。
+  //
   // scratch checkout, `git diff --output=diffout.txt` created a 93-byte file
   // (the design round had this only as documented). Measured: git 2.55.0.
   "git diff":         { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -288,15 +288,15 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     valueFlags: ['--diff-filter', '-S', '-G', '-O'],
     optionalValueFlags: ['-M', '--find-renames', '-C', '--find-copies', '-U', '--unified', '--color',
       '--word-diff', '--stat'] } },
-  // git log: display/format flags, plus optional-value flags kept out of
-  // valueFlags (rule 1). No operand rule (revision/path, including anything
-  // after `--`). Excludes `--output` — **measured to write**: `git log
-  // --output=out.txt HEAD` created a 113-byte file on a scratch checkout
-  // (`.git/index` unchanged). `numericShort: true` is required because the
-  // corpus needs `git log --oneline -20`: git's own `-<n>` revision-limit
-  // shortcut is scanned character by character by real getopt, so no
-  // `flags`/`valueFlags` entry can name the word `-20` itself — this is the
-  // matcher capability the design round's audit asked for, harmless for `git
+  // git log：显示/格式旗标，加排除在 valueFlags 之外的可选值旗标（规则 1）。
+  // 无操作数规则（修订/路径，含 -- 之后的任何东西）。排除 --output——
+  // **实测会写**：草稿 checkout 上 git log --output=out.txt HEAD 创建了
+  // 113 字节文件（.git/index 不变）。需要 numericShort: true，因为语料库
+  // 需要 git log --oneline -20：git 自己的 -<n> 修订上限快捷方式被真 getopt
+  // 逐字符扫描，没有任何 flags/valueFlags 条目能点名 -20 这个词本身——
+  // 这正是设计轮审计要求的匹配器能力，对 git show 同样无害。
+  // 实测：git 2.55.0（调用了 git log --oneline；index 不变）。
+  //
   // show` too. Measured: git 2.55.0 (`git log --oneline` called; index
   // unchanged).
   "git log":          { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -308,27 +308,27 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     optionalValueFlags: ['--pretty', '--format', '--decorate', '--branches', '--tags', '--remotes',
       '--stat', '-L'],
     numericShort: true } },
-  // git remote: `-v`/`--verbose` and the two verbose-adjacent no-value flags
-  // only display. `first: ['get-url']`, `max: 2` — a bare `git remote`
-  // and `git remote -v` are both valid (0 operands). `show` was removed from
-  // `first` by the final review: `git remote show <URL>` accepts a URL
-  // (measured, git 2.55.0) and runs ssh / `git-remote-<helper>` against the
-  // caller-chosen target, so the subcommand is excluded and a viewer loses
-  // `git remote show origin` (priced cost). Excludes `add` (writes
-  // config — measured, `git remote add` wrote `[remote "origin"]` into
-  // `.git/config`), `rename`, `remove`/`rm`, `set-url`, `set-head` (all write),
-  // `prune` (deletes remote-tracking refs) and `update` (fetches — changes
+  // git remote：-v/--verbose 和两个 verbose 相邻的无值旗标仅显示。
+  // first get-url、max 2——裸 git remote 和 git remote -v 都合法（0 操作数）。
+  // show 被终审从 first 移除：git remote show 加 URL 接受 URL
+  // 的原因（实测 git 2.55.0）：它对调用方选择的目标跑 ssh 或
+  // git-remote-助手，所以该子命令被排除，查看者失去 git remote show origin
+  //（已定价的代价）。排除 add（写 config——实测 git remote add 把
+  // remote origin 段写进 .git/config）、rename、remove/rm、set-url、
+  // set-head（全写）、prune（删远程跟踪引用）和 update（fetch——改引用）。
+  // 实测：git 2.55.0。
+  //
   // refs). Measured: git 2.55.0.
   "git remote":       { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
     flags: ['-v', '--verbose', '-n', '--push'],
     operands: { max: 2, first: ['get-url'] } } },
-  // git show: display/format flags, plus `--pretty`, `--format`, `--decorate`
-  // and `--stat` as optional-value (`optionalValueFlags`: bare or `=value`, a
-  // following separate word is never consumed) and `--date` as the one
-  // required-value flag. No operand rule (HEAD, commit, tag, …). Excludes
-  // `--output` — same write measured for `git log`/`git diff`, same option
-  // family. `numericShort: true` for the same `-<n>` shortcut `git log` needs
-  // (`git show -3`). Measured: git 2.55.0 (the sibling `--output` write was
+  // git show：显示/格式旗标，加 --pretty、--format、--decorate、--stat
+  // 为可选值（optionalValueFlags：裸或等号值，后续分离词从不消费），
+  // --date 为唯一必值旗标。无操作数规则（HEAD、commit、tag 等）。
+  // 排除 --output——与 git log/git diff 相同的写已被实测，同一选项家族。
+  // numericShort: true 为 git log 需要的同一个 -<n> 快捷方式（git show -3）。
+  // 实测：git 2.55.0（兄弟 --output 写本轮重新实测）。
+  //
   // re-measured this round).
   "git show":         { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
     flags: ['-s', '--no-patch', '--name-only', '--name-status', '--oneline', '--abbrev-commit', '--raw'],
@@ -339,13 +339,13 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
   "grep":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/busybox/BSD: searches input for a pattern and prints matches; no option writes a file or runs a program' } },
   "head":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/busybox/BSD: prints the first lines of a file; no write mode' } },
   "host":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured BIND 9.10.6 (BSD): sends a DNS query and prints the answer; writes nothing locally (DNS egress tracked separately)' } },
-  // hostname: display flags only, no value flags. `operands: { max: 0 }` — a
-  // bare `hostname NAME` SETS the hostname on every implementation (GNU --help
-  // usage line, busybox `[-sidf] [HOSTNAME | -F FILE]`, BSD man), so no operand
-  // budget above zero is safe. Excludes `-F`/`--file` (sets from a file),
-  // `-b`/`--boot` (sets a default hostname when none is configured — GNU
-  // --help) and `-y`/`--yp`/`--nis` (sets the NIS domain via an operand `max:
-  // 0` already refuses — left out as unnecessary rather than unsafe). Measured:
+  // hostname：仅显示旗标，无值旗标。operands max 0——裸 hostname NAME
+  // 在每个实现上都*设置*主机名（GNU --help 用法行、busybox 用法、BSD man），
+  // 所以零以上的操作数预算都不安全。排除 -F/--file（从文件设置）、
+  // -b/--boot（无配置时设默认主机名——GNU --help）和 -y/--yp/--nis
+  //（经操作数设 NIS 域，max 0 已拒绝——作为不必要而非不安全留出）。
+  // 实测：GNU hostname 3.21/3.25 --help；busybox（hostname -s）；macOS man。
+  //
   // GNU hostname 3.21/3.25 --help; busybox (`hostname -s`); macOS man (`[-f]
   // [-s | -d]`).
   "hostname":         { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -354,16 +354,16 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     operands: { max: 0 } } },
   "htop":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: "documented (htop(1) + FILES section, 2.x/3.x): no CLI option writes or executes; kill/renice are interactive keys (F7/F8/F9), unreachable by a read-only caller; ~/.config/htop/htoprc is written only after an interactive Setup change on clean exit; not measured — htop is absent from every image and from macOS" } },
   "id":               { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: "measured GNU/BSD: prints the caller's uid/gid/groups; no write mode" } },
-  // ifconfig: display flags/filters only (BSD's `-l -m -d -u -v -L -r -C`
-  // format the listing), plus a BSD output-format value flag. `operands: { max:
-  // 1 }` — a bare `ifconfig eth0` only SHOWS that interface's status; a second
-  // operand (address, `up`/`down`, `netmask`, `hw`, `mtu`, `add`/`del`,
-  // `destroy`, …) configures it and is refused. `optionsBeforeOperands:
-  // true` (final-review fix): BSD ifconfig reads options only before the
-  // interface operand, and macOS accepts the same letters after it as
-  // interface settings — `ifconfig en0 -av`/`-dad` change settings from
-  // letters this grammar lists — so an option-looking word after the operand
-  // is refused rather than read as a listed flag. Measured: busybox --help +
+  // ifconfig：仅显示旗标/过滤器（BSD 的 -l -m -d -u -v -L -r -C 格式化列表），
+  // 加一个 BSD 输出格式值旗标。operands max 1——裸 ifconfig eth0 只*显示*
+  // 该接口状态；第二个操作数（地址、up/down、netmask、hw、mtu、add/del、
+  // destroy 等）会配置它并被拒。optionsBeforeOperands: true（终审修复）：
+  // BSD ifconfig 只在接口操作数之前读选项，macOS 接受之后的同样字母
+  // 作为接口设置——ifconfig en0 -av/-dad 会从本文法列出的字母改设置——
+  // 所以操作数之后看似选项的词被拒而非当作列出的旗标读取。实测：
+  // busybox --help 加 ifconfig -a（用法行 [-a] [IFACE] [ADDRESS]——
+  // ADDRESS 之后的一切都是写）；BSD man 概要；net-tools ifconfig(8) 仅文档。
+  //
   // `ifconfig -a` (usage line is `[-a] [IFACE] [ADDRESS]` — everything from
   // ADDRESS on is a write); BSD man synopsis; net-tools ifconfig(8) documented
   // only ("Otherwise, it configures the interface").
@@ -373,37 +373,37 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     optionsBeforeOperands: true,
     operands: { max: 1 } } },
   "iostat":           { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured busybox; documented (sysstat iostat(1)): reports kernel I/O statistics; no write mode' } },
-  // ip addr: no options at all — a global flag like `-4`/`-6`/`-o` sits before
-  // the two-word prefix, so `ip -4 addr show` never even reaches the two-word
-  // match and is refused visibly (accepted cost). `first: ['show', 'list']`:
-  // "add"/"del"/"flush" cannot be the first operand; after `show`/`list`,
-  // operands like `dev eth0`, `to PREFIX`, `label`, `scope` are free, and a
-  // bare `ip addr` is valid (vacuous `first`). Abbreviations (`ip a`, `ip ad
-  // sh`) are documented in GNU but refused here since the grammar requires the
-  // full two words — accepted cost. Measured: busybox (`ip addr show`, `ip
+  // ip addr：完全无选项——像 -4/-6/-o 这样的全局旗标在双词前缀之前，
+  // 所以 ip -4 addr show 根本到不了双词匹配、被可见地拒绝（接受的代价）。
+  // first show/list：add/del/flush 不能是第一个操作数；show/list 之后，
+  // dev eth0、to 前缀、label、scope 等操作数自由，裸 ip addr 合法（空 first）。
+  // 缩写（ip a、ip ad sh）GNU 有文档但此处拒绝，因为文法要求完整双词——
+  // 接受的代价。实测：busybox（ip addr show、ip addr list、裸 ip addr 都跑了）；
+  // GNU ip(8) 仅文档（man7：show 或 list）。
+  //
   // addr list`, bare `ip addr` all ran); GNU ip(8) documented only (man7: "show
   // (or list)").
   "ip addr":          { readOnly: true, operandsAreData: true, grammar: { args: 'exact', operands: { first: ['show', 'list'] } } },  // two-word: class only
-  // ip route: `first: ['show', 'list', 'get']` — `get ADDR` is a read-only
-  // query (ip-route(8): "no packets are actually sent"). Excludes `add`,
-  // `del`, `change`, `append`, `replace`, `flush`, `restore` (all write) and
-  // `save` (dumps to stdout, but its sibling `restore` writes, so the verb pair
-  // is left out entirely rather than split). Measured: busybox (`ip route
-  // list`, `ip route show` ran; `ip route get 10.0.0.1` queried without
-  // writing); GNU ip(8) + ip-route(8) documented only.
+  // ip route：first 含 show/list/get——get 地址是只读
+  // 查询（ip-route(8)：实际不发包）。排除 add、del、change、append、
+  // replace、flush、restore（全写）和 save（转储到 stdout，
+  // 但其兄弟 restore 写，所以动词对整体留出而非拆分）。实测：
+  // busybox（ip route list、ip route show 跑了；ip route get 10.0.0.1
+  // 查询未写）；GNU ip(8)+ip-route(8) 仅文档。
+  //
   "ip route":         { readOnly: true, operandsAreData: true, grammar: { args: 'exact', operands: { first: ['show', 'list', 'get'] } } },  // two-word: class only
-  // journalctl: display/filter flags, plus `-n`/`--lines`, `-b`/`--boot` and
-  // `--facility` as optional-value (`optionalValueFlags`; journalctl(1): the
-  // argument may be omitted) — a bare word or an attached form (`-b1`,
-  // `--boot=2`) stays read-only, but the matcher never consumes a following
-  // SEPARATE word as the value, so `-b -1` still refuses on the unrecognised
-  // `-1` (an accepted cost, not a claim that every attached spelling is
-  // refused). No operand rule (unit names/match patterns — reads). Excludes
-  // the archive-mutating
-  // family — `--vacuum-time`/`--vacuum-size` (deletes archived journals;
-  // `--vacuum-time=1s` measured destructive elsewhere in this advisory round),
-  // `--rotate` (measured elsewhere too), `--flush`/`--sync`/`--relinquish-var`
-  // (redirect the daemon's disk writes), `--setup-keys` (generates FSS keys)
+  // journalctl：显示/过滤旗标，加 -n/--lines、-b/--boot 和 --facility
+  // 为可选值（optionalValueFlags；journalctl(1)：参数可省略）——
+  // 裸词或附着形态（-b1、--boot=2）保持只读，但匹配器从不把后续
+  // 分离词当值消费，所以 -b 加 -1 仍在未识别的 -1 上拒绝（接受的代价，
+  // 不声称每个附着拼写都被拒）。无操作数规则（单元名/匹配模式——读）。
+  // 排除归档变更家族——--vacuum-time/--vacuum-size（删归档日志；
+  // --vacuum-time=1s 在本轮别处实测破坏性）、--rotate（也实测过）、
+  // --flush/--sync/--relinquish-var（重定向守护进程磁盘写）、
+  // --setup-keys（生成 FSS 密钥）和 --verify/--verify-key/--root
+  //（作为不必要留出）。完全仅文档——journalctl(1)（man7，systemd 262 开发版）——
+  // journalctl 在每个实测镜像和 macOS 中都缺席。
+  //
   // and `--verify`/`--verify-key`/`--root` (left out as unnecessary). Entirely
   // documented only — journalctl(1) (man7, systemd 262~devel) — journalctl is
   // absent from every measured image and from macOS.
@@ -415,15 +415,15 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
       '-g', '--grep', '-t', '--identifier', '-D', '--directory'],
     optionalValueFlags: ['-n', '--lines', '-b', '--boot', '--facility'] } },
   "ls":               { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/busybox/BSD: lists directory entries; no write mode' } },
-  // netstat: ledger correction — moved from the design round's 'any' guess to
-  // a grammar; audit.md's main table still records this entry as 'any'
-  // ("every option is display"). The corrected reasons (progress.md ledger):
-  // FreeBSD netstat(1) documents `-z` as resetting counters (documented, not
-  // measured — excluded, not listed below), and `-p` is put in `flags` rather
-  // than `valueFlags` because it takes a value on BSD/Windows but takes none
-  // on net-tools (Linux) — listing it as a required-value flag would
-  // force-consume the next word on the implementation where it takes none.
-  // `-f`/`-I` are optional-value (`optionalValueFlags`). No operand rule
+  // netstat：台账修正——从设计轮的 any 猜测移为文法；audit.md 主表
+  // 仍记录此条目为 any（每个选项都是显示）。修正理由（progress.md 台账）：
+  // FreeBSD netstat(1) 文档化 -z 重置计数器（文档化未实测——排除，
+  // 非下列列出），-p 放在 flags 而非 valueFlags，因为它在 BSD/Windows
+  // 取值而在 net-tools（Linux）不取——列为必值旗标会在不取值的
+  // 实现上强制消费下一个词。-f/-I 是可选值（optionalValueFlags）。
+  // 无需操作数规则。实测：busybox 加 BSD（netstat -rn 等）；net-tools
+  // netstat(8) 对超出实测集合的部分仅文档。
+  //
   // needed. Measured: busybox + BSD (`netstat -rn`, etc.); net-tools
   // netstat(8) documented only for anything beyond the measured set.
   "netstat":          { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -439,33 +439,33 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
   "readlink":         { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/BSD: resolves a symlink; no write mode' } },
   "realpath":         { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/BSD: resolves a canonical path; no write mode' } },
   "seq":              { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/BSD: prints a numeric sequence to stdout; no write mode' } },
-  // sort: display/comparison flags only, plus `--check` as optional-value
-  // (`optionalValueFlags`): a bare `--check`, or an attached
-  // `--check=diagnose-first`/`--check=silent`, both stay read-only — a
-  // following SEPARATE word is never consumed as the value, which is why the
-  // plain `-c` still exists as the no-value form. Value flags read a key
-  // spec, a field separator, a buffer size or a parallelism count. No
-  // operand-count limit (multiple input files are legitimate). Windows 11
-  // build 26200 measurement: `sort.exe /O FILE IN` writes FILE,
-  // case-insensitive (`/o`), abbreviations accepted (`/OU`, `/OUTPUT`) — `-O`
-  // is not a switch, so nothing here already excludes it. A `/X` switch is an
-  // operand under this POSIX grammar and cannot be told apart from a path
-  // like `/etc`; `each` refuses any single-segment `/word` operand, with or
-  // without a trailing slash — the trailing-slash form re-measured on the VM
-  // 2026-09-26 (build 10.0.26200.9550, confined to %TEMP%): `/O/`, `/o/`,
-  // `/OU/`, `/OUTPUT/`, `/T/`, `/A/` are all "Invalid switch" and write
-  // nothing (control `/O` writes), but the rule is shared with `arp`, whose
-  // `/d`/`/s` slash tolerance cannot be measured without running a
-  // state-changing form, so it stays fail-closed. The cost is that an
-  // operand naming a file directly under `/` (`sort /data`), or such a
-  // directory with a trailing slash (`sort /etc/`), is refused too. Excludes `-o`/`--output`
-  // (writes — this advisory's own finding), `--compress-program` (executes a
-  // program — measured 14,224 times in the same finding), `-T`/`--temporary-directory`
-  // (chooses a write location; a viewer has no use for it, decided in the
-  // friction table) and `--random-source`/`--files0-from` (read a file but are
-  // unnecessary). `DISQUALIFYING_ARGS`'s own sort rule still runs before this
-  // grammar and can still raise the class; the grammar only ever draws the
-  // read-only/safe line. Measured: GNU d12 + trixie --help; busybox --help
+  // sort：仅显示/比较旗标，加 --check 为可选值（optionalValueFlags）：
+  // 裸 --check 或附着 --check=diagnose-first/--check=silent 都保持只读——
+  // 后续分离词从不被当值消费，这正是无值的 -c 仍然存在的原因。
+  // 值旗标读键规格、字段分隔符、缓冲区大小或并行计数。无操作数计数限制
+  //（多个输入文件合法）。Windows 11 build 26200 实测：sort.exe /O 文件 输入
+  // 写文件、不区分大小写、接受缩写（/OU、/OUTPUT）——-O 不是开关，
+  // 所以这里已有的没有排除它。/X 开关在此 POSIX 文法下是操作数，
+  // 与 /etc 这样的路径无法区分；each 拒绝任何单词 /word 操作数，尾斜杠
+  // 有无皆然——尾斜杠形态在 VM 2026-09-26（build 10.0.26200.9550，
+  // 限于 %TEMP%）重新实测：/O/、/o/、/OU/、/OUTPUT/、/T/、/A/ 全是
+  // Invalid switch 且什么都不写（对照 /O 写），但该规则与 arp 共享，
+  // arp 的 /d//s 斜杠容忍度无法在不运行改变状态的形态下测量，
+  // 尾斜杠有无皆然——尾斜杠形态在 VM 2026-09-26（build 10.0.26200.9550，
+  // 限于 %TEMP%）重新实测：/O/、/o/、/OU/、/OUTPUT/、/T/、/A/ 全是
+  // Invalid switch 且什么都不写（对照 /O 写），但该规则与 arp 共享，
+  // arp 的 /d//s 斜杠容忍度无法在不运行改变状态的形态下测量，
+  // 所以保持 fail-closed。代价是命名 / 下文件的（sort /data）
+  // 或带尾斜杠的目录（sort /etc/）也被拒。排除 -o/--output
+  //（写——本评审自己的发现）、--compress-program（执行程序——
+  // 同一发现实测 14224 次）、-T/--temporary-directory（选写位置；
+  // 查看者无用处，摩擦表决定）和 --random-source/--files0-from
+  //（读文件但不必要）。DISQUALIFYING_ARGS 自己的 sort 规则仍在此文法之前
+  // 运行并仍能抬升类别；文法只画只读/safe 的线。实测：
+  // GNU d12+trixie --help；busybox --help（自己拒绝 sort 长选项：
+  // sort: unrecognized option: key=2）；BSD man（同选项家族；BSD 自己的
+  // -o 不在列表，到不了此文法）。
+  //
   // (rejects sort's long options itself: `sort: unrecognized option:
   // key=2`); BSD man (same option family; BSD's own `-o` never reaches this
   // grammar since it is not listed).
@@ -478,13 +478,13 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
     valueFlags: ['-k', '--key', '-t', '--field-separator', '-S', '--buffer-size', '--sort', '--parallel'],
     optionalValueFlags: ['--check'],
     operands: { each: /^(?!\/[^/]*\/?$)/ } } },
-  // ss: entirely documented only — ss(8) (man7, iproute2); ss is absent from
-  // every measured image and from macOS. Display flags only, plus value flags
-  // that name a socket family/query/filter. Excludes `-K`/`--kill` (forcibly
-  // closes sockets), `-D`/`--diag` (dumps raw TCP info to a file), `-N`/`--net`
-  // (switches network namespace via setns) and `-b`/`--bpf` (admin); a handful
-  // of display-only-but-unnecessary flags left out rather than exhaustively
-  // listed (`-E`/`-T`/`-Q`/`-S`/`-M`/`-Z`/`-z`/`--tos`/`--cgroup`/…).
+  // ss：完全仅文档——ss(8)（man7，iproute2）；ss 在每个实测镜像
+  // 和 macOS 中缺席。仅显示旗标，加指名套接字族/查询/过滤的值旗标。
+  // 排除 -K/--kill（强制关闭套接字）、-D/--diag（转储原始 TCP 信息到文件）、
+  // -N/--net（经 setns 切换网络命名空间）和 -b/--bpf（管理）；少量
+  // 只显示但不必要的旗标留出而非穷尽列出（-E、-T、-Q、-S、-M、-Z、-z、
+  // --tos、--cgroup 等）。
+  //
   "ss":               { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
     flags: ['-H', '--no-header', '-O', '--oneline', '-n', '--numeric', '-r', '--resolve', '-a', '--all',
       '-l', '--listening', '-o', '--options', '-e', '--extended', '-m', '--memory', '-p', '--processes',
@@ -492,14 +492,14 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
       '-x', '--unix', '-4', '-6', '-0', '--packet'],
     valueFlags: ['-f', '--family', '-A', '--query', '--socket', '-F', '--filter'] } },
   "stat":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/busybox/BSD: prints file or filesystem status; no write mode' } },
-  // systemctl status: ledger correction — moved from the design round's 'any'
-  // guess to a grammar; audit.md's main table still records this entry as
-  // 'any' ("only reports run state and log; subcommands that mutate state are
-  // outside the two-word match"). The corrected reason (progress.md ledger):
-  // systemctl(1) documents `-H`/`--host` as running the operation over SSH
-  // (executes another program on another host) and `-M`/`--machine` as
-  // targeting a container/VM — both excluded, not listed below. `-n`/
-  // `--lines` and `-o`/`--output` are optional-value (`optionalValueFlags`).
+  // systemctl status：台账修正——从设计轮的 any 猜测移为文法；
+  // audit.md 主表仍记录此条目为 any。修正理由（progress.md 台账）：
+  // systemctl(1) 文档化 -H/--host 经 SSH 运行操作（在另一主机执行
+  // 另一程序）、-M/--machine 面向容器/VM——两者排除而非下列列出。
+  // -n/--lines 和 -o/--output 是可选值（optionalValueFlags）。
+  // 完全仅文档——systemctl(1)（man7，systemd 262 开发版）——
+  // 在每个实测镜像和 macOS 中缺席。
+  //
   // Entirely documented only — systemctl(1) (man7, systemd 262~devel) —
   // absent from every measured image and from macOS.
   "systemctl status": { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -513,17 +513,17 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
   "traceroute":       { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured busybox; documented (BSD man): sends probe packets and prints the path; writes nothing locally (ICMP/UDP egress tracked separately)' } },
   "true":             { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU: exits 0 immediately; no I/O of any kind' } },
   "uname":            { readOnly: true, operandsAreData: true, grammar: { args: 'any', audit: 'measured GNU/BSD: prints system identification; no write mode' } },
-  // uniq: display flags only, plus `--all-repeated` kept optional-value out of
-  // valueFlags (rule 1). `operands: { max: 1 }` — INPUT only; a second operand
-  // is OUTFILE and is OVERWRITTEN (measured elsewhere in this advisory:
-  // `uniq /etc/passwd /root/.ssh/authorized_keys`; GNU's own usage line is
-  // `[INPUT [OUTPUT]]`, busybox's `[FILE [OUTFILE]]`). `optionsBeforeOperands:
-  // true` (final-review fix): macOS's optstring is `+`-prefixed (`+D::cdif:s:u`,
-  // POSIX order), so `uniq IN -c` does not read `-c` as the count flag there —
-  // it is the OUTFILE, and uniq overwrites it; GNU permutes, so the spelling
-  // is only harmless there, and the grammar must hold for every
-  // implementation. Excludes `--group` (optional-value, reads, but left out as
-  // unnecessary — not a minimal grammar addition). Measured: GNU d12 --help;
+  // uniq：仅显示旗标，加 --all-repeated 保持可选值而在 valueFlags 之外
+  //（规则 1）。operands max 1——仅 INPUT；第二个操作数是 OUTFILE 且被*覆写*
+  //（本评审别处实测：uniq /etc/passwd 到 authorized_keys；GNU 自己的
+  // 用法行是 [INPUT [OUTPUT]]，busybox 是 [FILE [OUTFILE]]）。
+  // optionsBeforeOperands: true（终审修复）：macOS 的 optstring 以加号
+  // 开头（POSIX 顺序），所以 uniq IN -c 在那里不把 -c 当计数旗标读——
+  // 它是 OUTFILE，uniq 覆写它；GNU 会重排，所以那个拼写只在 GNU 无害，
+  // 而文法必须对每个实现成立。排除 --group（可选值、读，
+  // 但作为不必要留出——非最小文法增补）。实测：GNU d12 --help；
+  // busybox --help；BSD man（同选项家族加 -D --all-repeated）。
+  //
   // busybox --help; BSD man (same option family plus `-D --all-repeated
   // [septype]`).
   "uniq":             { readOnly: true, operandsAreData: true, grammar: { args: 'getopt',
@@ -546,73 +546,73 @@ const READERS: Record<string, { readOnly: boolean; operandsAreData: boolean; gra
 const READ_ONLY_ALLOWLIST = new Set(
   Object.entries(READERS).filter(([, e]) => e.readOnly).map(([name]) => name),
 );
-// Deliberately NOT read-only: `env`, because it is an exec wrapper. `env <cmd>`
-// runs <cmd>, so allowlisting the name `env` vouched for a command the
-// classifier never looked at — `env sudo rm -f /etc/passwd` classified
-// `read-only` and ran on a profile whose whole contract is that it cannot
-// write. It carries no shell metacharacter, so the SHELL_CONTROL_CHARS gate
-// below did not catch it either. Falls through to `safe`, so run-command can
-// still reach it under policy; a bare `env` that only prints the environment
-// loses read-only status with it, which is the price of a name-based allowlist.
+// 刻意非只读：env，因为它是 exec 包装器。env 加命令会跑那个命令，
+// 所以把名字 env 加入白名单等于为分类器从未看过的命令背书——
+// env sudo rm -f /etc/passwd 被归类 read-only 并跑在整个契约是
+// 「不能写」的 profile 上。它不带任何 shell 元字符，所以下方的
+// SHELL_CONTROL_CHARS 门也没抓住它。落到 safe，run-command 在策略下
+// 仍可达；只打印环境的裸 env 随之失去只读状态，
+// 这是基于名字的白名单的代价。
+
 //
-// Deliberately NOT read-only: `curl` and `wget` fetch arbitrary URLs (SSRF to
+// 刻意非只读：curl 和 wget 抓取任意 URL（对内网发起 SSRF，
 // cloud metadata / internal services), post local files to a remote host
-// (`curl -d @/etc/passwd`), and write remote files (`curl -o`, `wget -O`) —
-// none of which need a shell metacharacter to escape the classifier. They fall
-// through to the `safe` class, so run-command can still use them under policy.
-//
-// Residual risk kept on purpose: dig/nslookup/host/ping/traceroute can leak
-// small amounts of data through DNS/ICMP queries. They cannot modify the host,
-// so they stay read-only; tighten them via profile policy if egress matters.
+//（curl -d 加文件路径），也写远程文件（curl -o、wget -O）——
+// 两者都不需要 shell 元字符就能逃过分类器。它们落到 safe 类，
+// run-command 在策略下仍可使用。
+
+// 刻意保留的残余风险：dig/nslookup/host/ping/traceroute 可经
+// DNS/ICMP 查询泄露少量数据。它们不能修改主机，保持只读；
+// 出口要紧时经 profile 策略收紧。
 
 /**
- * The SFTP read verbs, which the tool layer synthesises rather than a caller typing.
+ * SFTP 读动词，由工具层合成而非调用方键入。
  *
- * A second set rather than two more entries in READ_ONLY_ALLOWLIST, and the
- * reason is that that Set is dual-purpose: `operandsAreData` reads it too, to
- * decide whether a segment's operands are data rather than commands. Putting
- * these verbs there silenced the carrier scan for them — measured,
- * `sftp:list /tmp sh -c 'sudo id'` fell from `privileged` to `read-only`,
- * because `nestedCommands` stopped extracting the `sh -c` payload. That is the
- * one carrier form carrying no character from SHELL_CONTROL_CHARS, i.e. exactly
+ * 用第二集合而非往 READ_ONLY_ALLOWLIST 加两条，原因是那个 Set
+ * 双重用途：operandsAreData 也读它，以决定片段的操作数是数据还是命令。
+ * 把这些动词放进去会为它们关掉载体扫描——实测，sftp:list 加
+ * sh -c sudo id 从 privileged 降到 read-only，
+ * 因为 nestedCommands 停止提取 sh -c 载荷。那是唯一不携带
+ * SHELL_CONTROL_CHARS 任何字符的载体形态，即扫描承重的那个形态。
+ *
  * the form the scan is load-bearing for.
  *
- * The suppression buys nothing here anyway. It exists so `grep python3 -c file`
- * is not read as invoking python; these verbs take a path nobody parses, so
- * there is no false positive to suppress.
+ * 这里的抑制反正买不到任何东西。它存在是为了 grep python3 -c file
+ * 不被读作调用 python；这些动词取的是无人解析的路径，
+ * 没有要抑制的误报。
  *
- * Why they are lowered at all: both carry `readOnlyHint: true`, the README marks
- * both read-only, `sftp-list`'s description ends "Read-only." — and `safe` is
- * refused outright by a `readOnly` profile, so the one profile class the
- * annotation targets was the one that could not run them (#217).
- * (`sftp-download`'s description makes no read-only claim; an earlier version of
- * this paragraph said both did, which is the overstatement this file keeps
- * catching.) The lowering grants that
- * profile nothing new: `cat /etc/shadow` and `ls /root` are already `read-only`,
+ * 为什么要降级：两者都带 readOnlyHint: true，README 标注两者只读，
+ * sftp-list 的描述以「只读。」结尾——而 safe 被 readOnly profile
+ * 直接拒绝，所以注释针对的那个 profile 类恰是不能跑它们的（#217）。
+ *（sftp-download 的描述没有只读声明；本段更早版本说两者都有，
+ * 正是本文件不断抓到的过度声明。）降级没给该 profile 任何新东西：
+ * cat /etc/shadow 和 ls /root 本来就是 read-only，
+ * 读 SSH 用户可读的任何文件的权限本来就已持有。
+ *
  * so the authority to read any file the SSH user can read is already held.
  *
- * `sftp:upload`, `sftp:upload-file` and `sftp:download-file` stay out — the
- * first two write on the remote host, the third inside the transfer root.
+ * sftp:upload、sftp:upload-file 和 sftp:download-file 保持在外——
+ * 前两个在远程主机上写，第三个在传输根内写。
  */
 const READ_ONLY_SYNTHETIC = new Set(['sftp:list', 'sftp:download', 'pty:read', 'pty:list', 'forward:list']);
 
 /**
- * Commands that are never allowed, whatever the role or approval policy.
+ * 无论角色或审批策略如何都不允许的命令。
  *
- * This is the policy engine's denylist — the single definition of it. The
- * engine used to keep a parallel copy as regex *strings*, which had already
- * drifted (it was missing the fork bomb and the recursive chown, and its `rm`
- * pattern was narrower). Anything here is also destructive for classification
+ * 这是策略引擎的拒绝清单——唯一定义。引擎过去以正则*字符串*
+ * 保存平行副本，且已漂移（缺 fork 炸弹和递归 chown，rm 模式更窄）。
+ * 这里的一切在分类意义上也是破坏性的；见下方 DESTRUCTIVE_DENYLIST。
+ *
  * purposes; see DESTRUCTIVE_DENYLIST below.
  */
 /*
- * These are the patterns that stayed regexes, and every one of them is linear.
+ * 这些是保持正则的模式，每一个都是线性的。
  *
- * The four that were not — `dd\s.*\bof=/dev/`, the two `curl|wget …\|\s*(sh…)`
- * forms, and `chown\s+-R\s.*\s/\s*$` — are now segment checks below. An earlier
- * comment here reasoned that ambiguity *within* a match was the only cost, and
- * that was wrong: the engine also restarts at every offset where the cheap
- * literal head matches, so a command built from `dd curl wget chown -R x `
+ * 原本不是的四个——dd 模式、两个 curl/wget 管道形态、chown -R 形态——
+ * 现在是下方的片段检查。此处更早的注释推断匹配*内部*的歧义是
+ * 唯一代价，那是错的：引擎还会在每个廉价字面头部匹配的偏移处重启，
+ * 所以由 dd curl wget chown -R x 重复构成的命令每次翻倍跑 4 倍。
+ * 在真实链上实测：64 KB 花 255ms，1 MB 花 65 秒阻塞事件循环，停顿落在
  * repeated ran at 4x per doubling. Measured on the real chain: 64 KB took
  * 255 ms, 1 MB took 65 seconds of blocked event loop, and the stall lands in
  * classifyCommand — before the approval gate and before the allow/deny
@@ -621,28 +621,28 @@ const READ_ONLY_SYNTHETIC = new Set(['sftp:list', 'sftp:download', 'pty:read', '
  * The old note said sanitizeCommand's maxChars cap kept this cheap, "but a
  * policy check should not depend on a limit set three layers away and
  * configurable to any value". Once a config file could say `commandMaxChars = 0`
- * (#123) that limit went away, and the prediction came true. The rewrite below
- * is what that sentence was asking for: the policy check is now safe on its own
- * terms, whatever maxChars says.
+ *（#123）该限制消失了，预言成真。下方的重写正是那句话要的：
+ * 策略检查现在以自己的条件就安全，无论 maxChars 说什么。
  *
- * The existing cost test did not catch it because its seeds are runs of spaces,
- * which never match the literal heads and so never trigger the restart.
+ *
+ * 已有的代价测试没抓到它，因为其种子是空格串，
+ * 永远不匹配字面头部、因此从不触发重启。
  */
 const FORBIDDEN_PATTERNS: RegExp[] = [
   /rm\s+-rf?\s+\/(\s|$)/,          // rm -rf / — the filesystem root itself
   /mkfs\./,
   />\s*\/dev\/sd/,
-  // Fork bomb, with whitespace allowed at the five positions bash allows it and the old
-  // pattern did not: before the parentheses, inside them, either side of the pipe, and
-  // before the ampersand. `: () { : | : & } ; :` ran and classified `safe`.
+  // Fork 炸弹，五个位置允许 bash 允许的空白而旧模式不允许：
+  // 括号前、括号内、管道两侧、和号前。冒号炸弹跑了且归类 safe。
   //
-  // What this still does not catch, so that nobody reads it as "fork bombs are handled":
-  // the same bomb under another name (`f(){ f|f& };f`), a body that separates the two
-  // calls with `&` or `;` rather than `|` (`:(){ :&:& };:`), and a comment between the
-  // tokens (`:() # x\n{ :|:& };:`). Matching the first needs a backreference over an
-  // unbounded body and this file has already shipped one ReDoS; the others would widen a
-  // list no role, tier or approval mode can override. The impact is a denial of service
-  // against the target host rather than against this server, which is not worth either
+  //
+  // 这仍然抓不到的，以免有人读作「fork 炸弹已处理」：
+  // 换名的同一炸弹（f 加自管道）、用与号或分号而非管道分隔
+  // 两次调用的主体、令牌之间的注释。匹配第一种需要对无界主体
+  // 的反向引用且本文件已经发过一次 ReDoS；其余会放宽一个
+  // 任何角色、层级或审批模式都无法覆盖的清单。影响是对目标主机
+  // 而非本服务器的拒绝服务，不值得任一取舍——但那是洞不是关死的门。
+  //
   // trade — but it is a hole, not a closed door.
   /:\s*\(\s*\)\s*\{\s*:\s*\|\s*:\s*&\s*\}\s*;\s*:/,
   />\s*\/etc\/cron/,
@@ -656,16 +656,16 @@ const FORBIDDEN_PATTERNS: RegExp[] = [
  * Words that are forbidden when *invoked*, which the patterns above cannot
  * express.
  *
- * These used to be `/\breboot\b/` and friends, matching the word anywhere in
- * the string. `last reboot` reads a log and was refused for containing the
- * word; so were `grep -r reboot /etc/`, `cat /var/run/reboot-required` and
- * `journalctl | grep shutdown`. On a NAS an agent checking boot history trips
- * this on its first command, which is how it was reported (#91).
+ * 这些过去是 reboot 等的正则，匹配串中任何位置的该词。
+ * last reboot 读日志却因含该词被拒；grep -r reboot /etc/、
+ * cat /var/run/reboot-required、journalctl 加 grep shutdown 同样。
+ * 在 NAS 上检查启动历史的 agent 第一条命令就踩中，
+ * 这就是它的报告方式（#91）。
  *
- * Matching an invocation rather than a mention needs to know where a command
- * word can start, and that is a tokenizer's job, not a regex's — the regex
- * forms that come close all reintroduce the `\S*` backtracking the block above
- * exists to avoid.
+ * 匹配调用而非提及需要知道命令词能从哪开始，
+ * 那是分词器的活不是正则的——接近的正则形式都会重新引入
+ * 上方区块要避免的反斜杠回溯。
+ *
  */
 const FORBIDDEN_INVOCATIONS = new Set(['shutdown', 'reboot', 'halt', 'poweroff', 'eval']);
 
@@ -675,23 +675,23 @@ const ACTION_MULTIPLEXERS = new Set(['systemctl', 'init', 'telinit']);
 /**
  * Binaries that run the rest of the command as another user.
  *
- * The list is explicit rather than a pattern, because a pattern cannot tell
- * `sudoedit` — which edits a file and is not elevation — from `sudo-rs`, which
- * is sudo. It has to be maintained by hand as new implementations appear; the
- * cost of missing one is that its commands classify `safe`.
+ * 列表显式而非模式，因为模式分不清编辑文件且非提权的
+ * sudoedit 和就是 sudo 的 sudo-rs。新实现出现时必须手工维护；
+ * 漏掉一个的代价是它的命令归类 safe。
  *
- * The last five were added in 2.2.5 (#132). Until 2.2.4 the check was
- * `/^\s*su\b/` and friends, and `\b` matched between `su` and the hyphen, so
- * `su-exec` and `sudo-rs` were caught — by accident of the regex, not by
- * intent. Moving to exact membership dropped them, which narrowed a security
- * control inside a security release. `gosu` and `run0` were never caught by
+ *
+ * 最后五个在 2.2.5 加入（#132）。直到 2.2.4 检查是 su 开头的正则，
+ * 边界匹配了 su 与连字符之间，所以 su-exec 和 sudo-rs 被抓到——
+ * 是正则的偶然而非意图。改为精确成员后它们掉出，
+ * 在安全发布内收窄了一个安全控制。gosu 和 run0 两种形式都没抓到过。
+ *
  * either form.
  */
 /**
  * Class ordering, so a command that contains another can take the higher of the two.
  *
- * Only used by the nesting scan below. Everything else in this file decides a single
- * class outright.
+ * 仅由下方嵌套扫描使用。本文件其余一切直接决定单一类别。
+ *
  */
 const CLASS_RANK: Record<CommandClass, number> = {
   'read-only': 0,
@@ -701,26 +701,26 @@ const CLASS_RANK: Record<CommandClass, number> = {
 };
 
 /**
- * Interpreters, the flags that hand them a program, and whether this file can read it.
  *
- * One table rather than three overlapping name lists: adding an interpreter here is the
- * whole change, and a shell list that drifts out of step with a readability list is how a
- * new shell ends up treated as an unreadable interpreter.
  *
- * `readable` means the program is shell, so classifying it is this same job done again
- * and the class it earns is real. Python, Perl, Ruby, Node and PHP are not: their program
- * is a different language, and `os.system('sudo id')` carries an elevation the shell
- * classifier cannot see. Pretending to parse them would be a worse answer than admitting
- * we cannot, so an unreadable program makes the command `destructive` — "we cannot tell",
- * not "this is root", the same answer `hasUnnameableCommand` gives.
+ * 一张表而非三个交叠的名字清单：在这里加解释器即全部变更，
+ * 而 shell 清单与可读性清单失步正是新 shell 被当作
+ * 不可读解释器对待的方式。
  *
- * `busybox` is not here: it takes an applet name, not `-c`, so `busybox sh -c …` is an
- * `sh` invocation behind a wrapper. It is in EXEC_WRAPPERS instead, which is what it is.
+ * readable 意味着程序是 shell，对它分类就是同一份工作再做一次、
+ * 它挣到的类别是真实的。Python、Perl、Ruby、Node、PHP 不是：其程序
+ * 是另一种语言，os.system 加提权是 shell 分类器看不见的。
+ * 假装解析它们比承认不能更糟，所以不可读程序使命令成为 destructive——
+ * 「无法判断」而非「这是 root」，与 hasUnnameableCommand 同一答案。
+ *
+ *
+ * busybox 不在这里：它取 applet 名而非 -c，所以 busybox sh -c 加程序
+ * 是包装器背后的 sh 调用。它在 EXEC_WRAPPERS 里，那正是它的类别。
  */
-// Null-prototype for the reason `mergePolicyRules` spells out (#172): this is indexed by
-// a command word, which is a free string, so on a plain object `INTERPRETERS['toString']`
-// resolves to a function and reading `.programBearingWords` off it throws inside the
-// policy gate.
+// Null 原型，理由见 mergePolicyRules（#172）：此对象以命令词为键，
+// 命令词是自由字符串，普通对象上 INTERPRETERS 的 toString 解析为函数，
+// 从其上读 programBearingWords 会在策略门内抛出。
+//
 /** One entry of the interpreter table — named so the lookup helper below can share it. */
 interface InterpreterSpec {
   programBearingWords: string[];
@@ -741,25 +741,25 @@ const INTERPRETERS: Record<string, InterpreterSpec> = Object.assign(
   python3: { programBearingWords: ['-c'], readable: false },
   perl: { programBearingWords: ['-e', '-E'], readable: false },
   ruby: { programBearingWords: ['-e'], readable: false },
-  // `-p`/`--print` evaluate exactly as `-e` does and then print the result.
+  // -p/--print 与 -e 完全同法求值后打印结果。
   node: { programBearingWords: ['-e', '--eval', '-p', '--print'], readable: false },
   php: { programBearingWords: ['-r'], readable: false },
-  // Measured on 2.11.0: each of these classified `safe` while the identical
-  // attack through python3 -c classified `destructive` (GHSA-qmx6-47vm-3vf7).
-  // `readable: false` throughout, matching python/perl/node: the program is not
-  // shell text, so its presence is what counts rather than its content.
+  // 2.11.0 实测：这些各自归类 safe 而经 python3 -c 的同一攻击
+  // 归类 destructive（GHSA-qmx6-47vm-3vf7）。通篇 readable: false，
+  // 与 python/perl/node 一致：程序不是 shell 文本，
+  // 所以算数的是其存在而非其内容。
   osascript: { programBearingWords: ['-e'], readable: false },
   lua: { programBearingWords: ['-e'], readable: false },
   Rscript: { programBearingWords: ['-e'], readable: false },
   bun: { programBearingWords: ['-e'], readable: false },
-  // No program-bearing flag: real tclsh takes a script FILE as its positional
-  // argument or reads one from stdin, unlike sh/bash/python/pwsh, none of
-  // which have a `-c` of its own. An empty list still marks tclsh as an
-  // unreadable interpreter for `readsProgramFromStdin` (`echo … | tclsh`),
-  // which is the genuine carrier; it is simply never handed a program inline
-  // on its own command line, so there is no flag to name here.
+  // 无程序承载旗标：真 tclsh 以脚本文件为位置参数或从 stdin 读，
+  // 与 sh/bash/python/pwsh 都不同，后三者各有自己的 -c。空列表
+  // 仍把 tclsh 标记为不可读解释器供 readsProgramFromStdin 用
+  //（echo 管道 tclsh），那才是真正的载体；只是它自己的命令行
+  // 从不内联接收程序，所以没有可点名的旗标。
+  //
   tclsh: { programBearingWords: [], readable: false },
-  // `eval` is a subcommand, not a flag — the field is named for what it holds.
+  // eval 是子命令而非旗标——字段以其所载内容命名。
   deno: { programBearingWords: ['eval'], readable: false },
   pwsh: { programBearingWords: ['-c', '-Command', '-e', '-EncodedCommand'], readable: false },
   powershell: { programBearingWords: ['-c', '-Command', '-e', '-EncodedCommand'], readable: false },
@@ -767,13 +767,13 @@ const INTERPRETERS: Record<string, InterpreterSpec> = Object.assign(
 );
 
 /**
- * Every `INTERPRETERS` entry, keyed by its name lower-cased.
  *
- * A second index rather than lower-casing the lookup key against `INTERPRETERS`
- * directly, because that table's own keys are not uniformly lower-case —
- * `Rscript` is not `rscript` — so folding only the *input* would still miss it.
- * Built once at module load: the table is fixed, so there is nothing to keep in
- * sync.
+ *
+ * 用第二索引而非直接对 INTERPRETERS 小写查找键，因为那张表
+ * 自己的键并非一律小写——Rscript 不是 rscript——只折叠*输入*
+ * 仍然会 miss。模块加载时构建一次：表是固定的，没有要同步的东西。
+ *
+ *
  */
 const INTERPRETERS_BY_LOWERCASE_NAME: Record<string, InterpreterSpec> = Object.assign(
   Object.create(null) as Record<string, InterpreterSpec>,
@@ -784,17 +784,17 @@ const INTERPRETERS_BY_LOWERCASE_NAME: Record<string, InterpreterSpec> = Object.a
 const WINDOWS_EXE_SUFFIX = /\.(exe|cmd|bat)$/i;
 
 /**
- * Resolve an interpreter table entry for a command word already stripped of
- * its path (`stripPath(unquote(word))`, as every call site already computes
+ *（stripPath 加去引号，正如每个调用点已为下方精确匹配算的那样）。
+ *
  * it for the exact-match case below).
  *
- * The table's keys are exact, case-sensitive, extension-free spellings, so a
- * direct lookup is tried first and is the whole cost for the common case —
- * `sh`, `python3`, the bare lowercase `pwsh`. The fallback strips a trailing
- * `.exe`/`.cmd`/`.bat` and folds case, which is what a Windows target's own
- * shell hands back for the *same* binary: `powershell.exe`, `PWSH.EXE` and
- * `PowerShell` all name the interpreter this table already lists under
- * `powershell`/`pwsh`.
+ * 表键是精确、区分大小写、无扩展名的拼写，所以先试直接查找——
+ * 对常见情形（sh、python3、裸小写 pwsh）这就是全部成本。回退
+ * 剥掉尾 .exe/.cmd/.bat 并折叠大小写，那是 Windows 目标自己的 shell
+ * 对*同一*二进制交回的：powershell.exe、PWSH.EXE 和 PowerShell
+ * 都点名本表已列在 powershell/pwsh 下的解释器。
+ *
+ * 应用于每个条目而非仅 pwsh/powershell。实测的 bug 是
  *
  * Applied to every entry, not only pwsh/powershell. The measured bug is
  * about those two, but the gap is not specific to them: a target running
@@ -802,9 +802,9 @@ const WINDOWS_EXE_SUFFIX = /\.(exe|cmd|bat)$/i;
  * fix to two names would leave the rest of the table exactly as blind as it
  * was. This is the binary-*name* question, answered once — it does not touch
  * flag matching, which stays case-sensitive per interpreter (`perl -E` and
- * `perl -e` are still two different flags) via the existing, separate
- * `caseInsensitive` parameter threaded through `programAfterFlag` and
- * friends.
+ * perl -e 仍是两个不同的旗标）经穿过 programAfterFlag 及其朋友的
+ * 既有独立 caseInsensitive 参数。
+ *
  */
 function resolveInterpreter(word: string): InterpreterSpec | undefined {
   const exact = INTERPRETERS[word];
@@ -816,15 +816,15 @@ function resolveInterpreter(word: string): InterpreterSpec | undefined {
 const FIND_EXEC_FLAGS = new Set(['-exec', '-execdir', '-ok', '-okdir']);
 
 /**
- * GNU sort's own long-option table, spelled in full — every entry `sort
- * --help` lists (coreutils 9.11, `docker exec ssh-mcp-ssh-admin-1 sort
- * --help`). Used only to compute which prefixes of `--output` and
- * `--compress-program` `getopt_long` treats as unambiguous.
+ *（coreutils 9.11，docker exec 加 sort --help）。仅用于计算 getopt_long
+ * 视为无歧义的 --output 和 --compress-program 的哪些前缀。
  *
- * `getopt_long` resolves a `--` word to the option whose name it is an
- * unambiguous prefix of: a prefix shared with another option name is
- * refused outright ("option '--c' is ambiguous; possibilities: '--check'
- * '--compress-program'") rather than run, so it must not be treated as a
+ * getopt_long 把一个双连字符词解析到它是其无歧义前缀的选项：
+ * 与另一选项名共享的前缀被直接拒绝（选项含糊），而非运行，
+ * 所以不得当作写。对二进制实测：sort --c 加等号退出 2 无文件创建；
+ * sort --co 加等号——第二个字母是 --check 与 --compress-program 分歧处——运行。
+ *
+ *
  * write. Measured against the binary: `sort --c=x k` exits 2 with no file
  * created; `sort --co=x k` — the second letter is where `--check` and
  * `--compress-program` diverge — runs.
@@ -840,9 +840,9 @@ const SORT_LONG_OPTIONS = [
 ];
 
 /**
- * The regex-alternation source matching any prefix of `full` that names
- * exactly one entry of `SORT_LONG_OPTIONS` — every prefix `getopt_long`
- * would accept for it, from the shortest unambiguous one up to `full`
+ * 正则交替源——getopt_long 会为它接受的每个前缀，从最短无歧义的
+ * 到 full 本身——各自可选地后接等号值。
+ *
  * itself — each optionally followed by `=value`.
  */
 function unambiguousLongOptionSource(full: string): string {
@@ -857,25 +857,25 @@ function unambiguousLongOptionSource(full: string): string {
 }
 
 /**
- * How deep a substitution may nest before we stop reading and refuse to guess.
  *
- * Reached only by input no operator writes — the tests use two hundred levels. The
- * fallback is `privileged` rather than a lower class because the entire point of
- * this scan is that a command we cannot read must not be treated as one we can.
+ * 只有运维不会写的输入才到达——测试用两百层。回退是 privileged
+ * 而非更低类别，因为此扫描的全部意义就是无法读取的命令
+ * 不得当作可以读取的。
+ *
  */
 const MAX_NESTING_DEPTH = 8;
 
 /**
- * Split a command into segments of words, resolving quoting as a shell would.
  *
- * The classifier's regexes were written against the command as sent, but the transport
- * removes quoting before the command runs, so `rm -rf "/etc"` matched no destructive
- * pattern and `s"u"do id` named no privilege prefix. Every consumer that used to split on
- * `/[;&|\n]/` and `/\s+/` reads this instead, so quote removal happens once, in one
- * place, rather than being re-derived per rule.
  *
- * Not a shell parser. Variable expansion, arithmetic and here-documents are out of scope —
- * `hasUnnameableCommand` is what refuses a command word this cannot resolve.
+ * 分类的正则是对发送时的命令写的，但传输在命令运行前移除引号，
+ * 所以带引号的 rm -rf 匹配不到破坏性模式、夹引号的 sudo 点不出
+ * 提权前缀。过去在分号/管道/换行和空白上拆分的每个消费者改读这里，
+ * 引号移除因此一次、一处发生，而非每条规则重新推导。
+ *
+ *
+ * 不是 shell 解析器。变量展开、算术和 here-doc 在范围外——
+ * 无法解析的命令词由 hasUnnameableCommand 拒绝。
  */
 function tokenizeSegments(command: string, dialect: ShellDialect = 'posix'): string[][] {
   return tokenizeSegmentsDetailed(command, true, dialect).map((segment) => segment.words);
@@ -885,10 +885,10 @@ function tokenizeSegments(command: string, dialect: ShellDialect = 'posix'): str
 const DOUBLE_QUOTE_ESCAPABLE = new Set(['$', '`', '"', '\\', '\n']);
 
 /**
- * The same split, keeping the separator that introduced each segment.
+ * 只有管道规则需要它：管道把一条命令的输出喂给下一条，
+ * 分号和与号只是排序，关于管道的规则不得在排序上开火。
+ * 两种视图出自一个分词器正是两者不失步的原因。
  *
- * Only the pipe rules need it: `|` feeds one command's output into the next, while `;`
- * and `&` merely sequence, and a rule about pipes must not fire on a rule about sequences.
  * Deriving both views from one tokeniser is what stops the two from drifting apart.
  */
 function tokenizeSegmentsDetailed(
@@ -904,11 +904,11 @@ function tokenizeSegmentsDetailed(
   let escaped = false;
 
   /**
-   * Whether the word being built was quoted, so an *empty* one survives.
-   *
-   * `if (current)` alone dropped it, and a dropped word is not cosmetic for
-   * anything that reads arguments by position: `awk -F '' 'BEGIN{system("sudo
-   * id")}'` arrived as three words instead of four, so the awk reader consumed
+ *
+ * 只查 current 会丢掉它，而对按位置读参数的一切丢词不是小事：
+ * awk -F 加空串引号加 BEGIN system 命令以三词而非四词到达，
+ * awk 读取器把程序当 -F 的值消费、报告调用没有跑程序——
+ * 对真实 awk 会跑的命令却是 safe。BWK awk 20200816 实测：
    * the program as `-F`'s value and reported that the invocation ran no program
    * — `safe`, for a command real awk runs. Measured on BWK awk 20200816: it
    * warns "field separator FS is empty" on stderr and then executes both the
@@ -966,10 +966,10 @@ function tokenizeSegmentsDetailed(
   endSegment('');
 
   // A quote left open at the end is not a command a shell would run — it is a syntax
-  // error. Reading it as one long quoted argument is the dangerous reading: `echo "hi;
-  // sudo id` then never splits on the `;` and the elevation disappears, which measured as
-  // `privileged` before this tokeniser and `safe` after. So fall back to the scan that
-  // treats the quote character as ordinary text, which splits and still sees `sudo id`.
+  // 把它读作一个长引号参数是危险的读法：那样就不再按分号拆分、
+  // 提权消失——分词前实测为 privileged、分词后变 safe。
+  // 所以回落到把引号字符当普通文本的扫描：既拆分又能看到提权。
+  //
   if (quote !== null) return tokenizeSegmentsDetailed(command, false, dialect);
   return segments;
 }
@@ -977,17 +977,17 @@ function tokenizeSegmentsDetailed(
 /**
  * The command rebuilt from its tokens, for the regex rules to match against.
  *
- * Segments are rejoined with `; ` so a pattern cannot match across two commands that the
- * shell would run separately.
+ * 片段以分号加空格重接，模式不能跨 shell 会分别运行的两条命令匹配。
+ *
  */
 const normalizedCache = new Map<string, string>();
 
 function normalizeCommand(command: string, dialect: ShellDialect): string {
-  // One evaluate asks for this about nineteen times, once per regex rule, and each ask
-  // re-ran the tokeniser over the whole command. The asks arrive in a row on the same
-  // input, so a small cache, evicting the oldest inserted entry, removes almost
-  // all of it. The key carries the dialect because both readings of one command
-  // are asked about in the same row.
+  // 一次 evaluate 约问十九次，每个正则规则一次，每次问都重跑
+  // 整条命令的分词器。问在同一条命令上连续到达，小缓存、
+  // 逐出最早插入的条目，几乎全部消除。键带方言，因为同一命令
+  // 的两种读法在同一行里都会被问。
+  //
   const key = `${dialect}\u0000${command}`;
   const hit = normalizedCache.get(key);
   if (hit !== undefined) return hit;
@@ -1007,39 +1007,39 @@ function normalizeUncached(command: string, dialect: ShellDialect): string {
 
 /**
  * A character the tokeniser splits on or at, which a token can only hold if it was quoted.
+ * 分词器在未引号分隔符上、未引号空白处拆分，持有任一者的令牌
+ * 必来自引号内——shell 不在那里拆分，其内容是数据。把它拼回模式文本
+ * 正是让参数读作命令的原因：echo 加引号串打印字符串，归一化后却
+ * 变成含真实分号的命令并命中永不放行清单。丢弃这些令牌保持引号移除
+ * 做它被加入时的本职——令牌不含分隔符的带引号路径——而不让带引号
+ * 的参数冒充命令。真正交出带引号命令的载体（sh -c 加串）由
+ * nestedCommands 读取，不由此处。
  *
- * The tokeniser splits on unquoted separators and at unquoted whitespace, so a token
- * holding either came from inside quotes — the shell will not split there, and its contents are data. Rejoining it
- * into the pattern text is what makes an argument read as a command: `echo "hello; rm -rf
- * /"` prints a string, and normalising it produced `echo hello; rm -rf /`, which matched
- * the never-allowed list. Dropping those tokens keeps quote removal doing the job it was
- * added for — `rm -rf "/etc"`, whose tokens hold no separator — without letting a quoted
- * argument impersonate a command. A carrier that really does hand over a quoted command
  * (`sh -c "ls; rm -rf /etc"`) is read by `nestedCommands`, not by this.
  */
 const QUOTED_CONTENT = /[\s;&|\n]/;
 
 /**
- * What a quoted token becomes in the pattern text.
  *
- * Deleting it instead spliced its neighbours together and created an adjacency that appears
- * nowhere in the command: `echo rm 'a|b' -rf /` normalised to `echo rm -rf /` and landed on
- * the never-allowed list. A character no pattern contains and `\s` does not match stands in
- * its place, so the two sides can no longer be read as one phrase.
+ *
+ * 直接删除会把相邻词拼在一起、制造命令中从未出现的相邻关系：
+ * echo 加引号管道词归一化后落在永不放行清单。一个无模式包含、
+ * 空白也不匹配的字符代替其位，两侧不能再被读成一个短语。
+ *
  */
 const PLACEHOLDER = '\u0000';
 
 /**
- * Try a regex against the command as written and against the tokenised form.
  *
- * Normalising alone is not enough. It rebuilds the command from tokens, so the shell
- * metacharacters between them are gone, and a pattern that matches across a separator no
- * longer fires — the fork bomb, whose `:|:&` needs the literal `|` and `&`, is the case
- * that shows this. Normalising is still what defeats `rm -rf "/etc"`. Neither form is a
- * superset of the other, so both are tried: for a pattern whose whole job is to notice
- * something, the union is the only direction that cannot lose a match.
+ * 只归一化不够：它从令牌重建命令，其间 shell 元字符消失，
+ * 跨分隔符匹配的模式不再开火——fork 炸弹的字面管道加与号就是证明。
+ * 归一化仍是打败带引号路径的手段。两种形态互不为超集，所以都试：
+ * 对以发现某物为全部职责的模式，并集是唯一不丢匹配的方向。
  *
- * Deliberately scoped to regexes. The word-based rules in `FORBIDDEN_RULES` already
+ * 刻意只限正则。FORBIDDEN_RULES 的词规则本已分词，把归一化串交给它们
+ * 会把安全地待在带引号参数里的分隔符变成真的——grep 加引号竖线词
+ * 变成无条件拒绝，正是 #91 提及与调用 bug 的重演。
+ *
  * tokenise, and handing them the normalised string turns a separator that was safely
  * inside a quoted argument into a real one — `grep -E "warn|reboot" syslog` became an
  * unconditional refusal, which is the mention-vs-invocation bug of #91 all over again.
@@ -1049,14 +1049,14 @@ function matchesEitherForm(command: string, test: (form: string) => boolean, dia
 }
 
 /**
- * The commands hiding inside a command.
  *
- * The elevation scan reads tokens produced by splitting on `;&|` and whitespace, so
- * it only ever saw the outer command: `echo $(sudo id)` tokenised to
- * `["echo", "$(sudo", "id)"]`, `echo` was taken to be the real command, and no
- * elevation was found (GHSA-v8jh-gv7v-3gvq). The destructive scan never had this
- * problem because it reads the raw text — which is why `echo $(rm -rf /)` was
- * classified correctly the whole time. This closes that asymmetry by pulling the
+ *
+ * 提权扫描读按分号管道与空白拆出的令牌，只见外层命令：
+ * echo 加替换分词成三词、echo 被当真命令、找不到提权
+ *（GHSA-v8jh-gv7v-3gvq）。破坏性扫描从未有此问题因为它读原始文本——
+ * 所以带替换的 rm 命令一直归类正确。这通过拉出内部命令、
+ * 让它们以自己的身份被分类来关闭该不对称。
+ *
  * inner commands out so they can be classified in their own right.
  *
  * Four carriers, all of which a remote shell expands and runs:
