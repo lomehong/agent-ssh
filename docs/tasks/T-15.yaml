@@ -1,0 +1,21 @@
+id: T-15
+title: Host 进程装配：引擎迁入/manifest/审计/队列串行化/cutover/http 删除
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:54:00
+blockedBy: [T-14.5]
+accept:
+  - 引擎迁入并继承 60s 回收器+停机梯（M6）
+  - manifest：23 工具+resources 段+描述哈希（D3）；单连接内不可变
+  - 审计新增 rpcCallerClass 字段；tracer 增 rpc.request span
+  - 队列决定按 id 串行化（K7，approval-queue.ts:257-276 非原子）+「并发双决定仅一生效」用例
+  - approvalChannel 旧值 zod 显式拒绝+迁移指引，不静默映射（K1）+迁移测试
+  - host init 五步引导；pidfile 单实例 fail-fast
+  - 守护日志去向与轮转闭环
+  - guard/elicitation.ts 删除；approvalChannel→面集合 ['desktop','im','queue']
+  - transport/http.ts 删除；http 系测试 ~90 例删除并登记（含 packaging:151）
+  - tsc 0 错；失败集不扩大（删除项单列）
+source: 方案 §6/§7/§11 T-15 行；评审 K1/K7
+events:
+  - 2026-10-11 20:54:00 | create | by=lome | level=L1 | blocked_by=T-14.5

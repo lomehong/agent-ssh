@@ -1,0 +1,17 @@
+id: T-18b
+title: 测试迁移+红线四项改写（双进程化/基线对照）
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 21:04:00
+blockedBy: [T-18a]
+accept:
+  - legacy spawn 3 文件+e2e 7 文件双进程化；隔离=per-file 复用 Host+per-test mkdtemp（K9-④）
+  - 红线四项全绿（①矩阵枚举 7 态②无凭证断言③无 ssh2④重放+过期+单次消费+并发双决定仅一生效）
+  - 单连接并发 tool.call RPC 层用例：id 关联/大响应与推送交织（K9-③）
+  - 时钟回拨不延长窗口用例；债务表述核对（K9-⑦）
+  - 基线冻结对照：失败集不扩大（删除项单列）
+  - import type 豁免与传递依赖口径收口（K9-⑨）
+source: 方案 §9/§11 T-18b 行；评审 K9/K4/K7
+events:
+  - 2026-10-11 21:04:00 | create | by=lome | level=L1 | blocked_by=T-18a

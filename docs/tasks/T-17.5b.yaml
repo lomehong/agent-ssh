@@ -1,0 +1,19 @@
+id: T-17.5b
+title: 桌面端审批闭环：口令→会话+弹窗+决定+校验码（Host 侧限次）
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:58:00
+blockedBy: [T-17.5a]
+accept:
+  - 口令→auth.session.start→内存态会话（30min 滑动）；锁屏/超时回锁；磁盘零 operator 秘密
+  - 弹窗：profile/类别/命令全文等宽/指纹短形/倒计时/堆叠/[拒绝][批准]
+  - 命令全文纯文本 textNode+锁 CSP+零远程内容（K8-③）
+  - 校验码（D10/K8-②）：Host 生成 4 位、仅窗口可见、单次有效、Host 侧 3 次失败作废+60s TTL
+  - 会话令牌 zeroize+≥256bit+吊销手段（K8-⑦）
+  - approval.subscribe 推送+approval.decide（operator 会话）
+  - Webview 仅渲染，秘密不进 JS 上下文
+  - cargo test 全绿
+source: 方案 §4.1/§11 T-17.5b 行；评审 K8-②③⑦、K3
+events:
+  - 2026-10-11 20:58:00 | create | by=lome | level=L1 | blocked_by=T-17.5a

@@ -1,0 +1,15 @@
+id: T-17
+title: CLI 改造：approvals/run/info 经 RPC（口令→会话）
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:52:00
+blockedBy: [T-14]
+accept:
+  - approvals list/approve/reject 经 RPC：口令→auth.session.start→会话；语义保持（全文展示/指纹校验/approver=cli:<用户> 审计）
+  - run 经 cli.run（过分类+禁止名单，approver=cli-direct 保持，D4）；info 经 cli.info
+  - --session-token 经 stdin 明示风险行为保持
+  - 旧直连代码路径删除；tsc 0 错；相关单测全绿
+source: 方案 §2.1/§4.3/§11 T-17 行、§12 D1'/D4
+events:
+  - 2026-10-11 20:52:00 | create | by=lome | level=L1 | blocked_by=T-14

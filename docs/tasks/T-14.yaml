@@ -1,0 +1,18 @@
+id: T-14
+title: RPC 协议层：帧/认证/矩阵 7 态/golden.json 夹具
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:50:00
+blockedBy: [T-13.5]
+accept:
+  - 帧：4MB 上限进出同值（D12）、超限断连并审计、非法输入拒绝、最大合法截断响应 1056768B 过单帧边界测试
+  - 认证：agent 令牌 ≥256bit；operator 会话 scrypt+盐+timingSafeEqual+失败限速+30min 滑动 TTL+renew（D13 内置 scrypt 零新依赖）
+  - 矩阵 7 态枚举（agent/operator/无凭据/过期会话/谎报 class/IM 决定令牌/已轮换旧令牌）；服务端判定类别（M3）；FORBIDDEN→-32002+审计；JIT 暗门断言（K8-⑥）
+  - 推送分发 approval.subscribe（pending/settled）；指数退避重连；host.hello 版本握手
+  - 非环回强制 TLS；无 pin fail-closed 拒连（K8-①）；AGENT_SSH_HOST_PIN 一票否决；hello 回显指纹
+  - golden.json 夹具由 TS 协议类型单测生成到 test/fixtures/rpc/（K6）
+  - 零新运行时依赖；单测全绿；tsc 0 错
+source: 方案 §3.1-§3.6、§11 T-14 行、§12 D12/D13；评审记录 §2/§3（K6/K8-①⑥）
+events:
+  - 2026-10-11 20:50:00 | create | by=lome | level=L1 | blocked_by=T-13.5（方案原设无阻断，因新增预重构票改挂，主人批准关键路径时已含此顺序）

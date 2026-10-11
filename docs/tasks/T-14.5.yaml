@@ -1,0 +1,15 @@
+id: T-14.5
+title: 垂直切片 + 双进程 harness（五件套+超时预算）
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:52:00
+blockedBy: [T-14]
+accept:
+  - 1-2 个工具经 stub→Host 真链路垂直切片（最小装配）
+  - harness 五件套：端口分配/进程树清理/就绪探测/per-test 状态隔离/TLS 夹具
+  - 双进程用例超时预算显式设置（K9-⑤）
+  - 新增单测全绿、基线不扩大；tsc 0 错
+source: 方案 §9/§11 T-14.5 行；评审记录 K9-⑤
+events:
+  - 2026-10-11 20:52:00 | create | by=lome | level=L1 | blocked_by=T-14

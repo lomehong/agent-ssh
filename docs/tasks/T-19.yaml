@@ -1,0 +1,18 @@
+id: T-19
+title: 收口+主人迁移：E2E/Linux 复跑/吞吐基线/文档/env 切换
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 21:04:00
+blockedBy: [T-18b]
+accept:
+  - localhost 全链路 E2E（经 stub→Host）
+  - 真实 Linux 复跑六步链路（前提清单先行：目标机/账号，K9-⑧）
+  - PTY 交互吞吐基线实测（§8）
+  - 文档收口：README/SECURITY/DEVICE-ONBOARDING/init runbook/升级 runbook/tools/list_changed 差异说明
+  - 基线冻结对照全绿（红线四项含内）
+  - 主人侧迁移清单：config 拷贝（keychain 重录）/宿主 spawn 改 agent-ssh+env/TOFU 首连重放
+  - 主人真实验收后方可待确认
+source: 方案 §7/§8/§9/§11 T-19 行；评审 K9-⑧、H6
+events:
+  - 2026-10-11 21:04:00 | create | by=lome | level=L1 | blocked_by=T-18b

@@ -1,0 +1,19 @@
+id: T-17.6
+title: 飞书 bot（P1，立项挂起：外部前置=开放平台应用申请）
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:56:00
+blockedBy: [T-15]
+accept:
+  - 官方 SDK @larksuiteoapi/node-sdk 长连接纯出站；内联按钮走 SDK 卡片回调（D13）
+  - 独立 error domain+异步非阻塞启动；bot token 落 Host 配置 0600（K5）
+  - 失效语义：审计 im.unreachable+托盘「IM 面离线」；CLI 队列兜底不静默丢失（K5）
+  - 推送：profile/类别/命令全文（截断档必叠 redactor）/过期时间+内联按钮
+  - 决策令牌 per-request 单次消费、绑定 id+指纹、≥128bit；user_id ∈ 绑定表（A8/K8-⑤）
+  - 跨面仲裁+消息编辑「已在桌面端批准」（D11）；重连 approval.list 补偿
+  - README 两步验证运维要求
+  - 前置：主人申请飞书开放平台应用——未齐不开工
+source: 方案 §4.2/§10/§11 T-17.6 行、§12 D11/D13；评审 K5/K8-⑤
+events:
+  - 2026-10-11 20:56:00 | create | by=lome | level=L1 | blocked_by=T-15 + 外部前置（主人裁决立项挂起）

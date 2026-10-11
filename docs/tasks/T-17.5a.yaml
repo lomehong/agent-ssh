@@ -1,0 +1,17 @@
+id: T-17.5a
+title: 桌面端骨架：cargo 工程+Rust RPC 客户端+契约夹具对拍（无 UI）
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:56:00
+blockedBy: [T-15]
+accept:
+  - approver/ cargo 工程立起（tokio；Tauri 2，D9）
+  - Rust RPC 客户端：\n 分帧/hello 握手/会话认证/指数退避重连
+  - 消费 test/fixtures/rpc/*.golden.json 对拍（TS 生成 Rust 消费，K6）；对拍进 Rust CI job
+  - 本票无 UI；cargo test 全绿
+  - Cargo.lock 入库+cargo-deny 策略（K2）
+  - 开工时核查本机 Rust 工具链并登记；缺失则停票报告主人，不擅自安装
+source: 方案 §3.6/§4.1/§11 T-17.5a 行；评审 K3/K6/K2
+events:
+  - 2026-10-11 20:56:00 | create | by=lome | level=L1 | blocked_by=T-15

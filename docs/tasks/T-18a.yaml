@@ -1,0 +1,16 @@
+id: T-18a
+title: 入口切换+传输废止：默认切 stub/bin 改名 agent-ssh/stdio 直连删除
+level: L1
+status: 待执行
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 21:02:00
+blockedBy: [T-15, T-16, T-17]
+accept:
+  - 默认入口切 stub；stdio 直连路径删除
+  - bin 改名 ssh-mcp→agent-ssh（D14）：package.json bin/README/config 目录迁移说明
+  - 位置语义改写（§5）：三工具 localPath/local 监听=Host 机侧；Windows Host 禁用明示
+  - forward-open 结果文本标注「Host 机」；http 旗标清理与 --dumpToolHashes 处置入报告
+  - 删测数登记；tsc 0 错；失败集不扩大（删除项单列）
+source: 方案 §5/§6/§7/§11 T-18a 行、§12 D14/H1-a；评审小残留节
+events:
+  - 2026-10-11 21:02:00 | create | by=lome | level=L1 | blocked_by=T-15/T-16/T-17
