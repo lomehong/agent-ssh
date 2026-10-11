@@ -27,6 +27,8 @@ export interface RpcServerAuditEvent {
 export interface RpcHandlerContext {
   callerClass: CallerClass;
   connId: string;
+  /** 信封 auth 成员原文（会话令牌 renew 等自凭据方法需要）。 */
+  presentedToken?: string;
 }
 
 export type RpcHandler = (params: unknown, ctx: RpcHandlerContext) => unknown | Promise<unknown>;
@@ -211,7 +213,7 @@ export class RpcHostServer {
       this.respondError(conn, req.id, RPC_ERROR.METHOD_NOT_FOUND, `Method ${req.method} is not implemented on this host`);
       return;
     }
-    Promise.resolve(handler(req.params, { callerClass: auth.callerClass, connId: conn.id }))
+    Promise.resolve(handler(req.params, { callerClass: auth.callerClass, connId: conn.id, presentedToken: token }))
       .then((result) => this.respond(conn, req.id, { result }))
       .catch((err: unknown) =>
         this.respondError(conn, req.id, RPC_ERROR.INTERNAL, err instanceof Error ? err.message : String(err)),

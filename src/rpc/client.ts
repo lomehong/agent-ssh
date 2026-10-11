@@ -28,6 +28,12 @@ export interface RpcClientOpts {
   connectTimeoutMs?: number;
   /** 断线自动重连，缺省开。 */
   reconnect?: boolean;
+  /**
+   * operator 引导模式：跳过 connect 时的 hello（hello 需有效凭据，而无凭据面
+   * 靠 auth.session.start 换会话——先 start 再以会话令牌重连走正常 hello）。
+   * 缺省 false（agent/会话客户端都应 hello）。
+   */
+  skipHello?: boolean;
 }
 
 interface Pending {
@@ -74,7 +80,9 @@ export class RpcClient {
     });
     socket.on('error', () => {});
     socket.on('close', () => this.onClose(socket));
-    await this.rawCall('host.hello', { protocolVersion: this.opts.protocolVersion ?? RPC_PROTOCOL_VERSION });
+    if (this.opts.skipHello !== true) {
+      await this.rawCall('host.hello', { protocolVersion: this.opts.protocolVersion ?? RPC_PROTOCOL_VERSION });
+    }
     this.ready = true;
     this.attempt = 0;
     // 重连成功后重放订阅（§3.5：重连后 approval.list 补偿属 T-16 语义，订阅重放在此）
