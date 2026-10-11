@@ -11,7 +11,7 @@
 services:
   # ─── Test SSH Servers (role-based, for integration tests) ──────────────────
   ssh-admin:
-    image: ghcr.io/linuxserver/openssh-server:latest@sha256:946fa26105e0ec212fdf821b9ddc59aab65f2c2d07c02b25ff0f5001fc332ff0
+    image: ghcr.io/linuxserver/openssh-server:latest@sha256:46f115de7c251558297e7e87566fc3fc08544b63e55502b5cf294454db5d29d1
     profiles: ["test"]
     environment:
       - USER_NAME=admin
@@ -24,7 +24,7 @@ services:
       - "2222:2222"
 
   ssh-viewer:
-    image: ghcr.io/linuxserver/openssh-server:latest@sha256:946fa26105e0ec212fdf821b9ddc59aab65f2c2d07c02b25ff0f5001fc332ff0
+    image: ghcr.io/linuxserver/openssh-server:latest@sha256:46f115de7c251558297e7e87566fc3fc08544b63e55502b5cf294454db5d29d1
     profiles: ["test"]
     environment:
       - USER_NAME=viewer
@@ -36,7 +36,7 @@ services:
       - "2223:2222"
 
   ssh-operator:
-    image: ghcr.io/linuxserver/openssh-server:latest@sha256:946fa26105e0ec212fdf821b9ddc59aab65f2c2d07c02b25ff0f5001fc332ff0
+    image: ghcr.io/linuxserver/openssh-server:latest@sha256:46f115de7c251558297e7e87566fc3fc08544b63e55502b5cf294454db5d29d1
     profiles: ["test"]
     environment:
       - USER_NAME=operator
