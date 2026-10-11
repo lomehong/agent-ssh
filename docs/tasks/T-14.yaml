@@ -1,12 +1,14 @@
 id: T-14
 title: RPC 协议层：帧/认证/矩阵 7 态/golden.json 夹具
 level: L1
-status: 待确认
+status: 已落定
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:50:00
 claimedBy: digital-architect
 claimedAt: 2026-10-11 21:42:00
 reportedAt: 2026-10-11 22:00:00
+confirmedBy: lome
+confirmedVia: 会话内 ask 选项作答「确认落定，继续 T-14.5」，2026-10-11 22:10 前后
 blockedBy: [T-13.5]
 accept:
   - 帧：4MB 上限进出同值（D12）、超限断连并审计、非法输入拒绝、最大合法截断响应 1056768B 过单帧边界测试
@@ -18,6 +20,7 @@ accept:
   - 零新运行时依赖；单测全绿；tsc 0 错
 source: 方案 §3.1-§3.6、§11 T-14 行、§12 D12/D13；评审记录 §2/§3（K6/K8-①⑥）
 events:
+  - 2026-10-11 22:10:00 | confirm | by=lome | 会话 ask 选项「确认落定，继续 T-14.5」——confirmedBy=lome
   - 2026-10-11 22:00:00 | report | by=digital-architect | 自报待主人 confirm。五提交：791df96 帧/52edeee 认证/0963d7d 矩阵/429b424 传输安全+握手+推送+退避+golden/443af35 评审收口。证据：rpc 8 文件 60/60 绿；tsc 0；全量终轮 29败/2143过/62跳（2234 总），失败文件同为 6 个既有环境族，失败集不扩大。双轴评审：规格轴 7/7 pass；标准轴 1 硬违规（令牌表查时序）经 443af35 修复（tokenDigest 摘要键 hash-then-lookup）+3 judgement call（两条登记 T-15 验收、一条 helper 提取已做）。未兑现项/边界：①审计 sink 本体归 T-15（本票 audit:true 标记+接缝）；②重连循环本体归 T-16（本票退避策略原语）；③表格判定类别已实现但 hello/tool.call 分发器本体归 T-15 装配（票面范围=协议层）；④方案 §3.3 renew 行勘误已在工作区设计文档落实（v3.1），随主人分拣入库。开发中三次占位残瑕（生成器毛刺）均经字节级扫描清零。
   - 2026-10-11 21:42:00 | claim | by=digital-architect | 接缝约定（T-13.5 已落定后开工）：frame(帧编解码+超限断连信号)/auth(令牌+scrypt 会话，时钟可注入单调)/matrix(方法×凭据纯表，服务端判定)/hello(版本握手)/transport-security(环回判定复用 address.ts+客户端 pin)/push(订阅分发)/reconnect(指数退避)/golden(夹具生成)——全纯协议层，审计走可注入 sink，真实审计落 T-15 装配
   - 2026-10-11 20:50:00 | create | by=lome | level=L1 | blocked_by=T-13.5（方案原设无阻断，因新增预重构票改挂，主人批准关键路径时已含此顺序）
