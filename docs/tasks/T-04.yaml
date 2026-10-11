@@ -2,10 +2,17 @@ id: T-04
 title: CLI 审批队列+双通道（文件化+状态机+agent 不可自批红线）
 level: L1
 blockedBy: T-02
-status: 执行中
+status: 已落定
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
 claimedBy: digital-architect
+reportedAt: 2026-10-11 07:16:16
+reportSummary: ①无 elicitation 场景破坏性命令落队列(文件化,管线测试)②CLI list/approve/reject 全文展示后裁决,decidedBy 入审计 approver=cli:<user>③10min 过期 fail-closed(单测)④指纹不匹配拒绝(单测,含自洽重算攻击向)⑤红线:MCP 工具面无审批动词(测试钉住)+registry 绊线 20 工具⑥POSIX 0700/0600;Windows ACL 检查为报告制(与上游 config 语义一致)登记残留。双通道:客户拒绝=终局不落队列;elicitation 不可达才降级队列。新增 15 测试全绿,回归失败集=基线(32)。待主人 confirm。
+confirmedBy: master
+confirmedVia: 会话 ask_user 回执 2026-10-11「确认，继续 T-06」
+confirmedAt: 2026-10-11 07:17:42
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-02 | accept=①破坏性命令无 elicitation 场景落审批队列 ②CLI list/approve/reject 展示完整上下文后裁决 ③超时 expired fail-closed ④命令指纹不匹配的队列文件被拒 ⑤MCP 工具面无 approve/reject 动作（红线测试）⑥队列目录/文件权限收紧+Windows ACL 检查。出处：技术方案 §1 Do5、§4 Security
   - 2026-10-11 07:06:14 | claim | by=digital-architect
+  - 2026-10-11 07:16:16 | report | by=digital-architect
+  - 2026-10-11 07:17:42 | confirm | by=digital-architect

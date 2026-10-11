@@ -2,8 +2,10 @@ id: T-06
 title: 端口转发三模式+授权（local/remote/dynamic）
 level: L1
 blockedBy: T-02
-status: 待执行
-root: E:\\Development\\Code\\nodejs\\agent-ssh
+status: 执行中
+root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
+claimedBy: digital-architect
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-02 | accept=①容器场景本地转发 curl 通、close 后断 ②denylist 目标被拒且留痕 ③viewer 角色禁转发 ④dynamic 默认关闭需显式开启。出处：技术方案 §1 Do6、§4 Security
+  - 2026-10-11 07:17:42 | claim | by=digital-architect
