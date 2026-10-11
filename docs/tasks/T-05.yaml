@@ -1,0 +1,9 @@
+id: T-05
+title: 网络设备 deviceType 档案（华为/华三/思科/锐捷）+ssh2-Server 模拟器
+level: L1
+blockedBy: T-03
+status: 待执行
+root: E:\\Development\\Code\\nodejs\\agent-ssh
+createdAt: 2026-10-11 06:06:46
+events:
+  - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-03 | accept=①四厂商档案（关分页命令/提示符正则/编码）落地 ②四模拟器 E2E：连接→自动关分页→提示符识别→查询命令→回显→退出 ③全量审计留痕。出处：技术方案 §1 Do10、§7 T5

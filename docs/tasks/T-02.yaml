@@ -1,0 +1,9 @@
+id: T-02
+title: 配置扩展：algorithms/keyboardInteractive/deviceType 骨架
+level: L1
+blockedBy: T-01
+status: 待执行
+root: E:\\Development\\Code\\nodejs\\agent-ssh
+createdAt: 2026-10-11 06:06:45
+events:
+  - 2026-10-11 06:06:45 | create | by=lome | level=L1 | blocked_by=T-01 | accept=①容器旧算法 sshd 默认配置连接失败、profile.algorithms 放宽后连通且审计 warning ②非法 deviceType 被校验拒绝（未知键报错纪律保持）③keyboardInteractive 透传单测。出处：技术方案 §1 Do7、§4 兼容
