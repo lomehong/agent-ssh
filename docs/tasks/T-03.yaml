@@ -2,10 +2,17 @@ id: T-03
 title: 真 PTY 会话（Linux/generic）五原语+大输出治理接入
 level: L1
 blockedBy: T-02
-status: 执行中
+status: 已落定
 root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
 claimedBy: digital-architect
+reportedAt: 2026-10-11 07:05:12
+reportSummary: ①E2E 真容器:PTY 打开→whoami 回显含 admin→resize→close 全通(真 PTY 分配证据=输入回显+提示符)②大输出治理:环形缓冲+32KB 分页回读+丢弃计数,单测覆盖③审批门:pty:open 分类地板=destructive(单测),ask-destructive 无审批通道即 fail-closed,分层对策②转录文件(脱敏,10MB 冻结)与③双超时(U3 默认 10min/2h)单测覆盖④E2E3 例+单测22 全绿,全量 2021 过/32 败=基线同集零扩大,README 工具表 14→20。b 系列提交已推送。待主人 confirm。
+confirmedBy: master
+confirmedVia: 会话 ask_user 回执 2026-10-11「确认，继续 T-04」
+confirmedAt: 2026-10-11 07:06:14
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-02 | accept=①MCP 客户端对容器 Linux 开 PTY 会话交互执行且 CWD 持续 ②超阈值输出截断落盘+分页回读 ③会话开启未审批被拒（破坏性类）④双超时生效（U3 默认：单次回读 32KB/总量 1MB、会话上限 2h）⑤会话全量内容审计（脱敏）。出处：技术方案 §1 Do4、§6 U2/U3
   - 2026-10-11 06:45:37 | claim | by=digital-architect
+  - 2026-10-11 07:05:12 | report | by=digital-architect
+  - 2026-10-11 07:06:14 | confirm | by=digital-architect

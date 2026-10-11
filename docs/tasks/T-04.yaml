@@ -2,8 +2,10 @@ id: T-04
 title: CLI 审批队列+双通道（文件化+状态机+agent 不可自批红线）
 level: L1
 blockedBy: T-02
-status: 待执行
-root: E:\\Development\\Code\\nodejs\\agent-ssh
+status: 执行中
+root: E:\\Development\\Code\\\nodejs\\agent-ssh
 createdAt: 2026-10-11 06:06:46
+claimedBy: digital-architect
 events:
   - 2026-10-11 06:06:46 | create | by=lome | level=L1 | blocked_by=T-02 | accept=①破坏性命令无 elicitation 场景落审批队列 ②CLI list/approve/reject 展示完整上下文后裁决 ③超时 expired fail-closed ④命令指纹不匹配的队列文件被拒 ⑤MCP 工具面无 approve/reject 动作（红线测试）⑥队列目录/文件权限收紧+Windows ACL 检查。出处：技术方案 §1 Do5、§4 Security
+  - 2026-10-11 07:06:14 | claim | by=digital-architect
