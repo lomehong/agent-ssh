@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { OperatorSessionStore, generateAgentToken, hashPassword } from '../../../src/rpc/auth.js';
+import {
+  OperatorSessionStore,
+  generateAgentToken,
+  hashPassword,
+  tokenDigest,
+} from '../../../src/rpc/auth.js';
 import { METHOD_MATRIX, isKnownMethod, methodAllowedFor } from '../../../src/rpc/matrix.js';
 import { authorize, type RpcTables } from '../../../src/rpc/authorize.js';
+import { OPERATOR_SESSION_TTL_MS } from '../../../src/rpc/auth.js';
+import { fakeClock } from './helpers.js';
 
 const METHODS = Object.keys(METHOD_MATRIX);
 
@@ -23,37 +30,71 @@ const SPEC_ROWS: Record<string, { agent: boolean; operator: boolean; im: boolean
   'host.admin.rotateToken': { agent: false, operator: true, im: false },
 };
 
-/** 单调可拨钟。 */
-function fakeClock(start = 1_000_000): { now(): number; advance(ms: number): void } {
-  let t = start;
-  return { now: () => t, advance(ms: number) { t += ms; } };
-}
-
-function makeTables(): RpcTables & {
-  clock: ReturnType<typeof fakeClock>;
+interface Harness {
+  tables: RpcTables;
   agentToken: string;
-  oldAgentToken: string;
+  oldAgentToken: string; // 已轮换：不在表内
   imToken: string;
   sessionToken: string;
-} {
-  const clock = fakeClock();
+}
+
+function makeHarness(): Harness {
   const agentToken = generateAgentToken();
-  const oldAgentToken = generateAgentToken(); // 已轮换：不在表内
+  const oldAgentToken = generateAgentToken();
   const imToken = generateAgentToken();
-  const sessions = new OperatorSessionStore({ storedHash: hashPassword('pw'), clock: clock.now });
-  const sessionToken = sessions.start('pw', 'k');
-  if (!sessionToken.ok) throw new Error('session start failed');
+  const sessions = new OperatorSessionStore({ storedHash: hashPassword('pw') });
+  const started = sessions.start('pw', 'k');
+  if (!started.ok) throw new Error('session start failed');
   return {
-    clock,
-    agentTokens: new Set([agentToken]),
-    sessions,
-    imDecisionTokens: new Set([imToken]),
+    tables: {
+      // 表中只存摘要（tokenDigest）——防时序 hash-then-lookup，与实现纪律一致
+      agentTokens: new Set([tokenDigest(agentToken)]),
+      sessions,
+      imDecisionTokens: new Set([tokenDigest(imToken)]),
+    },
     agentToken,
     oldAgentToken,
     imToken,
-    sessionToken: sessionToken.token,
+    sessionToken: started.token,
   };
 }
+
+/** 每态独立凭据与表：expired-session 态构造真过期的会话表（K9-① 名实相符）。 */
+function stateCredential(
+  state: (typeof states)[number],
+  h: Harness,
+): { tables: RpcTables; token: string | undefined } {
+  if (state === 'expired-session') {
+    const clock = fakeClock();
+    const store = new OperatorSessionStore({ storedHash: hashPassword('pw'), clock: clock.now });
+    const started = store.start('pw', 'k');
+    if (!started.ok) throw new Error('session start failed');
+    clock.advance(OPERATOR_SESSION_TTL_MS + 1); // 真·过期（非「未知令牌」近似）
+    const expiredToken = started.token;
+    return { tables: { ...h.tables, sessions: store }, token: expiredToken };
+  }
+  const token =
+    state === 'agent' || state === 'lying-class'
+      ? h.agentToken
+      : state === 'operator'
+        ? h.sessionToken
+        : state === 'im'
+          ? h.imToken
+          : state === 'rotated-agent-token'
+            ? h.oldAgentToken
+            : undefined;
+  return { tables: h.tables, token };
+}
+
+const states = [
+  'agent', // 有效 agent 令牌
+  'operator', // 有效 operator 会话
+  'none', // 无凭据
+  'expired-session', // 过期会话（真过期）
+  'lying-class', // 谎报 class（持 agent 令牌自称 operator）
+  'im', // IM 决定令牌（绑定表命中）
+  'rotated-agent-token', // 已轮换旧令牌（不在表内）
+] as const;
 
 describe('方法×凭据矩阵（红线执行点，方案 §3.3）', () => {
   it('注册方法与规格表一致', () => {
@@ -70,33 +111,6 @@ describe('方法×凭据矩阵（红线执行点，方案 §3.3）', () => {
 });
 
 describe('7 凭据态 × 全方法枚举（K9-①：5 态扩 7 态）', () => {
-  const states = [
-    'agent', // 有效 agent 令牌
-    'operator', // 有效 operator 会话
-    'none', // 无凭据
-    'expired-session', // 过期会话
-    'lying-class', // 谎报 class（持 agent 令牌自称 operator）
-    'im', // IM 决定令牌（绑定表命中）
-    'rotated-agent-token', // 已轮换旧令牌（不在表内）
-  ] as const;
-
-  function tokenFor(state: (typeof states)[number], t: ReturnType<typeof makeTables>): string | undefined {
-    switch (state) {
-      case 'agent':
-      case 'lying-class':
-        return t.agentToken;
-      case 'operator':
-        return t.sessionToken;
-      case 'im':
-        return t.imToken;
-      case 'expired-session':
-      case 'rotated-agent-token':
-        return t.oldAgentToken === t.agentToken ? generateAgentToken() : t.oldAgentToken;
-      case 'none':
-        return undefined;
-    }
-  }
-
   function expectOutcome(
     method: string,
     state: (typeof states)[number],
@@ -137,29 +151,41 @@ describe('7 凭据态 × 全方法枚举（K9-①：5 态扩 7 态）', () => {
   }
 
   it('全组合（14 方法 × 7 态 = 98 断言）', () => {
-    const t = makeTables();
+    const h = makeHarness();
     for (const method of METHODS) {
       for (const state of states) {
-        const auth = authorize(method, tokenFor(state, t), t);
-        expectOutcome(method, state, auth);
+        const { tables, token } = stateCredential(state, h);
+        expectOutcome(method, state, authorize(method, token, tables));
       }
     }
   });
 
-  it('过期会话确实过期过（会话表时钟推进）', () => {
-    const t = makeTables();
-    t.clock.advance(31 * 60_000);
-    expect(t.sessions.validate(t.sessionToken)).toBe(false);
-    const auth = authorize('tool.call', t.sessionToken, t);
-    expect(auth).toEqual({ ok: false, code: -32001, message: expect.any(String), audit: true });
+  it('过期会话确属「曾有效后过期」：同令牌在未过期时通过、过期后 -32001', () => {
+    const clock = fakeClock();
+    const store = new OperatorSessionStore({ storedHash: hashPassword('pw'), clock: clock.now });
+    const started = store.start('pw', 'k');
+    if (!started.ok) throw new Error('session start failed');
+    const tables: RpcTables = {
+      agentTokens: new Set([tokenDigest(generateAgentToken())]),
+      sessions: store,
+      imDecisionTokens: new Set(),
+    };
+    expect(authorize('tool.call', started.token, tables).ok).toBe(true);
+    clock.advance(OPERATOR_SESSION_TTL_MS + 1);
+    expect(authorize('tool.call', started.token, tables)).toEqual({
+      ok: false,
+      code: -32001,
+      message: expect.any(String),
+      audit: true,
+    });
   });
 });
 
 describe('红线专项', () => {
   it('K8-⑥ JIT 暗门断言：反射枚举全方法 × agent 令牌，无 grant/approve 语义可达', () => {
-    const t = makeTables();
+    const h = makeHarness();
     for (const method of METHODS) {
-      const auth = authorize(method, t.agentToken, t);
+      const auth = authorize(method, h.agentToken, h.tables);
       if (auth.ok) {
         expect(method).not.toMatch(/approv|grant|authoriz|escrow/i);
       }
@@ -167,21 +193,21 @@ describe('红线专项', () => {
     // approval.* 对 agent 全部 FORBIDDEN
     for (const method of METHODS) {
       if (method.startsWith('approval.')) {
-        const auth = authorize(method, t.agentToken, t);
+        const auth = authorize(method, h.agentToken, h.tables);
         expect(auth.ok).toBe(false);
       }
     }
   });
 
   it('FORBIDDEN 携带审计标记（-32002 + audit:true）', () => {
-    const t = makeTables();
-    const auth = authorize('approval.list', t.agentToken, t);
+    const h = makeHarness();
+    const auth = authorize('approval.list', h.agentToken, h.tables);
     expect(auth).toEqual({ ok: false, code: -32002, message: expect.any(String), audit: true });
   });
 
   it('未知方法 → -32601（method not found，不审计）', () => {
-    const t = makeTables();
-    const auth = authorize('host.selfDestruct', t.agentToken, t);
+    const h = makeHarness();
+    const auth = authorize('host.selfDestruct', h.agentToken, h.tables);
     expect(auth).toEqual({ ok: false, code: -32601, message: expect.any(String), audit: false });
   });
 });

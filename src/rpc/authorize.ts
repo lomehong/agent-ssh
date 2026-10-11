@@ -9,6 +9,7 @@
  * 由服务层落审计（T-15 装配真实 sink）；method not found 不审计。
  */
 import type { OperatorSessionStore } from './auth.js';
+import { tokenDigest } from './auth.js';
 import { METHOD_MATRIX, isKnownMethod, type CallerClass } from './matrix.js';
 import { RPC_ERROR } from './protocol.js';
 
@@ -35,11 +36,17 @@ export function authorize(
   }
   const row = METHOD_MATRIX[method]!;
 
+  // 防时序：与三张表的比较全部经 tokenDigest（hash-then-lookup，见 auth.ts）；
+  // 集合元素为摘要，原文令牌不做任何直接等值判定。
+  const presentedDigest = presentedToken !== undefined && presentedToken !== ''
+    ? tokenDigest(presentedToken)
+    : undefined;
+
   let callerClass: CallerClass = 'unauthenticated';
-  if (presentedToken !== undefined && presentedToken !== '') {
-    if (tables.agentTokens.has(presentedToken)) callerClass = 'agent';
-    else if (tables.sessions.validate(presentedToken)) callerClass = 'operator';
-    else if (tables.imDecisionTokens.has(presentedToken)) callerClass = 'im';
+  if (presentedDigest !== undefined) {
+    if (tables.agentTokens.has(presentedDigest)) callerClass = 'agent';
+    else if (tables.sessions.validate(presentedToken!)) callerClass = 'operator';
+    else if (tables.imDecisionTokens.has(presentedDigest)) callerClass = 'im';
   }
 
   if (callerClass === 'unauthenticated') {

@@ -8,17 +8,7 @@ import {
   hashPassword,
   verifyPassword,
 } from '../../../src/rpc/auth.js';
-
-/** 可拨动的单调钟（毫秒）。 */
-function fakeClock(start = 1_000_000): { now(): number; advance(ms: number): void } {
-  let t = start;
-  return {
-    now: () => t,
-    advance(ms: number) {
-      t += ms;
-    },
-  };
-}
+import { fakeClock } from './helpers.js';
 
 describe('agent 静态令牌（≥256bit，§3.2）', () => {
   it('生成 256bit 熵的 URL 安全令牌（32 字节 → 43 字符 base64url）', () => {

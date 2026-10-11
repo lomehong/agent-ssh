@@ -9,11 +9,23 @@
  * 时钟：默认 performance.now()（单调钟，方案 §3.5——审批/会话窗口判定不受
  * 系统时钟回拨影响），可注入供测试拨动。
  */
-import { randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { AuthFailureLimiter, DEFAULT_AUTH_FAILURE_LIMIT } from './limiters.js';
 
 /** operator 会话 TTL：30min 滑动（方案 §3.2）。 */
 export const OPERATOR_SESSION_TTL_MS = 30 * 60_000;
+
+/**
+ * 令牌表的键：sha256(token) 十六进制摘要。
+ *
+ * hash-then-lookup（标准防时序构造）：查表耗时只取决于输入自身的哈希运算，
+ * 与表中存储的秘密逐位无关——Set.has/Map.get 直接吃原始令牌的写法在
+ * 时序上不设防（评审 T-14 标准轴硬违规 #1 的修复）。表中只存摘要，
+ * 原文令牌不落任何键结构。
+ */
+export function tokenDigest(token: string): string {
+  return createHash('sha256').update(token, 'utf8').digest('hex');
+}
 
 /** 生成 256bit URL 安全令牌（agent 静态令牌与会话令牌同一生成器）。 */
 export function generateAgentToken(): string {
@@ -72,9 +84,10 @@ export interface OperatorSessionStoreOpts {
 }
 
 /**
- * operator 会话表（内存态）：token → 过期时刻（单调钟毫秒）。
+ * operator 会话表（内存态）：键=tokenDigest(token)（防时序，见上），值=过期时刻（单调钟毫秒）。
  * 会话令牌与 agent 令牌同一熵源（32B base64url，≥256bit，K8-⑦ 最小熵要求），
  * 两表分立：服务端类别判定按「查哪张表命中」（M3），不在矩阵入口做。
+ * 过期条目的惰性回收/表上限归 T-15 接线（评审 T-14 judgement call #1）。
  */
 export class OperatorSessionStore {
   private readonly sessions = new Map<string, { expiresAt: number }>();
@@ -105,20 +118,20 @@ export class OperatorSessionStore {
       throw new BadPasswordError();
     }
     const token = generateAgentToken();
-    this.sessions.set(token, { expiresAt: this.clock() + this.ttlMs });
+    this.sessions.set(tokenDigest(token), { expiresAt: this.clock() + this.ttlMs });
     return { ok: true, token };
   }
 
   /** 存在且未过期。读取不续期（滑动只由 renew/后续语义触发）。 */
   validate(token: string): boolean {
-    const session = this.sessions.get(token);
+    const session = this.sessions.get(tokenDigest(token));
     if (session === undefined) return false;
     return this.clock() < session.expiresAt;
   }
 
   /** 滑动续期：有效会话把过期时刻推到 now+TTL。 */
   renew(token: string): boolean {
-    const session = this.sessions.get(token);
+    const session = this.sessions.get(tokenDigest(token));
     if (session === undefined || this.clock() >= session.expiresAt) return false;
     session.expiresAt = this.clock() + this.ttlMs;
     return true;
@@ -126,6 +139,6 @@ export class OperatorSessionStore {
 
   /** 吊销（K8-⑦：会话须有吊销手段；轮换/登出由调用方语义决定）。 */
   revoke(token: string): void {
-    this.sessions.delete(token);
+    this.sessions.delete(tokenDigest(token));
   }
 }

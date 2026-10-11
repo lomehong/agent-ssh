@@ -38,12 +38,12 @@ export function isKnownMethod(method: string): boolean {
   return Object.prototype.hasOwnProperty.call(METHOD_MATRIX, method);
 }
 
-/** 已知方法对某类别的放行位；未知方法返回 undefined。 */
+/** 已知方法对某类别的放行位；未知方法返回 undefined（与 isKnownMethod 同一判定路径）。 */
 export function methodAllowedFor(
   method: string,
   cls: Exclude<CallerClass, 'unauthenticated'>,
 ): boolean | undefined {
-  const row = METHOD_MATRIX[method];
-  if (row === undefined) return undefined;
+  if (!isKnownMethod(method)) return undefined;
+  const row = METHOD_MATRIX[method]!;
   return row[cls];
 }
