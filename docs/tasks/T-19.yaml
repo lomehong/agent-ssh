@@ -10,6 +10,8 @@ accept:
   - 真实 Linux 复跑六步链路（前提清单先行：目标机/账号，K9-⑧）
   - PTY 交互吞吐基线实测（§8）
   - 文档收口：README/SECURITY/DEVICE-ONBOARDING/init runbook/升级 runbook/tools/list_changed 差异说明
+  - 【T-15 评审继承】文档 approvalChannel 残留清理：README.md:467、DEVICE-ONBOARDING.md:10 仍指引旧键（与 K1 墓碑拒绝直接矛盾）——改 approvalSurfaces 新契约
+  - 【T-15 评审继承】e2e 破坏性审批用例重建（tools.e2e 三例 skip 待裁决器：privileged-command/交互会话/sftp 回环）
   - 基线冻结对照全绿（红线四项含内）
   - 主人侧迁移清单：config 拷贝（keychain 重录）/宿主 spawn 改 agent-ssh+env/TOFU 首连重放
   - 主人真实验收后方可待确认

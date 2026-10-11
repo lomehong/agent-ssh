@@ -6,7 +6,17 @@ root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:54:00
 claimedBy: digital-architect
 claimedAt: 2026-10-11 22:54:00
-progress: 验收 2/3/4/5/6/7/8/9 已完成（824b291/3168066/bf8bb60/a19863d/0813b63/483c7c1e 等），余 1/10 进行中
+progress: 验收 1/2/3/4/5/8/9 完成 + 6/7 核心完成（接线位已在 startHost，生产缺省随 T-16），余 10 终轮对照/评审/自报
+deletedTests:
+  - guard/elicitation.test.ts（通道移除）
+  - e2e/approval.e2e.test.ts（elicitation 审批 e2e；T-18b 以审批面重建）
+  - e2e/http.e2e.test.ts（随 HTTP 传输废止）
+  - unit/transport/http.test.ts（107 例；纯单测 45 例迁 rpc/limiter-address.test.ts，行为级随服务器删除）
+  - packaging.e2e bearerToken 断言（H5）
+  - tools.e2e 三破坏性用例 skip（跨进程裁决器待 T-17.5b/17.6/T-18b；期间防平台默认队列堆积——实测曾积 23 条测试垃圾已清）
+wiringBoundary:
+  - host init：核心生成器+测试完成；CLI 交互包装与④⑤证书/pin 步骤随 T-16/T-18a 入口切换
+  - pidfile/log：startHost 已提供 pidfilePath/logFile 接线位（acquire+release、RotatingLogger 双写）；生产缺省路径随 T-16 进程包装定
 blockedBy: [T-14.5]
 accept:
   - 引擎迁入并继承 60s 回收器+停机梯（M6）

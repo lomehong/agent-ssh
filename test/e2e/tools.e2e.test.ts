@@ -52,7 +52,11 @@ describe.skipIf(!available)('E2E — tool surface over stdio', () => {
     expect(textOf(res)).toContain('[exit 7]');
   });
 
-  it('privileged-command elevates without the password reaching the output', async () => {
+  // T-15：审批走队列面后，破坏性 e2e 需要跨进程裁决器（CLI/审批面）才可观
+  // 测——裁决器随 Host 审批面（T-17.5b/T-17.6）与 T-18b 审批 e2e 重建落位。
+  // 旧 elicitation 自动应答已随通道移除；在此期间 skip 防止用例挂死与
+  // 平台默认队列堆积（实测曾堆积 23 条测试垃圾，已清）。
+  it.skip('privileged-command elevates without the password reaching the output', async () => {
     const res = await e2e.callTool('privileged-command', { command: 'id -u' });
     expect(res.isError).toBeFalsy();
     // uid 0 — the command really ran as root.
@@ -63,7 +67,7 @@ describe.skipIf(!available)('E2E — tool surface over stdio', () => {
     expect(textOf(res)).not.toContain('secret');
   });
 
-  it('interactive sessions keep CWD and environment between commands', async () => {
+  it.skip('interactive sessions keep CWD and environment between commands', async () => {
     const opened = await e2e.callTool('open-session', { name: 'e2e-shell', type: 'interactive' });
     expect(opened.isError).toBeFalsy();
 
@@ -96,7 +100,7 @@ describe.skipIf(!available)('E2E — tool surface over stdio', () => {
     await e2e.callTool('close-session', { name: 'e2e-bg' });
   }, 30000);
 
-  it('sftp-upload and sftp-download round-trip a file', async () => {
+  it.skip('sftp-upload and sftp-download round-trip a file', async () => {
     const remotePath = '/tmp/e2e-transfer.txt';
     const content = 'round-trip through SFTP';
 

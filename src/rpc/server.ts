@@ -62,6 +62,8 @@ function requestIdOf(v: unknown): string | number | null {
 
 export class RpcHostServer {
   private readonly opts: RpcHostServerOpts;
+  /** 启动时构建一次（D3：单连接内 manifest 不可变；确定性由 manifest.test 钉死）。 */
+  private readonly manifest: ReturnType<typeof buildToolManifest>;
   private readonly conns = new Map<string, Conn>();
   private readonly _hub = new PushHub();
   private server?: Server;
@@ -72,6 +74,7 @@ export class RpcHostServer {
 
   constructor(opts: RpcHostServerOpts) {
     this.opts = opts;
+    this.manifest = buildToolManifest(opts.protocolVersion ?? RPC_PROTOCOL_VERSION);
   }
 
   get hub(): PushHub {
@@ -191,11 +194,7 @@ export class RpcHostServer {
       return;
     }
     if (req.method === 'host.toolManifest') {
-      // D3：单连接内 manifest 不可变——构建器为纯函数，装配在启动时缓存的结果
-      // 等价于每次构建同一输出（manifest.test 确定性用例钉死）。
-      this.respond(conn, req.id, {
-        result: buildToolManifest(this.opts.protocolVersion ?? RPC_PROTOCOL_VERSION),
-      });
+      this.respond(conn, req.id, { result: this.manifest });
       return;
     }
     if (req.method === 'approval.subscribe') {

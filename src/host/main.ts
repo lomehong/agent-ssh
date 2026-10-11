@@ -21,6 +21,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { TlsOptions } from 'node:tls';
 import { listPending, decideApproval, type ApprovalSurface } from '../guard/approval-queue.js';
+import { acquirePidfile } from '../rpc/pidfile.js';
 import { generateAgentToken, hashPassword, tokenDigest, OperatorSessionStore } from '../rpc/auth.js';
 import { RpcHostServer, type RpcHandler, type RpcHandlerContext } from '../rpc/server.js';
 import type { RpcTables } from '../rpc/authorize.js';
@@ -31,7 +32,7 @@ import { PolicyEngine } from '../policy/engine.js';
 import { ConnectionRegistry } from '../ssh/connection-registry.js';
 import type { HostKeyMode } from '../ssh/host-key.js';
 import type { AppConfig } from '../types.js';
-import type { RotatingLogger } from './log.js';
+import { RotatingLogger } from './log.js';
 
 export interface StartHostOpts {
   config: AppConfig;
@@ -49,8 +50,10 @@ export interface StartHostOpts {
   approvalQueueDir?: string;
   approvalQueuePollMs?: number;
   approvalGrantTtlMs?: number;
-  /** 守护日志（验收 7）；缺省仅 stderr。 */
-  log?: RotatingLogger;
+  /** 守护日志（验收 7）：提供 logFile 即 RotatingLogger 落盘+stderr 双写；缺省仅 stderr。 */
+  logFile?: string;
+  /** pidfile 路径（验收 6）：提供即单实例强制（活实例存在 → fail-fast）。 */
+  pidfilePath?: string;
   /** 回收器间隔（测试可缩短），默认 60_000（M6 承重顺序随迁）。 */
   reaperIntervalMs?: number;
 }
@@ -63,8 +66,14 @@ export interface RunningHost {
 }
 
 export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
+  // 验收 6/7 接线：pidfile 单实例强制（活实例即 fail-fast）与守护日志落盘
+  // （RotatingLogger+stderr 双写）。缺省不启用——生产缺省路径随 T-16 进程包装定。
+  const pidHandle = opts.pidfilePath !== undefined ? acquirePidfile(opts.pidfilePath) : undefined;
+  const rotating = opts.logFile !== undefined
+    ? new RotatingLogger({ file: opts.logFile })
+    : undefined;
   const log = (line: string): void => {
-    opts.log?.append(line);
+    rotating?.append(line);
     console.error(line);
   };
 
@@ -140,9 +149,10 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     'auth.session.start': async (params) => {
       const p = params as { password?: unknown };
       if (typeof p?.password !== 'string') throw new Error('auth.session.start requires params.password');
-      // 失败限速/常时比较在会话表内；异常转结构化错误的策略由 server 通用 catch 承担。
+      // 结构化错误直传客户端（BadPasswordError/AuthFailureLimitExceededError
+      // 经 server 通用 catch 以 -32603+原文可辨因——评审 T-15 jc3）。
       const started = sessions.start(p.password, 'rpc');
-      return { sessionToken: started.ok ? started.token : '' };
+      return { sessionToken: started.token };
     },
     'auth.session.renew': async (_params, ctx: RpcHandlerContext) => {
       // renew 的凭据即信封 auth 成员（会话令牌）——server 在 ctx 携带原文。
@@ -192,6 +202,7 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       if (stopping) return;
       stopping = true;
       clearInterval(reaperInterval);
+      pidHandle?.release();
       // 停机梯（index.ts 继承）：审计先行冲刷 → closeAll 有界（kill 阶梯+余量）。
       try {
         await audit.close();

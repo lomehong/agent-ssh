@@ -14,11 +14,12 @@ describe('host init 生成器（T-15 验收 6，方案 §6 五步引导的核心
     expect(verifyPassword('wrong', a.operatorHash)).toBe(false);
   });
 
-  it('骨架 TOML 内嵌令牌与哈希，且键面走新 approvalSurfaces 契约', () => {
+  it('骨架 TOML 内嵌哈希但不含令牌明文（落盘最小化，评审 jc2），键面走新契约', () => {
     const a = buildHostInitArtifacts('pw', { agentToken: 'A'.repeat(43) });
-    expect(a.configToml).toContain(`AGENT_SSH_TOKEN=${'A'.repeat(43)}`);
+    expect(a.configToml).not.toContain('A'.repeat(43));
     expect(a.configToml).toContain(`operatorPasswordHash = "${a.operatorHash}"`);
     expect(a.configToml).toContain('approvalSurfaces = ["desktop", "queue"]');
+    expect(a.configToml).toContain('init 打印一次');
     expect(a.configToml).not.toContain('approvalChannel');
   });
 

@@ -24,6 +24,9 @@ export function buildHostInitArtifacts(
 ): HostInitArtifacts {
   const agentToken = opts.agentToken ?? generateAgentToken();
   const operatorHash = hashPassword(operatorPassword);
+  // 安全纪律（评审 T-15 jc2）：agent 令牌明文不进 config.toml——令牌经 init
+  // 输出（stdout，一次）交运维注入 stub 的 env（D6 禁 argv）；配置里只留
+  // 指引注释。落盘最小化：哈希是配置里唯一的秘密衍生材料。
   const configToml = `# agent-ssh Host 配置（由 \`agent-ssh host init\` 生成，${new Date().toISOString()}）
 # 凭证引用与策略都在 Host 机；本文件不出 Host（方案 §1 信任域）。
 
@@ -32,8 +35,8 @@ export function buildHostInitArtifacts(
 # queue=文件队列+approvals CLI（兜底，建议常驻集合）。
 approvalSurfaces = ["desktop", "queue"]
 
-# agent 令牌经 env AGENT_SSH_TOKEN 注入 stub（禁走 argv，D6）：
-#   AGENT_SSH_TOKEN=${agentToken}
+# agent 令牌由 init 打印一次，经 env AGENT_SSH_TOKEN 注入 stub
+#（禁走 argv，D6；明文不入本文件——丢失时重跑 init 轮换）。
 
 # operator 口令哈希（scrypt，salt:hash）。由 init 交互输入生成；
 # 校验在 auth.session.start，明文口令不落任何盘。

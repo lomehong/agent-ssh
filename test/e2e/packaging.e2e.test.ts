@@ -148,9 +148,9 @@ describe.skipIf(!serverBuilt)('E2E — packaging', () => {
     expect(dockerfile).not.toMatch(/--from=builder [^\n]*config\.default\.toml/);
   });
 
-  // T-15：bearerToken 断言随 HTTP 传输废止删除（评审 H5 点名的隐性依赖，
-  // 删测登记见 docs/tasks/T-15.yaml）。传输形态的门禁由 index.ts 的
-  // --transport=http 显式报错承担。
+  // T-15：bearerToken 断言随 HTTP 传输废止删除（评审 H5 点名的隐性依赖）。
+  // 删测登记：docs/tasks/T-15.yaml 删测清单行 + 提交 483c7c1e。传输形态的
+  // 门禁由 index.ts 的 --transport=http 显式报错承担。
 });
 
 describe.skipIf(!serverBuilt || !pnpmAvailable)('E2E — strict dependency resolution', () => {

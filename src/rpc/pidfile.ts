@@ -37,10 +37,26 @@ export function acquirePidfile(path: string): { release(): void } {
       throw new PidfileLockedError(pid, path);
     }
     // 陈旧文件（进程已死或内容不可读）：删旧后接管。先 unlink 再 O_EXCL
-    // 创建——两个并发接管者只有一个赢，单实例语义仍由胜者的存活保证。
+    // 创建——并发接管者的竞态窗口：胜者写入前后者可能读到空/缺文件而误判，
+    // 此时 O_EXCL 的 EEXIST/胜者活体探测会把它挡回 LockedError（fail-fast）。
     unlinkSync(path);
   }
-  const fd = openSync(path, 'wx'); // O_EXCL：与并发第二次启动的竞态也原子
+  let fd: number;
+  try {
+    fd = openSync(path, 'wx'); // O_EXCL：与并发第二次启动的竞态也原子
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'EEXIST') {
+      // 接管竞态败者：胜者（另一接管者/原实例）活着——按锁拒绝并报告其 pid。
+      let winner = 0;
+      try {
+        winner = Number.parseInt(readFileSync(path, 'utf8').trim(), 10);
+      } catch {
+        winner = 0;
+      }
+      throw new PidfileLockedError(winner, path);
+    }
+    throw err;
+  }
   try {
     writeFileSync(fd, String(process.pid), 'utf8');
   } finally {
