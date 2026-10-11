@@ -92,7 +92,7 @@ agent-ssh MCP Server ──► policy engine（分级/矩阵/denylist/配额）
 审计日志（JSONL，三层脱敏）◄── 全通道统一留痕（含 PTY 会话输入输出、审批决定）
 ```
 
-数据主责：审批队列状态 = `~/.agent-ssh/approvals/`（agent-ssh 私有域）；审计 = 上游 audit 目录；设备凭证 = 上游凭证级联。一致性边界：审批状态机单机单文件原子写（沿用上游 config/audit 的写纪律）。
+数据主责：审批队列状态 = `~/.agent-ssh/approvals/`（agent-ssh 私有域）；审计 = 上游 audit 目录；设备凭证 = 上游凭证级联。一致性边界：审批队列状态 = 平台数据目录下 agent-ssh/approvals/（win=%LOCALAPPDATA%\agent-ssh\approvals；POSIX=$XDG_DATA_HOME/agent-ssh/approvals——设计初稿写 ~/.agent-ssh/approvals，实现按平台惯例落位，2026-10-11 审计 M3 更正）。单机单文件原子写（沿用上游 config/audit 的写纪律）。
 
 ### 访客可见性红线检查
 
@@ -147,7 +147,7 @@ agent-ssh MCP Server ──► policy engine（分级/矩阵/denylist/配额）
 |---|---|---|---|
 | U1 | Unknown | 上游 profile `tty = false` 字段语义未核（可能已部分支持 PTY 通道） | **已核查（T-01，2026-10-11）**：上游 tty=exec 通道一次性 PTY 分配（src/ssh/connection.ts:373、src/tools/command-tools.ts:41、src/config/schema.ts:173）；交互式多轮 PTY 会话不存在 → T-03/T-05 维持必要，exec PTY 管道可复用。证据：docs/reports/2026-10-11-T01-上游基线测试-Windows.md |
 | U2 | **Human Decision（决策门）** | PTY 会话内命令无法逐条过命令分类器（字节流本质，非 exec 通道）。缓解五层：①会话开启默认需人工审批（纳入破坏性类）；②会话输入输出全量审计+脱敏；③空闲+总时长双超时；④文档红线：设备接入用最小权限账号+设备侧 AAA 记账兜底；⑤P2 探索内容级正则告警 | **已裁决（2026-10-11 主人）：接受五层对策**，内容告警维持 P2 |
-| U3 | **Human Decision（决策门）** | 安全参数默认值：审批超时 10min（对齐上游 elicitation）、每日配额 200/主机（上游默认）、PTY 输出单次回读 32KB/总量 1MB、PTY 会话总时长上限 2h | **已裁决（2026-10-11 主人）：按方案默认值档落**，写入配置默认，运行时可调 |
+| U3 | **Human Decision（决策门）** | 安全参数默认值：审批超时 10min（对齐上游 elicitation）、每日配额 200/主机、PTY 输出单次回读 32KB/总量 1MB、PTY 会话总时长上限 2h | **已裁决并落地（T-13 更正）**：裁决值 200 已写入默认——**更正：上游默认实为 0（不限制）而非 200**，200 系本次裁决新增，已覆盖实现 |
 | U4 | Unknown | 三厂商具体型号/系统版本与 ssh2 的算法+PTY 实际兼容性 | spike 票：先对设备模拟器验证代码路径，实机抽验终验；主人待补型号清单（需求包待确认 #1） |
 | U5 | Conflict | 无 | 四层装载未发现知识库与代码/上游文档冲突（本设计不涉套件成员内部行为） |
 

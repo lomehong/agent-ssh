@@ -28,7 +28,7 @@ const baseProfile: Omit<Profile, 'name' | 'host' | 'port' | 'user' | 'role'> = {
   sessionMaxPerConnection: 5,
   sessionIdleTimeoutMs: 60000,
   sessionBackgroundMaxMs: 3600000,
-  commandQuotaPerDay: 0,
+  commandQuotaPerDay: 200,
   transferMaxBytes: 268_435_456, transferTimeoutMs: 300_000,
 };
 
@@ -99,7 +99,11 @@ export function createAppConfig(): AppConfig {
     commandMaxChars: 5000,
     commandMaxOutputBytes: 1048576,
     connectionIdleReapMs: 60000,
-    commandQuotaPerDay: 0,
+    commandQuotaPerDay: 200,
+    approvalChannel: 'both',
+    allowDynamicForwarding: false,
+    ptySessionIdleTimeoutMs: 60000,
+    ptySessionMaxLifetimeMs: 7200000,
     transferMaxBytes: 268_435_456, transferTimeoutMs: 300_000,
     approvalGrantTtlMs: 0,
     approvalMode: 'ask-destructive',

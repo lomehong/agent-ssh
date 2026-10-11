@@ -1,32 +1,32 @@
 import type { DeviceType } from '../types.js';
 
 /**
- * Device archives (agent-ssh T-05): the vendor personality a raw PTY session
- * needs to drive a network-device CLI — the paging-off command, the prompt
- * shapes, and the output encoding.
+ * 设备档案（agent-ssh T-05）：裸 PTY 会话驱动网络设备 CLI
+ * 所需的厂商特性——关分页命令、提示符形态
+ * 与输出编码。
  *
- * Grounded in vendor CLI reality, kept deliberately small:
- * - Huawei VRP: user view `<HOSTNAME>`, system view `[~HOSTNAME]`; paging is
- *   per-session via `screen-length 0 temporary` (the `temporary` form needs no
- *   `save` and no configuration-mode trip).
- * - H3C Comware: `<HOSTNAME>` / `[HOSTNAME]`; `screen-length disable`.
- * - Cisco IOS: `HOSTNAME>` / `HOSTNAME#`; `terminal length 0`.
- * - Ruijie RGOS: Cisco-flavoured (`terminal length 0`, `HOSTNAME>`).
+ * 以厂商 CLI 的真实情况为据，刻意保持精简：
+ * - 华为 VRP：用户视图 `<HOSTNAME>`、系统视图 `[~HOSTNAME]`；分页按
+ *   会话用 `screen-length 0 temporary` 关闭（`temporary` 形式
+ *   无需 `save`，不必进配置模式）。
+ * - H3C Comware：`<HOSTNAME>` / `[HOSTNAME]`；`screen-length disable`。
+ * - 思科 IOS：`HOSTNAME>` / `HOSTNAME#`；`terminal length 0`。
+ * - 锐捷 RGOS：类思科风格（`terminal length 0`、`HOSTNAME>`）。
  *
- * Encoding is recorded per archive but the transport decodes UTF-8 today:
- * legacy GB2312/GBK device output (common on older Huawei/H3C builds) would
- * need a decode step that is deliberately out of scope until a real device
- * proves it necessary — recorded here so the gap is visible, not latent.
+ * 编码按档案记录，但传输层目前一律按 UTF-8 解码：
+ * 遗留的 GB2312/GBK 设备输出（老华为/华三固件上常见）需要一道解码工序，
+ * 在真实设备证明必要之前刻意不做——在此登记，让缺口可见，
+ * 而不是潜伏。
  */
 
 export interface DeviceArchive {
   deviceType: Exclude<DeviceType, 'generic'>;
-  /** Sent automatically after the PTY opens; null = no paging to disable. */
+  /** PTY 打开后自动发送；null = 无分页可关。 */
   disablePaging: string | null;
-  /** A line matching any of these is a ready prompt. */
+  /** 匹配其中任一形态的行即为就绪提示符。 */
   promptPatterns: RegExp[];
   encoding: 'utf8';
-  /** Visible gap note — what this archive does NOT handle yet. */
+  /** 显式缺口备注——本档案尚未处理什么。 */
   encodingNote?: string;
 }
 
@@ -65,10 +65,10 @@ export function getDeviceArchive(deviceType: DeviceType | undefined): DeviceArch
 }
 
 /**
- * Whether any line of `output`'s tail looks like a ready prompt.
+ * `output` 的尾部是否有任何一行像就绪提示符。
  *
- * Checks the last non-empty line only: a paging banner from several screens
- * ago must not read as "the device is ready for the next command".
+ * 只查最后一行非空行：几屏之前的分页横幅不能被读成
+ * 「设备已准备好接收下一条命令」。
  */
 export function outputEndsWithPrompt(output: string, patterns: RegExp[]): boolean {
   if (patterns.length === 0) return false;

@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
-import { createServer, connect, type Server } from 'node:net';
+import { createServer, connect } from 'node:net';
 import { ConnectionRegistry } from '../../src/ssh/connection-registry.js';
 import { allServersUp, checkAllServers, setupEnv, createAppConfig } from './fixtures.js';
 import type { AppConfig } from '../../src/types.js';
@@ -12,7 +12,7 @@ import type { AppConfig } from '../../src/types.js';
 //   bytes land on a local echo server through the manager's accept() path.
 
 let env: ReturnType<typeof setupEnv>;
-let registry: ConnectionRegistry;
+let registry: ConnectionRegistry | undefined;
 
 const AUTO_CONFIG: AppConfig = (() => {
   const base = createAppConfig();

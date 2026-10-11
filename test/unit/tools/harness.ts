@@ -28,6 +28,7 @@ export const testProfile: Profile = {
   user: 'tester',
   auth: 'password',
   tty: false,
+  keyboardInteractive: false,
   timeout: 5000,
   maxChars: 5000,
   maxOutputBytes: 1_048_576,

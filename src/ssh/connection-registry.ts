@@ -18,6 +18,11 @@ export class ConnectionRegistry {
     this.hostKeyMode = hostKeyMode;
   }
 
+  /** Dynamic (SOCKS) forwarding opt-in from [defaults] — read by the forward tools' preCheck. */
+  isDynamicAllowed(): boolean {
+    return this.config.defaults.allowDynamicForwarding;
+  }
+
   async getOrCreate(profileName?: string): Promise<SSHConnection> {
     const profile = this.getProfile(profileName);
 
@@ -35,11 +40,11 @@ export class ConnectionRegistry {
       try {
         let conn = this.connections.get(profile.name);
 
-        // A ProxyJump connection runs over a forwarded channel on the bastion.
-        // Once the connection drops, that channel is dead, so reconnecting the
-        // same SSHConnection reuses a corpse and always fails — which used to
-        // burn one tool call on every reconnect before the retry rebuilt it.
-        // Discard the object so the hop is re-established below.
+        // ProxyJump 连接跑在堡垒机上转发的通道之上。
+        // 连接一旦断开，该通道即死，重连同一个 SSHConnection
+        // 等于复用一具尸体、必然失败——在重试逻辑重建它之前，
+        // 这曾让每次重连都白白烧掉一次工具调用。
+        // 丢弃对象，让下面的代码重建这一跳。
         if (conn && profile.via && !conn.isConnected()) {
           await conn.close().catch(() => {});
           this.connections.delete(profile.name);
@@ -64,7 +69,7 @@ export class ConnectionRegistry {
             this.knownHostsStore,
             this.hostKeyMode,
             bastionSock,
-            // Raw-PTY session bounds come from [defaults] (plan layer ③).
+        // 裸 PTY 会话的边界来自 [defaults]（计划第 ③ 层）。
             {
               idleTimeoutMs: this.config.defaults.ptySessionIdleTimeoutMs,
               maxLifetimeMs: this.config.defaults.ptySessionMaxLifetimeMs,
@@ -93,17 +98,17 @@ export class ConnectionRegistry {
   }
 
   /**
-   * Refuse everything while nothing is configured.
+    * 未配置时拒绝一切。
    *
-   * The server now starts with `profiles: []` so a directory or a client's "add server"
-   * flow can read `tools/list` (see cli.ts). This is where that state stops being
-   * readable and starts being refused, and it sits here rather than in the loader's
-   * `getProfile` for one measured reason: the loader's empty check can only live in the
-   * no-profile-named branch, so a client calling `run-command` with `profile: "prod"`
-   * against an unconfigured server got `Profile "prod" not found` — a message telling the
-   * operator they mistyped a name when in fact they have no config at all, and omitting
-   * the config path this whole change exists to deliver. Checking before the lookup
-   * covers both.
+    * 服务器如今以 `profiles: []` 启动，让目录或客户端的「添加服务器」流程
+    * 能读到 `tools/list`（见 cli.ts）。状态从「可读」变为「拒绝」正是在这里，
+    * 而它放在这里而不是 loader 的 `getProfile`，有一个实测原因：
+    * loader 的空检查只能放在「未按名字找到 profile」分支里，于是未配置服务器上
+    * 调用 `run-command` 且传 `profile: "prod"` 的客户端会得到
+    * `Profile "prod" not found`——这句话告诉运维「你打错了名字」，
+    * 而事实是根本没有配置，还漏掉了这次改动本要交付的配置路径。
+    * 在查找之前先检查，
+    * 两种情况都覆盖。
    */
   assertConfigured(): void {
     if (this.config.profiles.length === 0) throw new UnconfiguredError(getConfigPath());
@@ -140,9 +145,9 @@ export class ConnectionRegistry {
   }
 
   async closeAll(): Promise<void> {
-    // Concurrently, for the reason SessionManager.closeAll gives: each connection now waits
-    // for its sessions' kill ladders, and serialising multiplied that wait by the number of
-    // profiles.
+    // 并行执行，理由同 SessionManager.closeAll：现在每个连接都要等它的会话
+    // 走完信号阶梯，串行化会把这段等待按 profile 数量成倍放大。
+    //
     await Promise.all([...this.connections.values()].map((conn) => conn.close().catch(() => {})));
     this.connections.clear();
   }

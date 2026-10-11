@@ -126,7 +126,7 @@ export class DeviceSimulator {
       server.listen(0, '127.0.0.1', () => {
         const addr = server.address();
         const port = addr && typeof addr === 'object' ? addr.port : 0;
-        resolve(new DeviceSimulator(port, server, hostKey));
+        resolve(new DeviceSimulator(port, server, Buffer.from(hostKey)));
       });
       server.once('error', reject);
     });

@@ -7,25 +7,25 @@ import { PtySession, type PtyCloseReason, type PtySessionInfo } from './pty-sess
 
 /**
  * Per-connection manager of raw PTY sessions.
- *
- * Mirrors the upstream SessionManager's lifecycle duties (unique names, idle
- * reaping, close-all on connection teardown) and adds the PTY plan's lifetime
- * bound: a raw shell that an agent walked away from must die on its own, both
- * from idleness and from age (plan layer ③). Reaping is pull-based — every
- * tool call and the connection's periodic sweep call `reapExpired()` — because
- * timers per session would keep the process alive for shells nobody watches.
+ * 每连接一个的裸 PTY 会话管理器。
+ * 沿用上游 SessionManager 的生命周期职责（名字唯一、空闲回收、
+ * 连接拆除时全部关闭），并加上 PTY 计划的生存期上限：
+ * 一个被 agent 弃之不顾的裸 shell 必须自行死亡——既因空闲，
+ * 也因年龄（计划第 ③ 层）。回收是拉取式的——每次工具调用
+ * 与连接的周期清扫都会调 `reapExpired()`——因为每会话一个定时器
+ * 会为了没人看的 shell 把进程吊着不死。
  */
 
 export interface PtyManagerOptions {
-  /** Live profile getter — the profile object can be replaced at runtime. */
+  /** 活动 profile getter——profile 对象可在运行时被替换。 */
   profile: () => Profile;
-  /** Live client getter; throws when the connection is down. */
+  /** 活动 client getter；连接断开时抛错。 */
   getClient: () => Client;
-  /** Idle bound (U3 default 10min); lifetime bound (U3 default 2h). */
+  /** 空闲上限（U3 默认 10 分钟）；生存期上限（U3 默认 2 小时）。 */
   idleTimeoutMs: number;
   maxLifetimeMs: number;
   maxBufferBytes?: number;
-  /** Null disables transcripts (tests); default opens one per session. */
+  /** null 表示禁用转录（测试用）；默认每会话开启一份。 */
   openTranscript?: (sessionName: string) => Promise<PtyTranscript | null>;
 }
 
@@ -55,8 +55,8 @@ export class PtySessionManager {
 
   async open(request: PtyOpenRequest): Promise<PtySessionInfo> {
     const name = sanitizeSessionName(request.name);
-    // Reap first: a session that hit its idle/lifetime bound must not answer a
-    // name collision with "already open" when it is in fact dead walking.
+    // 先回收：一个已越过空闲/生存期上限的会话，不能在名字冲突时
+    // 回答「已打开」——它其实是具行尸。
     this.reapExpired();
     if (this.sessions.has(name)) {
       const existing = this.sessions.get(name)!;
@@ -70,10 +70,10 @@ export class PtySessionManager {
     }
 
     const channel = await new Promise<ClientChannel>((resolve, reject) => {
-      // The window object is what allocates the PTY (`shell(window, options, cb)`);
-      // upstream's interactive sessions pass the same shape — the difference is
-      // that this session hands the raw stream to the caller instead of framing
-      // commands in printf markers.
+      // window 对象正是分配 PTY 的入参（`shell(window, options, cb)`）；
+      // 上游的交互式会话传的也是这个形态——区别在于本会话把原始流
+      // 交给调用方，
+      // 而不是用 printf 标记包裹命令。
       this.opts.getClient().shell(
         { term: request.term ?? 'xterm-256color', cols: request.cols ?? 200, rows: request.rows ?? 50 },
         {},
@@ -84,11 +84,11 @@ export class PtySessionManager {
     const transcript = (this.opts.openTranscript ?? ((n: string) => FilePtyTranscript.open(n)))(name);
     const session = new PtySession(name, this.opts.profile().name, channel, {
       maxBufferBytes: this.opts.maxBufferBytes ?? 1_048_576,
-      encoding: this.opts.profile().ptyEncoding,
+      encoding: this.opts.profile().ptyEncoding ?? getDeviceArchive(this.opts.profile().deviceType)?.encoding,
     });
-    // Vendor personality: prompt shapes for readiness detection, and the
-    // paging-off command sent through the SAME path a user write takes — so
-    // the transcript records it like any other input.
+    // 厂商特性：用于就绪检测的提示符形态，以及经与用户写入
+    // 完全相同的路径发送的关分页命令——
+    // 因此转录会像记录任何其他输入一样记录它。
     const archive = getDeviceArchive(this.opts.profile().deviceType);
     session.setPromptPatterns(archive?.promptPatterns ?? []);
     this.sessions.set(name, session);
@@ -126,13 +126,13 @@ export class PtySessionManager {
     };
   }
 
-  /** Close idle/lifetime-expired sessions; returns what it closed and why. */
+  /** 关闭空闲/生存期到期的会话；返回关了什么、为何关。 */
   reapExpired(): Array<{ name: string; reason: PtyCloseReason }> {
     const reaped: Array<{ name: string; reason: PtyCloseReason }> = [];
     for (const [name, session] of this.sessions) {
       if (session.closed) {
-        // Remote-closed shells linger until observed; dropping them here keeps
-        // `list` truthful without a close round-trip.
+        // 远端已关闭的 shell 在被观察到之前会一直挂着；在这里丢弃它们，
+        // 让 `list` 保持真实，又不必多一次关闭往返。
         if (session.closeReason === 'remote' || session.closeReason === 'disconnect') {
           this.sessions.delete(name);
           reaped.push({ name, reason: session.closeReason });

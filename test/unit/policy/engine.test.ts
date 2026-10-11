@@ -11,6 +11,7 @@ function makeProfile(overrides: Partial<Profile> = {}): Profile {
     user: 'test',
     auth: 'agent',
     tty: false,
+  keyboardInteractive: false,
     timeout: 60000,
     maxChars: 5000,
     maxOutputBytes: 1048576,

@@ -6,7 +6,7 @@ import type { ApprovalChannel } from './guard/approval-queue.js';
 export type AuthMethod = 'agent' | 'key' | 'password' | 'keychain';
 export type ApprovalMode = 'auto' | 'ask-destructive' | 'ask-all' | 'deny';
 
-/** Vendor personality of a target host (drives paging/prompt handling). */
+/** 目标主机的厂商特性（驱动关分页/提示符处理）。 */
 export type DeviceType = 'generic' | 'huawei' | 'h3c' | 'cisco' | 'ruijie';
 
 export interface Profile {
@@ -18,18 +18,18 @@ export interface Profile {
   keyRef?: string;
   keychainEntry?: string;
   via?: string;
-  /** Explicit policy tier (prod | staging | dev | custom). */
+  /** 显式策略层级（prod | staging | dev | 自定义）。 */
   group?: string;
   workdir?: string;
   trustedHostKey?: string;
   tty: boolean;
-  /** Widens FROZEN_ALGORITHMS for this host; resolved against the frozen base. */
+  /** 为主机放宽 FROZEN_ALGORITHMS；对照冻结基线解析。 */
   algorithms?: AlgorithmOverride;
-  /** Vendor personality (network-device compatibility); absent = generic. */
+  /** 厂商特性（网络设备兼容）；缺省即 generic。 */
   deviceType?: DeviceType;
-  /** Raw-PTY output decoding; absent = utf8. */
+  /** 裸 PTY 输出解码；缺省即 utf8。 */
   ptyEncoding?: 'utf8' | 'gbk';
-  /** Answer keyboard-interactive prompts with the resolved password. */
+  /** 用解析出的密码回答 keyboard-interactive 提示。 */
   keyboardInteractive: boolean;
   timeout: number;
   maxChars: number;
@@ -39,21 +39,21 @@ export interface Profile {
   approvalPolicy: ApprovalMode;
   cert: boolean;
   /**
-   * Send `AI_AGENT=ssh-mcp` to this host on every channel opened for a command.
+    * 在为命令打开的每条通道上向该主机发送 `AI_AGENT=ssh-mcp`。
    *
-   * Defaults to true. Clear it for a host you do not control: the request is on
-   * the wire whether or not the host set `AcceptEnv`, so it tells that host an
+    * 默认 true。对不受你控制的主机请清除：无论主机是否设置 `AcceptEnv`，
+    * 请求都会出现在线上，等于告诉它驱动会话的是 agent 而非真人。
    * agent rather than a person is driving.
    */
   announceAgent: boolean;
   sessionMaxPerConnection: number;
   sessionIdleTimeoutMs: number;
   sessionBackgroundMaxMs: number;
-  /** Max commands per rolling 24h window; 0 = unlimited. */
+  /** 滚动 24h 窗口内最大命令数；0 = 不限制。 */
   commandQuotaPerDay: number;
-  /** Byte cap for one streaming SFTP transfer on this profile. */
+  /** 本 profile 单次流式 SFTP 传输的字节上限。 */
   transferMaxBytes: number;
-  /** Idle budget for one step of a streaming SFTP transfer on this profile. */
+  /** 本 profile 单步流式 SFTP 传输的空闲预算。 */
   transferTimeoutMs: number;
 }
 
@@ -67,41 +67,41 @@ export interface Defaults {
   commandMaxOutputBytes: number;
   connectionIdleReapMs: number;
   commandQuotaPerDay: number;
-  /** Lifetime of a just-in-time approval grant; 0 = always prompt. */
+  /** JIT 审批授权的寿命；0 = 每次都提示。 */
   approvalGrantTtlMs: number;
   approvalMode: ApprovalMode;
-  /** Where a human approval is sought (elicitation / queue / both). */
+  /** 人工审批的征求位置（elicitation / queue / both）。 */
   approvalChannel: ApprovalChannel;
-  /** Generic SOCKS egress for dynamic forwarding; off by default. */
+  /** dynamic 转发的通用 SOCKS 出网；默认关闭。 */
   allowDynamicForwarding: boolean;
   /**
-   * Local directory the streaming SFTP file tools are confined to. Absent means
-   * those tools refuse — there is no "anywhere" setting.
+    * 流式 SFTP 文件工具被限制在内的本地目录。缺省即拒绝——
+    * 没有「任意位置」这个设置。
    */
   transferRoot?: string;
   transferMaxBytes: number;
   transferTimeoutMs: number;
-  /** Raw-PTY session idle bound (plan layer ③; U3 default 10min). */
+  /** 裸 PTY 会话空闲上限（计划第 ③ 层；U3 默认 10 分钟）。 */
   ptySessionIdleTimeoutMs: number;
-  /** Raw-PTY session lifetime bound (plan layer ③; U3 default 2h). */
+  /** 裸 PTY 会话生存期上限（计划第 ③ 层；U3 默认 2 小时）。 */
   ptySessionMaxLifetimeMs: number;
 }
 
 /**
- * The optional `[policy]` section of the config file, merged over the
- * compiled-in DEFAULT_RULES at startup by mergePolicyRules().
+  * 配置文件中可选的 `[policy]` 节，启动时由 mergePolicyRules()
+  * 合并到编译期内置的 DEFAULT_RULES 之上。
  *
- * Every field is optional because the merge is additive: a config that names
- * only `admin.prod` changes only that one cell of the matrix.
+  * 每个字段都可省，因为合并是增量的：只写 `admin.prod` 的配置
+  * 只改矩阵中那一格。
  */
 export interface PolicyConfig {
-  /** role → host group → the command classes that role may run on that tier. */
+  /** 角色 → 主机组 → 该角色在该层级可运行的命令类别。 */
   roleBindings?: Record<string, Record<string, CommandClass[]>>;
   /**
-   * Extra deny patterns, as regex source strings. Appended to the built-in
-   * never-allowed list (FORBIDDEN_PATTERNS in classifier.ts), which always
-   * applies — setting this cannot switch off the canonical protections. It
-   * does replace any `denylist` on the base PolicyRules, which the compiled-in
+    * 额外拒绝模式，正则源字符串。追加在内置「永不放行」清单
+    * （classifier.ts 的 FORBIDDEN_PATTERNS）之上，后者始终生效——
+    * 设置它关不掉那些正统保护。它确实会替换基础 PolicyRules 上的
+    * `denylist`（编译期内置默认不设置它）。
    * defaults do not set.
    */
   denylist?: string[];
@@ -182,13 +182,13 @@ export interface ParsedCommand {
   fullCommand: string;
   class: CommandClass;
   /**
-   * Set only when `class` is the outer `safe` produced by a reader's grammar
-   * rejecting one of its argv words — never when a nested or synthetic class
-   * raised the result above `safe`, and never when the command was not a
-   * reader at all. `binary` is the `READERS` key that matched (which, for a
-   * two-word entry, is the two-word prefix); `word` is the argv word (or, for
-   * an operand-count/`each` violation, the offending operand; for a value
-   * flag left with nothing to consume, the flag itself) the grammar would not
+    * 仅当 `class` 是 reader 文法拒绝某个 argv 词而产生的最外层 `safe` 时
+    * 才设置——嵌套或合成类别把结果抬过 `safe` 时绝不设置，
+    * 命令根本不是 reader 时也绝不设置。`binary` 是命中的 `READERS` 键
+    * （双词条目即双词前缀）；`word` 是文法不肯接受的 argv 词
+    * （操作数计数/`each` 违规时为出问题的操作数；值标志无值可吃时
+    * 为标志本身）。
+    * 见 `policy/classifier.ts` 的 `classifyCommand`。
    * accept. See `classifyCommand` in `policy/classifier.ts`.
    */
   readOnlyRejection?: { binary: string; word: string };
@@ -204,7 +204,7 @@ export interface PolicyEvaluation {
   binary: string;
   ruleId?: string;
   reason?: string;
-  /** Copied from the parsed command's `readOnlyRejection`; see `ParsedCommand`. */
+  /** 拷贝自所解析命令的 `readOnlyRejection`；见 `ParsedCommand`。 */
   readOnlyRejection?: { binary: string; word: string };
 }
 
@@ -231,11 +231,11 @@ export interface AuditRecord {
   commandClass: CommandClass;
   binary: string;
   decision: PolicyDecision;
-  /** Which rule produced the decision (denylist, role-binding, approval-policy, ...). */
+  /** 是哪条规则给出的决定（denylist、角色绑定、审批策略……）。 */
   ruleId?: string;
-  /** True when the command ran on a profile that widens FROZEN_ALGORITHMS. */
+  /** 命令运行在放宽 FROZEN_ALGORITHMS 的 profile 上时为真。 */
   algorithmsOverride?: boolean;
-  /** Raw-PTY input matched a dangerous pattern; names the classes hit. */
+  /** 裸 PTY 输入命中危险模式；列出击中的类别。 */
   ptyAlert?: string;
   exitCode?: number;
   durationMs?: number;
@@ -263,7 +263,7 @@ export interface SftpUploadOpts {
 export interface SftpDownloadOpts {
   profile?: string;
   remotePath: string;
-  /** Byte cap for the download. Defaults to the profile's maxOutputBytes. */
+  /** 下载字节上限。默认取 profile 的 maxOutputBytes。 */
   maxBytes?: number;
 }
 

@@ -121,7 +121,7 @@ describe('PtySessionManager', () => {
   });
 
   it('activity defers the idle reap; lifetime still ends the session', async () => {
-    const { manager, channels } = makeManager({ idle: 1000, lifetime: 5000 });
+    const { manager } = makeManager({ idle: 1000, lifetime: 5000 });
     await manager.open({ name: 's1' });
     vi.advanceTimersByTime(800);
     manager.write('s1', 'x\n'); // refresh

@@ -14,61 +14,61 @@ import { openWithRetry } from './channel-retry.js';
 import { terminateChannel, COULD_NOT_SIGNAL } from './channel-signal.js';
 
 /**
- * What this server tells a host it is, on every channel it opens for a command.
+ * 本服务器在为命令打开的每条通道上向主机表明的身份。
  *
- * ssh2's `exec()` calls `reqEnv(chan, opts.env)` with no callback, so the request
- * goes out with `want_reply=0` and the server has nothing to reply to: an
- * unaccepted name cannot fail the exec. Measured against ssh2 1.17.0
- * (`lib/client.js:1230` and the `wantReply` line at `:1863`), against Dropbear,
- * and against Windows OpenSSH on a default config — the command runs, the
- * variable is simply absent, exit code unchanged.
+ * ssh2 的 exec() 调 reqEnv(chan, opts.env) 无回调，
+ * 请求以 want_reply=0 发出，服务器无以应答：
+ * 未被接受的名字不会让 exec 失败。对照 ssh2 1.17.0
+ *（lib/client.js:1230 与 :1863 的 wantReply 行）、Dropbear、
+ * 及默认配置的 Windows OpenSSH 实测——命令跑通，
+ * 变量只是不在，退出码不变。
  *
- * **The request is sent to every host, `AcceptEnv` or not.** `AcceptEnv` is the
- * server's policy about whether it *stores* the pair in the session environment;
- * it is not a client-side gate, and nothing here consults it. Measured on the
- * wire against Dropbear, which has no `AcceptEnv` mechanism at all:
+ * **无论主机是否设置 AcceptEnv，请求都发给每台主机。** AcceptEnv
+ * 是服务器关于是否*存储*该对的策略；
+ * 不是客户端侧的门，这里没有任何东西查询它。对照无 AcceptEnv
+ * 机制的 Dropbear 在线上实测：
  *
  *     Outbound: Sending CHANNEL_REQUEST (r:0, env: AI_AGENT=ssh-mcp)
  *     Outbound: Sending CHANNEL_REQUEST (r:0, exec: echo hi)
  *
- * So a host that never opted in still learns that an agent, not a person, is
- * driving this session. That is a disclosure, and SECURITY.md's threat model
- * includes a host tailoring its output to inject the model — which is why
- * `announceAgent = false` exists on the profile. An earlier draft of this comment
- * called the declaration "inert" on a host that had not opted in; that is true of
- * the session environment and false of the wire, and the distinction is the whole
- * reason the profile has a switch.
+ * 从未选择加入的主机依然知道驱动会话的是 agent 而非人。
+ * 这是一种披露，SECURITY.md 的威胁模型包含主机定制输出
+ * 以注入模型——这正是 profile 上存在 announceAgent = false 的原因。
+ * 本注释更早的草稿称该声明在未选择加入的主机上「无效」——
+ * 对会话环境为真，对线路为假，
+ * 这一区别正是 profile 有开关的全部理由。
  *
- * Name only, deliberately — no ssh-mcp build number. The transport already
- * discloses the *library* version in its identification string (ssh2 sends
- * `SSH-2.0-ssh2js<ver>` and nothing here overrides `ident`), but that is one
- * library's version across every user of it; a per-build number for this tool
- * would narrow a hostile host to one deployment.
  *
- * `AI_AGENT` is deliberately outside this project's `SSH_MCP_*` namespace. Every
- * other environment name this repo owns is prefixed; this one is not, because it
- * is a cross-tool convention read by server-side detectors that do not know or
- * care which client sent it, and a prefixed name would defeat the only purpose it
- * has. Renaming it to `SSH_MCP_AGENT` would look like a consistency fix and would
- * silently break every consumer — hence this paragraph.
+ * 刻意只有名字——不带 ssh-mcp 构建号。传输本来就会在 identification
+ * string 中暴露*库*版本（ssh2 发 SSH-2.0-ssh2js<ver>，此处不覆盖 ident），
+ * 但那是该库所有用户共有的一个版本；本工具的按构建版本号
+ * 会把敌意主机收窄到一个部署。
  *
- * Frozen because it is one object shared by every channel on every connection in
- * the process. Nothing mutates it today; the first per-command addition to a
- * channel's `env` would, and would leak across profiles for the life of the
- * process.
+ *
+ * AI_AGENT 刻意在本项目 SSH_MCP_* 命名空间之外。本仓库拥有的
+ * 其余环境变量名都有前缀；这个没有，因为它是被服务端探测器读取
+ * 的跨工具约定，那些探测器不知道也不关心哪个客户端发送了它，
+ * 加前缀的名字会挫败它唯一的目的。
+ * 改名为 SSH_MCP_AGENT 看似一致性修复，却会静默破坏
+ * 每一个消费者——因此有了这一段。
+ *
+ * 冻结，因为它是进程内每条连接每条通道共享的一个对象。
+ * 今天无人修改它；第一个按命令向通道 env 添加的操作会，
+ * 并在进程生命周期内跨 profile 泄漏。
+ *
  */
 const AGENT_ENV = Object.freeze({ AI_AGENT: 'ssh-mcp' });
 
 /**
- * Stop the command behind `channel`, record why on the span, and return the sentence the
+ * 停掉 channel 背后的命令，在 span 上记录原因，返回拒绝应携带的句子。
  * rejection should carry.
  *
- * Module scope rather than a closure inside `exec`: it captures nothing but the span, and
- * at module scope it is directly testable with a stub span and a fake channel. It exists
- * at all because the three settle paths used to inline this, and two of them computed the
- * "unstopped" value for the message and then dropped it before the span — so
- * `ssh.unstopped` was structurally incapable of being true for a cancelled command, which
- * is the most common way an MCP client stops one.
+ * 模块作用域而非 exec 内的闭包：它只捕获 span，
+ * 模块作用域下可直接用 stub span 和假通道测试。
+ * 它存在的理由：三个结算路径过去内联了这段逻辑，其中两个
+ * 算了消息的 unstopped 值却在 span 之前丢掉——
+ * ssh.unstopped 因此在结构上不可能对被取消的命令为真，
+ * 而那是 MCP 客户端停止命令最常见的方式。
  */
 export function stopAndDescribe(
   span: Span,
@@ -76,23 +76,23 @@ export function stopAndDescribe(
   channel: ClientChannel | null,
 ): string {
   span.setAttribute(reason, true);
-  // A null channel means the exec callback has not arrived yet. It does NOT mean nothing is
-  // running — ssh2 invokes that callback on CHANNEL_SUCCESS, which OpenSSH sends after
-  // forking the command — but there is nothing to warn about either: `onExecChannel` stops
-  // such a late channel the moment it arrives. Warning here would put "may still be
-  // running" on every timeout that races a slow channel open, and a warning that fires when
-  // nothing is wrong stops being read.
+  // null 通道意味着 exec 回调尚未到达。并不代表没在运行——
+  // ssh2 在 CHANNEL_SUCCESS 时调用该回调，OpenSSH 在 fork 命令后发送——
+  // 但也没有什么可告警的：onExecChannel 会在迟到通道到达时
+  // 立即停掉它。此处告警会把「可能仍在运行」贴到每次与慢通道
+  // 开启竞速的超时上，而什么都没错时的告警不再被读。
   //
-  // Recorded as its own attribute rather than as `ssh.unstopped: false`, which would assert
-  // a clean stop this path cannot yet know about. The late-arrival handler emits the real
-  // answer on its own span.
+  //
+  // 以独立属性记录而非 ssh.unstopped: false——后者断言了
+  // 此路径尚不可知的干净停止。迟到处理器在自己的 span 上
+  // 发出真正的答案。
   if (channel === null) {
     span.setAttribute('ssh.stopDeferred', true);
     return '';
   }
   const dispatched = terminateChannel(channel);
-  // Set on every settle path, always, so "stopped cleanly" and "ran an older build" are not
-  // the same absent-attribute query.
+  // 每个结算路径都设置，无一例外，让「干净停止」和「跑的是旧构建」
+  // 不是同一个缺席属性查询。
   span.setAttribute('ssh.unstopped', !dispatched);
   return dispatched ? '' : COULD_NOT_SIGNAL;
 }
@@ -106,15 +106,15 @@ type KeyboardInteractiveHandler = (
 ) => void;
 
 /**
- * Answers every keyboard-interactive prompt with the profile's password.
+ * 用 profile 的密码回答每一条 keyboard-interactive 提示。
  *
- * Exported for direct unit testing: the ssh2 event fires mid-handshake inside
- * connect(), where a test would otherwise need a live server that offers the
- * method. Network devices commonly expose password auth *only* through
- * keyboard-interactive, so the prompts are answered blind with the same
- * credential `auth = "password"` would have used. With no password credential
- * the answers are empty strings — the server then fails the authentication with
- * its own message rather than this side inventing a different error.
+ * 导出以便直接单测：ssh2 事件在 connect() 握手中触发，
+ * 测试否则需要一台提供该方法的真实服务器。网络设备通常
+ * 只通过 keyboard-interactive 暴露密码认证，提示被盲答以
+ * auth = password 本会使用的同一凭据。无密码凭据时
+ * 应答为空字符串——服务器以自己的消息拒绝认证，
+ * 而非本侧发明一个不同的错误。
+ *
  */
 export function answerKeyboardInteractive(
   password: string | undefined,
@@ -168,25 +168,25 @@ export class SSHConnection {
     this.allowDynamicForwarding = allowDynamicForwarding;
 
     this.sessions = new SessionManager({
-      // Live read: the profile object can be replaced after construction.
+      // 活读：profile 对象可在构造后被替换。
       profile: () => this.profile,
-      // ensureConnected inside the callback, not just before the retry: these
-      // run under openWithRetry, and Dropbear drops the whole connection under
-      // channel churn rather than merely refusing the channel. openSession does
-      // check the link first, but the link can die between that check and the
-      // channel opening — and then every retry reached getClient() on a dead
-      // client and threw the same "SSH connection not established", so the retry
-      // re-ran a corpse three times. SftpClient already did it this way.
+      // 回调内也要 ensureConnected，不只是重试前：这些
+      // 跑在 openWithRetry 下，Dropbear 在通道震荡时丢整条连接
+      // 而非仅拒通道。openSession 确实先查链路，
+      // 但链路可能在查完与通道开启之间死掉——然后每次重试都在死
+      // 客户端上调 getClient() 抛同一个 SSH connection not established，
+      // 重试跑了三遍尸体。SftpClient 已是这种做法。
+      //
       openShell: async () => {
         await this.ensureConnected();
         return new Promise<ClientChannel>((resolve, reject) => {
           this.getClient().shell(
             { term: 'xterm-256color', cols: 200, rows: 50 },
-            // Three-argument form, deliberately. ssh2 reclassifies the first
-            // argument as the options object when it carries `env` or `x11`
-            // (lib/client.js:1260), so folding the announcement into the window
-            // object above would silently drop term/cols/rows on every
-            // interactive session.
+            // 三参形式，刻意。ssh2 在首参携带 env 或 x11 时
+            // 将其重分类为选项对象（lib/client.js:1260），
+            // 折进上方 window 对象会在每次交互会话
+            // 上静默丢掉 term/cols/rows。
+            //
             this.channelEnv(),
             (err, stream) => (err ? reject(err) : resolve(stream)),
           );
@@ -206,8 +206,8 @@ export class SSHConnection {
       onChannelClosed: () => { this.activeChannels--; },
     });
 
-    // Raw-PTY sessions (agent-ssh): same live-profile read as the SessionManager,
-    // plus the [defaults] idle/lifetime bounds the plan's layer ③ ratifies.
+    // 裸 PTY 会话（agent-ssh）：与 SessionManager 相同的活 profile 读取，
+    // 加上计划第 ③ 层批准的 [defaults] 空闲/生存期上限。
     this.ptySessions = new PtySessionManager({
       profile: () => this.profile,
       getClient: () => this.getClient(),
@@ -224,21 +224,21 @@ export class SSHConnection {
 
   /**
    * The announcement for a channel about to be opened, or nothing.
+    * 即将打开的通道的宣告，或无。
+    *
+    * 一个访问器而非每个站点一个对象字面量。此特性首版在三个
+    * 开通道站点中的两个写了 { env: AGENT_ENV }，漏了 openShell，
+    * 交互会话内的每条命令都未宣告而 README 声称相反。
+    * 三个字面量给站点一个看起来完整实则空手的机会；
+    * 漏调本函数则不会。
+    *
+    * 活读，同此处一切 profile 字段：profile 对象可在构造后替换，
+    * 运维清除 announceAgent 在下一条通道即生效，而非下次重启。
+    *
    *
-   * One accessor rather than an object literal at each site. The first version of
-   * this feature wrote `{ env: AGENT_ENV }` at two of the three channel-opening
-   * sites and missed `openShell`, which left every command run inside an
-   * interactive session unannounced while the README claimed otherwise. Three
-   * literals give a site the chance to look complete while carrying nothing; a
-   * missing call to this does not.
-   *
-   * Read live, like every other profile field here: the profile object can be
-   * replaced after construction, so an operator clearing `announceAgent` is
-   * honoured on the next channel rather than at the next restart.
-   *
-   * The return type is the intersection both callers accept — `ExecOptions` and
-   * `ShellOptions` declare `env` identically — so one accessor serves `exec()`,
-   * `openExec` and `openShell` without naming either API.
+    * 返回类型是两个调用方都接受的交集——ExecOptions 和
+    * ShellOptions 以相同方式声明 env——一个访问器服务 exec()、
+    * openExec 和 openShell，无须点名任一 API。
    */
   private channelEnv(): { env?: NodeJS.ProcessEnv } {
     return this.profile.announceAgent === false ? {} : { env: AGENT_ENV };
@@ -253,28 +253,28 @@ export class SSHConnection {
   }
 
   private async connect(): Promise<void> {
-    // Identity for this attempt, so "does this attempt still own `connecting`?"
-    // can be asked without going through `this.client`.
+    // 本次尝试的身份，让「本次尝试是否仍拥有 connecting」
+    // 无须经过 this.client 即可提问。
     //
-    // Those are two different questions and conflating them is #197: settle()
-    // used to clear `connecting` only `if (isCurrent())`, and the disconnect
-    // handler nulls `this.client` *before* it settles. `isCurrent()` was
-    // therefore already false, `connecting` kept the rejected promise, and
-    // `ensureConnected()` replayed it for the life of the process — every later
-    // call on the profile failing instantly with a stale message, and no way
-    // back even once the server recovered. Restarting the server was the only
-    // exit, which is exactly how it was reported.
+    // 这是两个不同的问题，混淆它们就是 #197：settle() 过去只在
+    // if (isCurrent()) 时清 connecting，而断连处理器在 settle 前
+    // 就将 this.client 置空。isCurrent() 已为 false，connecting 保留
+    // 被拒的 promise，ensureConnected() 在进程生命周期内重放它——
+    // 该 profile 的每次后续调用立即以过期消息失败，
+    // 服务器恢复后也无路可回。重启服务器是唯一出口，
+    // 正是它的报告方式。
     //
-    // Reordering the two statements would also have worked and would have left
-    // the same trap for the next edit; the coupling is what had to go.
+    //
+    // 重排两条语句也能工作且为下次编辑留下同样的陷阱；
+    // 耦合才是必须消除的。
     const attempt = Symbol('connect');
     this.connectAttempt = attempt;
 
     return new Promise((resolve, reject) => {
-      // Every handler below acts on `client`, not `this.client`, and only
-      // mutates shared state while it is still the current client. A late event
-      // from a superseded attempt must not tear down the connection that
-      // replaced it.
+      // 下方每个处理器作用于 client 而非 this.client，且仅在
+      // 它仍是当前客户端时修改共享状态。被替代尝试的迟到事件
+      // 不得拆掉替换了它的那条连接。
+      //
       const client = new Client();
       this.client = client;
       const isCurrent = () => this.client === client;
@@ -284,8 +284,8 @@ export class SSHConnection {
         if (settled) return;
         settled = true;
         clearTimeout(timeoutId);
-        // Unconditional for *this* attempt: a superseded one leaves the newer
-        // attempt's promise alone, and nothing else can strand it.
+        // 对*本次*尝试无条件：被替代的不动更新尝试的 promise，
+        // 没有别的能把它搁浅。
         if (this.connectAttempt === attempt) this.connecting = null;
         fn();
       };
@@ -314,18 +314,18 @@ export class SSHConnection {
         });
       });
 
-      // 'end'/'close' also fire long after a successful handshake, when the
-      // connection drops — that path must clear connection state but leave the
-      // already-resolved promise alone.
+      // end/close 也在成功握手很久后连接掉线时触发——那条路径
+      // 必须清连接状态但不动已解决的 promise。
+      //
       const onDisconnect = (reason: string) => () => {
         if (!isCurrent()) return;
         this.connected = false;
         this.sessions.markAllDisconnected();
         this.client = null;
         this.connectedAt = null;
-        // Without clearing the timer here, a handshake that fails via a clean
-        // TCP close left a 20s bomb armed: it would later end a *newer* client
-        // mid-handshake and null its `connecting`, leaving that attempt hung.
+        // 不在此清计时器的话，经干净 TCP 关闭失败的握手留下一颗
+        // 20 秒炸弹：它会稍后结束*更新的*客户端的握手中途
+        // 并将其 connecting 置空，让那次尝试挂起。
         settle(() => reject(new Error(`SSH connection ${reason} during handshake`)));
       };
 
@@ -336,17 +336,17 @@ export class SSHConnection {
         host: this.profile.host,
         port: this.profile.port,
         username: this.profile.user,
-        // Resolved against FROZEN_ALGORITHMS here — never a passthrough of the
-        // profile's adjustment form, which ssh2 would apply against its own
-        // (much wider) defaults and silently bypass the frozen floor.
+        // 在此对照 FROZEN_ALGORITHMS 解析——绝不透传 profile 的
+        // 调整形态，ssh2 会对照它自己（宽得多）的默认应用，
+        // 静默绕过冻结下限。
         algorithms: resolveAlgorithms(this.profile.algorithms) as ConnectConfig['algorithms'],
         hostVerifier: (key: Buffer) => {
-          // The pin used to be checked here, as a `return false` ahead of
-          // verifyHostKey. That made it reject-only: a *matching* pin fell
-          // through and was refused anyway under `strict`, whose store can never
-          // be populated. Passing it in puts one function in charge of the whole
-          // decision, and `return false` gave ssh2 a generic handshake failure
-          // where verifyHostKey raises a message that names what decided.
+          // 固定过去在此检查，作为 verifyHostKey 前面的 return false。
+          // 那使它只拒不禁：*匹配的*固定落下去仍被拒——在 strict 下，
+          // 其存储永远无法被填充。传入它让一个函数统管整个决定，
+          // return false 给 ssh2 的是泛型握手失败，
+          // 而 verifyHostKey 抛出的消息点名了决策者。
+          //
           return verifyHostKey(
             this.profile.host,
             this.profile.port,
@@ -379,16 +379,16 @@ export class SSHConnection {
         connectConfig.sock = this.bastionSock;
       }
 
-      // Some hosts — many network devices among them — offer password auth only
-      // through the keyboard-interactive method. ssh2 asks for the method with
-      // `tryKeyboard` and expects the answers on this event; attached before
-      // connect() so it is registered before the handshake can emit it.
+      // 某些主机——许多网络设备在内——只经 keyboard-interactive
+      // 方法提供密码认证。ssh2 用 tryKeyboard 请求该方法
+      // 并期望在此事件上收到答案；在 connect() 前挂载，
+      // 使其在握手能发出之前就注册好。
       if (this.profile.keyboardInteractive) {
         connectConfig.tryKeyboard = true;
-        // ssh2's d.ts omits the client-side 'keyboard-interactive' event (it is
-        // present at runtime, in the upstream README, and typed only on the
-        // server-side Connection), so this goes through a minimal structural
-        // view rather than `any`.
+        // ssh2 的 d.ts 省略了客户端侧 keyboard-interactive 事件
+        //（运行时存在、上游 README 有、仅服务端 Connection 有类型），
+        // 所以经最小结构视图而非 any。
+        //
         const events = client as unknown as {
           on(event: 'keyboard-interactive', listener: KeyboardInteractiveHandler): void;
         };
@@ -413,9 +413,9 @@ export class SSHConnection {
   }
 
   /**
-   * Prefix a command with the profile's working directory, if configured.
-   * Applied here rather than at the tool layer so the string the policy engine
-   * classified is never the string that carries the `&&`.
+    * 在此而非工具层应用，策略引擎分类的字符串
+    * 永远不是携带 && 的那个。
+    *
    */
   private applyWorkdir(command: string): string {
     if (!this.profile.workdir) return command;
@@ -432,9 +432,9 @@ export class SSHConnection {
     span.setAttribute('ssh.host', this.profile.host);
     span.setAttribute('ssh.port', this.profile.port);
     span.setAttribute('ssh.command', redactText(command));
-    // Observable on the span for the same reason the audit record carries it:
-    // a widened allowlist is a lowered transport floor and must be visible on
-    // every command that ran under it.
+    // 在 span 上可见，理由同审计记录携带它：
+    // 放宽白名单就是降低传输下限，
+    // 必须在其下运行的每条命令上可见。
     span.setAttribute('ssh.algorithmsOverride', this.profile.algorithms !== undefined);
 
     return new Promise((resolve, reject) => {
@@ -455,12 +455,12 @@ export class SSHConnection {
         execOpts.pty = { term: 'xterm-256color', cols: 200, rows: 50 };
       }
 
-      // Retried: some servers (Dropbear especially) intermittently refuse a
-      // channel right after a previous one was released. Only the open is
-      // retried — once a stream exists, nothing here re-runs the command.
+      // 已重试：某些服务器（尤其 Dropbear）在前一条释放后立即
+      // 间歇性拒绝通道。只重试 open——流一旦存在，
+      // 这里不会重跑命令。
       const openExecChannel = async () => {
-        // Re-established per attempt: the refusal can be a dropped connection
-        // rather than a refused channel.
+        // 每次尝试重新建立：拒绝可能是掉线而非拒通道。
+        //
         await this.ensureConnected();
         const activeClient = this.getClient();
         return new Promise<ClientChannel>((res, rej) => {
@@ -478,17 +478,17 @@ export class SSHConnection {
           }
           return;
         }
-        // The promise may already have settled — the timeout can fire while
-        // `openWithRetry` is still in flight, and ssh2 only invokes this callback once
-        // the server has replied CHANNEL_SUCCESS, which OpenSSH sends *after* forking
-        // the command. Without this the command ran to completion on the host after the
-        // caller had been told it timed out, holding a channel and discarding its
-        // output: #146 exactly, in the one path the first fix did not cover.
+        // promise 可能已结算——超时可在 openWithRetry 仍在途时触发，
+        // 且 ssh2 只在服务器应答 CHANNEL_SUCCESS 后调此回调，
+        // OpenSSH 在 fork 命令*之后*发送。没有这段，
+        // 命令在调用方被告知超时后在主机上跑到完成，
+        // 占着通道、丢着输出：正是 #146，首次修复未覆盖的路径。
+        //
         if (resolved) {
-          // On its own span: the exec span was ended when the promise settled, and an
-          // attribute set on an ended span is silently dropped. Without this the one
-          // outcome `stopAndDescribe` deferred would be unobservable — the shape this
-          // whole change exists to remove.
+          // 在自己的 span 上：exec span 已在 promise 结算时结束，
+          // 已结束 span 上的属性被静默丢弃。没有这段，
+          // stopAndDescribe 推迟的唯一结局就不可观测——
+          // 正是这次变更要移除的形态。
           const late = tracer.startSpan('ssh.exec.lateStop');
           late.setAttribute('ssh.host', this.profile.host);
           late.setAttribute('ssh.unstopped', !terminateChannel(stream));
@@ -514,14 +514,14 @@ export class SSHConnection {
           if (opts.abortSignal.aborted) {
             resolved = true;
             clearTimeout(timeoutId);
-            // Decremented here rather than on 'close', because the close listener
-            // below is never attached on this path. The channel now outlives the
-            // count by as long as the kill ladder takes.
+            // 在此递减而非 close：下方 close 监听器在此路径
+            // 从未挂载。通道现在比计数多活一条 kill 阶梯的时间。
+            //
             this.activeChannels--;
-            // client.exec() has already dispatched the command, so rejecting
-            // without signalling left it running to completion on the host and
-            // held a channel until it finished. Closing the channel does not stop
-            // it either — only a delivered signal does (#146).
+            // client.exec() 已派发命令，不信号就拒绝
+            // 会让它在主机上跑到完成并占通道直到结束。
+            // 关通道也停不了——只有送达的信号才行（#146）。
+            //
             const note = stopAndDescribe(span, 'ssh.aborted', stream);
             span.end();
             reject(new Error(`Command aborted before execution${note}`));
@@ -659,7 +659,14 @@ export class SSHConnection {
   }
 
   closeForward(id: string) {
-    return this.forwards.close(id);
+    const span = tracer.startSpan('forward.close');
+    span.setAttribute('forward.id', id);
+    span.setAttribute('ssh.profile', this.profile.name);
+    try {
+      return this.forwards.close(id);
+    } finally {
+      span.end();
+    }
   }
 
   async close(): Promise<void> {

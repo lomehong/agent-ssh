@@ -33,6 +33,7 @@ const winProfile: Profile = {
   auth: 'password',
   group: 'dev',
   tty: false,
+  keyboardInteractive: false,
   timeout: 30000,
   maxChars: 5000,
   maxOutputBytes: 1048576,

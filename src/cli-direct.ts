@@ -1,8 +1,7 @@
 import { loadConfig, getProfile, getConfigPath } from './config/loader.js';
-import { resolveCredentials } from './config/credential-resolver.js';
 import { ConnectionRegistry } from './ssh/connection-registry.js';
 import { AuditStore } from './audit/store.js';
-import { classifyCommand } from './policy/classifier.js';
+import { classifyCommand, findForbiddenMatch } from './policy/classifier.js';
 import { redactText } from './guard/redactor.js';
 import { positionalsOf, parseArgv } from './cli.js';
 
@@ -31,6 +30,13 @@ export async function runDirectCli(verb: 'run' | 'info', args: string[]): Promis
     const words = positionalsOf(args).join(' ').trim();
     if (words.length === 0) {
       console.error('Usage: agent-ssh run [--profile=<name>] <command> [words...]');
+      return 1;
+    }
+    // 禁止名单在配置加载之前生效（T-13/审计 High-1 整改）：红线优先于一切，
+    // 且此处无配置可写审计——拒绝文本走 stderr 交给操作者。
+    const forbidden = findForbiddenMatch(words);
+    if (forbidden !== null) {
+      console.error(`[cli-direct] 拒绝：命令命中禁止名单（${forbidden}）。禁止名单对人工与模型一视同仁；确需此类操作请在服务器 shell 上自行评估执行。`);
       return 1;
     }
   }

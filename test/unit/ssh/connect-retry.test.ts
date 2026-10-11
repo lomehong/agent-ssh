@@ -28,6 +28,7 @@ const profileFor = (port: number): Profile => ({
   user: 'u',
   auth: 'password',
   tty: false,
+  keyboardInteractive: false,
   timeout: 2000,
   maxChars: 5000,
   maxOutputBytes: 1_048_576,

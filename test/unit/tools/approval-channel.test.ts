@@ -99,7 +99,7 @@ describe('approval queue channel (pipeline)', () => {
       { approvalChannel: 'both', approvalQueueDir: dir, approvalQueuePollMs: 5, approvalQueueInspectAcl: async () => ({ status: 'restricted' }) },
     );
     h.setApproval(false);
-    const res = await h.client.callTool({ name: 'run-command', arguments: { command: 'rm -rf /tmp/build' } }) as Promise<any>;
+    const res = await h.client.callTool({ name: 'run-command', arguments: { command: 'rm -rf /tmp/build' } }) as any;
     expect((await res).isError).toBe(true);
     // Queueing behind an explicit no would shop for a second opinion.
     expect(await listPending({ dir })).toHaveLength(0);

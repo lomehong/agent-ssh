@@ -20,7 +20,8 @@ import type { Profile } from '../../../src/types.js';
 function makeProfile(overrides: Partial<Profile> = {}): Profile {
   return {
     name: 'dev', group: 'dev', host: 'localhost', port: 22, user: 'test',
-    auth: 'agent', tty: false, timeout: 60000, maxChars: 5000,
+    auth: 'agent', tty: false,
+  keyboardInteractive: false, timeout: 60000, maxChars: 5000,
     maxOutputBytes: 1048576, role: 'operator', readOnly: false, announceAgent: true,
     approvalPolicy: 'ask-destructive', cert: false,
     sessionMaxPerConnection: 5, sessionIdleTimeoutMs: 60000,

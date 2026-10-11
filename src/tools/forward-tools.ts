@@ -5,15 +5,15 @@ import type { ToolDeps, Pipeline } from './pipeline.js';
 import type { PolicyEvaluation } from '../types.js';
 
 /**
- * Port-forwarding tools (agent-ssh T-06).
+ * 端口转发工具（agent-ssh T-06）。
  *
- * `forward-open` carries the full listen→target pair in its synthetic command
- * (`forward:open local 127.0.0.1:8080 -> db:5432`), so the classifier floor
- * (`destructive`) puts it behind the role matrix + approval gate, and
- * `[policy].denylist` rules written against a target refuse the tunnel before
- * it opens. Dynamic mode is additionally refused unless
- * `allowDynamicForwarding = true` — an open SOCKS listener is generic egress
- * and cannot be denylisted by target, which is why it is opt-in.
+ * `forward-open` 把完整的「监听→目标」对放进其合成命令
+ * （`forward:open local 127.0.0.1:8080 -> db:5432`），因此分类器下限
+ * （`destructive`）使它落在角色矩阵 + 审批门之后，且
+ * 针对目标写的 `[policy].denylist` 规则能在隧道建立前就拒绝它。
+ * 动态模式另外还要：除非 `allowDynamicForwarding = true`，一律拒绝——
+ * 一个开放的 SOCKS 监听是不区分目标的出网通道，
+ * 无法按目标做拒绝清单，这正是它默认关闭、需显式开启的原因。
  */
 
 const FORWARD_RELEASE: PolicyEvaluation = {
@@ -48,7 +48,7 @@ export function registerForwardTools(
     },
     { destructiveHint: true },
     async ({ mode, listenHost, listenPort, targetHost, targetPort, profile }, extra) => {
-      // Dynamic has no target: it must not inherit the previous call's shape.
+      // dynamic 模式没有目标：不得继承上一次调用的形态。
       const dynamic = mode === 'dynamic';
       const target = dynamic ? '(dynamic)' : `${targetHost}:${targetPort}`;
       const listen = `${listenHost ?? '127.0.0.1'}:${listenPort}`;
@@ -56,6 +56,13 @@ export function registerForwardTools(
         `forward:open ${mode} ${listen} -> ${target}`,
         {
           toolName: 'forward-open',
+          // dynamic 的「默认关」拒绝必须发生在审批门之前（审计 M9）：
+          // 先弹一次注定失败的审批是在浪费人工。
+          preCheck: () => {
+            if (mode === 'dynamic' && !registry.isDynamicAllowed()) {
+              throw new Error('Dynamic (SOCKS) forwarding is disabled: set allowDynamicForwarding = true to enable it.');
+            }
+          },
           failureClass: 'destructive',
           profile,
           extra,

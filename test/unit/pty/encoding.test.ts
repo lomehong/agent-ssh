@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest';
+import { describe, it, expect } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { PtySession } from '../../../src/pty/pty-session.js';
 
@@ -11,6 +11,7 @@ class FakeChannel extends EventEmitter {
   write(input: string) { this.writes.push(input); }
   setWindow() {}
   close() { this.destroy(); }
+  destroy() { (this as unknown as { destroyed: boolean }).destroyed = true; }
 }
 
 function makeSession(encoding?: 'utf8' | 'gbk') {

@@ -5,18 +5,18 @@ import { PtyOutputBuffer } from './output-buffer.js';
 import type { PtyTranscript } from './transcript.js';
 
 /**
- * One raw PTY session: a real pseudo-terminal channel whose byte stream the
- * caller reads and writes directly.
+ * 一个裸 PTY 会话：一条真正的伪终端通道，其字节流由
+ * 调用方直接读写。
  *
- * This is deliberately NOT the upstream interactive session, which frames every
- * command in printf markers to recover exit codes and CWD on a POSIX shell —
- * a protocol that fails immediately against a network-device CLI (or any host
- * without `$(...)` and `$?`). A raw session has no protocol at all: whatever
- * the host echoes comes back, paging prompts included. That is exactly what
- * makes it usable on devices, and exactly why it is gated at open (the
- * classifier cannot see inside a byte stream — plan layer ①), audited on every
- * write (layer ②), transcripted end to end (layer ②), and bounded by two
- * timers (layer ③).
+ * 这刻意不是上游的交互式会话——后者用 printf 标记包裹每条命令，
+ * 以在 POSIX shell 上取回退出码与 CWD——该协议面对网络设备 CLI
+ * （或任何没有 `$(...)` 与 `$?` 的主机）会立即失效。
+ * 裸会话完全没有协议：主机回显什么就返回什么，包括分页提示。
+ * 这既是它能用于设备的原因，也正是它在打开处设门的原因
+ * （分类器看不见字节流内部——计划第 ① 层）、
+ * 在每次写入处审计（第 ② 层）、全程转录（第 ② 层），
+ * 并受两个定时器约束
+ * （第 ③ 层）。
  */
 
 export type PtyCloseReason = 'operator' | 'idle' | 'lifetime' | 'disconnect' | 'remote';
@@ -28,7 +28,7 @@ export interface PtySessionInfo {
   lastActivity: Date;
   closed: boolean;
   closeReason?: PtyCloseReason;
-  /** Cursor for the next incremental read (current end of buffered output). */
+  /** 下一次增量读取的游标（缓冲输出的当前末端）。 */
   cursor: number;
   totalBytes: number;
   droppedBytes: number;
@@ -38,7 +38,7 @@ export interface PtySessionInfo {
 
 export interface PtyWriteOutcome {
   delivered: boolean;
-  /** Note when the write raced a closing channel; empty when clean. */
+  /** 写入与关闭中的通道竞态时的备注；正常时为空。 */
   note: string;
 }
 
@@ -50,7 +50,7 @@ export class PtySession {
   private readonly buffer: PtyOutputBuffer;
   private transcript: PtyTranscript | null;
   private promptPatterns: RegExp[] = [];
-  private readonly decoder: TextDecoder | null;
+  private readonly decoder: TextDecoder;
 
   constructor(
     readonly name: string,
@@ -59,12 +59,13 @@ export class PtySession {
     opts: { maxBufferBytes: number; transcript?: PtyTranscript | null; encoding?: 'utf8' | 'gbk' },
   ) {
     this.buffer = new PtyOutputBuffer(opts.maxBufferBytes);
-    // Bound here so a later setTranscript() cannot retro-attach two sinks.
+    // 在这里绑定，避免日后的 setTranscript() 追加挂上第二个汇。
     this.transcript = opts.transcript ?? null;
-    // Legacy device builds (Huawei/H3C) emit GB2312/GBK; Node's full-ICU
-    // TextDecoder handles the label with no extra dependency. `{ stream: true }`
-    // keeps multi-byte sequences that straddle chunk boundaries intact.
-    this.decoder = opts.encoding && opts.encoding !== 'utf8' ? new TextDecoder(opts.encoding) : null;
+    // 遗留设备固件（华为/华三）输出 GB2312/GBK；Node 的 full-ICU
+    // TextDecoder 无需额外依赖即可识别该标签。`{ stream: true }`
+    // 保证跨 chunk 边界的多字节序列不被截断。
+    // utf-8 同样走流式解码：toString 的整段语义在 chunk 边界会产生 U+FFFD（审计 M5）。
+    this.decoder = new TextDecoder(opts.encoding ?? 'utf-8');
     channel.on('data', (data: Buffer) => {
       const text = this.decode(data);
       this.buffer.append(text);
@@ -85,27 +86,27 @@ export class PtySession {
   }
 
   private decode(data: Buffer): string {
-    return this.decoder ? this.decoder.decode(data, { stream: true }) : data.toString('utf8');
+    return this.decoder.decode(data, { stream: true });
   }
 
   /**
-   * Attach the transcript once its file is ready (open is async; the pump is
-   * not). Pre-attach output lives in the buffer for readers; the transcript
-   * covers its own attach onward — recorded honestly via `transcriptBytes`.
+    * 转录文件就绪后再挂载（open 是异步的，泵不是）。挂载前的输出
+    * 存于缓冲区供读者使用；转录只覆盖自身挂载之后的部分——
+    * 经 `transcriptBytes` 如实记录。
    */
   setTranscript(transcript: PtyTranscript | null): void {
     this.transcript = transcript;
   }
 
-  /** Prompt shapes from the profile's deviceType archive; empty for generic. */
+  /** 来自 profile 的 deviceType 档案的提示符形态；generic 为空。 */
   setPromptPatterns(patterns: RegExp[]): void {
     this.promptPatterns = patterns;
   }
 
   /**
-   * Whether the buffered tail ends in a device prompt — the network-device
-   * equivalent of "the command finished". Last non-empty line only, so a paging
-   * banner from screens ago cannot masquerade as readiness.
+    * 缓冲尾部是否止于设备提示符——网络设备版的「命令执行完毕」。
+    * 只看最后一行非空行，因此几屏之前的分页横幅
+    * 冒充不了就绪。
    */
   seesPrompt(): boolean {
     return outputEndsWithPrompt(this.buffer.stats().cursor === 0 ? '' : this.buffer.readSince(0, this.buffer.totalBytes).output, this.promptPatterns);
@@ -146,22 +147,22 @@ export class PtySession {
 
   resize(rows: number, cols: number): void {
     if (this.closed) throw new Error(`PTY session "${this.name}" is closed (${this.closeReason ?? 'unknown'}).`);
-    // setWindow(rows, cols, heightPx, widthPx) — pixel dims are ignored by
-    // every consumer this tool targets; zero is the documented "unset".
+    // setWindow(rows, cols, heightPx, widthPx)——本工具面向的所有消费方
+    // 都忽略像素尺寸；0 是文档写明的「未设置」。
     this.channel.setWindow(rows, cols, 0, 0);
     this.touch();
   }
 
-  /** Signal-and-close ladder shared with upstream session release. Idempotent. */
+  /** 与上游会话释放共用的信号加关闭阶梯。幂等。 */
   close(): boolean {
     const alreadyClosed = this.closed;
     if (!alreadyClosed) {
       this.closed = true;
       this.closeReason = 'operator';
     }
-    // Dispatch even on an already-closed session: markClosed from a timer may
-    // have flagged it without touching the channel, and terminateChannel is
-    // safe on a dead channel (its ssh2WillSend gate refuses cleanly).
+    // 即使会话已关闭也要派发：定时器的 markClosed 可能已标记它
+    // 却未触及通道，而 terminateChannel 对死通道是安全的
+    // （其 ssh2WillSend 门会干净地拒绝）。
     const dispatched = terminateChannel(this.channel);
     try { this.channel.close(); } catch { /* already gone */ }
     return alreadyClosed ? true : dispatched;
