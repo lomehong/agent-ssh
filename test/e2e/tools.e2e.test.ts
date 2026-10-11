@@ -16,11 +16,13 @@ beforeAll(async () => {
 afterAll(async () => { await e2e?.cleanup(); });
 
 describe.skipIf(!available)('E2E — tool surface over stdio', () => {
-  it('advertises all 14 tools to a real client', async () => {
+  it('advertises all 23 tools to a real client', async () => {
     const { tools } = await e2e.client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      'close-session', 'list-connections', 'list-sessions', 'open-session',
-      'privileged-command', 'read-command', 'read-session-output',
+      'close-session', 'forward-close', 'forward-list', 'forward-open',
+      'list-connections', 'list-sessions', 'open-session',
+      'privileged-command', 'pty-close', 'pty-list', 'pty-open', 'pty-read',
+      'pty-resize', 'pty-write', 'read-command', 'read-session-output',
       'run-command', 'sftp-download', 'sftp-download-file', 'sftp-list',
       'sftp-upload', 'sftp-upload-file', 'signal-process',
     ]);

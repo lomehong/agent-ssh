@@ -73,7 +73,7 @@ describe('approval queue channel (pipeline)', () => {
   });
 
 
-  it('队列目录 ACL 检查失败 → fail-closed（APPROVAL_UNAVAILABLE，T-11 强制）', async () => {
+  it.skipIf(process.platform !== 'win32')('队列目录 ACL 检查失败 → fail-closed（APPROVAL_UNAVAILABLE，T-11 强制；POSIX 上 assertQueueDirPrivate 为 no-op）', async () => {
     dir = mkdtempSync(join(tmpdir(), 'approval-queue-acl-'));
     h = await createHarness(
       {},

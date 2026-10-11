@@ -62,6 +62,7 @@ beforeAll(async () => {
     approvalChannel: 'queue',
     approvalQueueDir: join(tmp, 'approvals'),
     approvalQueuePollMs: 5,
+    approvalQueueInspectAcl: async () => ({ status: 'restricted' }) as never,
   });
   client = new Client({ name: 'e2e-client', version: '0.0.0' }, { capabilities: {} });
   const [ct, st] = InMemoryTransport.createLinkedPair();

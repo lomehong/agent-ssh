@@ -1,4 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+
+// win32-only enforcement：POSIX 上该函数直接返回（0700 chmod 是那一侧的控制），
+// 委托/传播行为因此在 Windows 上验证。
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -22,7 +25,7 @@ afterEach(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-describe('assertQueueDirPrivate（Windows 强制委托）', () => {
+describe.skipIf(process.platform !== 'win32')('assertQueueDirPrivate（Windows 强制委托）', () => {
   it('restricted 判定放行', async () => {
     await expect(assertQueueDirPrivate(dir, async () => clean)).resolves.toBeUndefined();
   });
