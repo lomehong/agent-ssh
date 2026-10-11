@@ -1,0 +1,8 @@
+id: T-11
+title: 审批队列 Windows ACL 强制检查
+level: L1
+status: 待执行
+root: E:\\Development\\Code\\nodejs\\agent-ssh
+createdAt: 2026-10-11 08:41:58
+events:
+  - 2026-10-11 08:41:58 | create | by=lome | level=L1 | accept=①queue 模式在等待决策前对队列目录执行 assertPrivateOnWindows 检查,写暴露→拒绝等待 fail-closed(unavailable 送达)②测试注入开关(opts)使本机 tmp 目录测试可行③生产默认开启——出处：T-04 残留(主人裁决不接受)

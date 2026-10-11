@@ -84,6 +84,7 @@ export class PtySessionManager {
     const transcript = (this.opts.openTranscript ?? ((n: string) => FilePtyTranscript.open(n)))(name);
     const session = new PtySession(name, this.opts.profile().name, channel, {
       maxBufferBytes: this.opts.maxBufferBytes ?? 1_048_576,
+      encoding: this.opts.profile().ptyEncoding,
     });
     // Vendor personality: prompt shapes for readiness detection, and the
     // paging-off command sent through the SAME path a user write takes — so

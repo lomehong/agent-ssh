@@ -231,6 +231,10 @@ export const profileSchema = z.object({
   // Vendor personality (network-device compatibility). Validated here so a
   // typo fails at startup rather than silently behaving as `generic`.
   deviceType: deviceTypeSchema.optional(),
+  // Raw-PTY output decoding (agent-ssh). UTF-8 default; gbk for legacy
+  // Huawei/H3C builds that emit GB2312/GBK — decoded via Node's built-in
+  // TextDecoder (full-ICU), no extra dependency.
+  ptyEncoding: z.enum(['utf8', 'gbk']).optional(),
   // Answer keyboard-interactive prompts with the resolved password. Some hosts
   // (and many network devices) offer password auth only through the
   // keyboard-interactive method; without this the password credential is

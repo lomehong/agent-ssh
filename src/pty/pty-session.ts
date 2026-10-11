@@ -50,24 +50,29 @@ export class PtySession {
   private readonly buffer: PtyOutputBuffer;
   private transcript: PtyTranscript | null;
   private promptPatterns: RegExp[] = [];
+  private readonly decoder: TextDecoder | null;
 
   constructor(
     readonly name: string,
     readonly profileName: string,
     readonly channel: ClientChannel,
-    opts: { maxBufferBytes: number; transcript?: PtyTranscript | null },
+    opts: { maxBufferBytes: number; transcript?: PtyTranscript | null; encoding?: 'utf8' | 'gbk' },
   ) {
     this.buffer = new PtyOutputBuffer(opts.maxBufferBytes);
     // Bound here so a later setTranscript() cannot retro-attach two sinks.
     this.transcript = opts.transcript ?? null;
+    // Legacy device builds (Huawei/H3C) emit GB2312/GBK; Node's full-ICU
+    // TextDecoder handles the label with no extra dependency. `{ stream: true }`
+    // keeps multi-byte sequences that straddle chunk boundaries intact.
+    this.decoder = opts.encoding && opts.encoding !== 'utf8' ? new TextDecoder(opts.encoding) : null;
     channel.on('data', (data: Buffer) => {
-      const text = data.toString('utf8');
+      const text = this.decode(data);
       this.buffer.append(text);
       this.lastActivity = Date.now();
       this.transcript?.append('out', text);
     });
     channel.stderr.on('data', (data: Buffer) => {
-      const text = data.toString('utf8');
+      const text = this.decode(data);
       this.buffer.append(text);
       this.transcript?.append('out', text);
     });
@@ -77,6 +82,10 @@ export class PtySession {
         this.closeReason = 'remote';
       }
     });
+  }
+
+  private decode(data: Buffer): string {
+    return this.decoder ? this.decoder.decode(data, { stream: true }) : data.toString('utf8');
   }
 
   /**

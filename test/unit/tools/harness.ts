@@ -52,6 +52,7 @@ export interface Harness {
   client: Client;
   execCalls: ExecCall[];
   auditRecords: any[];
+  ptyWrites: Array<{ name: string; input: string }>;
   /** What the stubbed exec returns; override per test. */
   setExecResult(result: Partial<CommandResult>): void;
   /** Whether the client approves elicitation prompts. */
@@ -117,6 +118,21 @@ export async function createHarness(
       sessions.delete(name);
       return closeOutcome;
     },
+    // Raw-PTY stubs (agent-ssh): pty-write's audit/alert path needs a session
+    // to write to; inputs are recorded for assertions.
+    ptyWrites: [] as Array<{ name: string; input: string }>,
+    openPtySession: async ({ name }: any) => ({
+      name, profile: profile.name, createdAt: new Date(), lastActivity: new Date(),
+      closed: false, cursor: 0, totalBytes: 0, droppedBytes: 0, transcriptBytes: 0, transcriptFrozen: false,
+    }),
+    writePtySession(name: string, input: string) {
+      (conn as any).ptyWrites.push({ name, input });
+      return { delivered: true, note: '' };
+    },
+    readPtySession: () => ({ output: '', cursor: 0, totalBytes: 0, droppedBytes: 0, skippedBytes: 0, promptDetected: false }),
+    resizePtySession: () => {},
+    closePtySession: () => ({ outcome: 'closed' as const }),
+    listPtySessions: () => [],
     toInfo: () => ({
       profile: profile.name, host: profile.host, port: profile.port, user: profile.user,
       status: 'connected', sessionCount: sessions.size, activeChannels: 0,
@@ -158,6 +174,7 @@ export async function createHarness(
     client,
     execCalls,
     auditRecords,
+    ptyWrites: (conn as any).ptyWrites,
     setExecResult(result) { execResult = result; },
     setApproval(value) { approve = value; },
     setCloseOutcome(outcome) { closeOutcome = outcome; },

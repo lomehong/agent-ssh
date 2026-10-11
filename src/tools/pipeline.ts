@@ -220,6 +220,8 @@ export function createPipeline({
       // widened algorithm allowlist. Undefined (and thus absent from the JSON
       // line) when the profile keeps the frozen list untouched.
       algorithmsOverride: profileHasAlgorithmsOverride(profileName),
+      // Raw-PTY input alerting (plan P2): the classes a session's input hit.
+      ptyAlert: 'ptyAlert' in result ? (result as { ptyAlert?: string }).ptyAlert : undefined,
       exitCode: 'exitCode' in result ? result.exitCode : undefined,
       durationMs: 'durationMs' in result ? result.durationMs : undefined,
       error: 'error' in result ? result.error : undefined,

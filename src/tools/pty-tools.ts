@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { sanitizeSessionName } from '../guard/sanitizer.js';
+import { classifyCommand } from '../policy/classifier.js';
 import { TOOL_DESCRIPTIONS as D } from './descriptions.js';
 import { syntheticSuccess, textResult } from './results.js';
 import type { ToolDeps, Pipeline } from './pipeline.js';
@@ -39,6 +40,29 @@ const PTY_RELEASE: PolicyEvaluation = {
   ruleId: 'pty-release',
   reason: 'A session release is audited but not policy-gated; see SECURITY.md.',
 };
+
+/**
+ * Content-level alerting for raw input (plan P2, owner ruling 2026-10-11:
+ * the pending item was not accepted, so it ships).
+ *
+ * The raw stream is not policy-gated — but nothing stops the audit log from
+ * LOOKING at it. Each non-empty line is run through the same classifier the
+ * exec path uses; destructive/privileged hits land in the audit record's
+ * `ptyAlert` field and on stderr, so an operator reviewing a session sees the
+ * moment a dangerous line crossed, without that line having been blockable.
+ */
+export function detectPtyAlerts(input: string): string | undefined {
+  const hits = new Set<string>();
+  for (const line of input.split(/\r?\n/)) {
+    const cmd = line.trim();
+    if (cmd.length === 0) continue;
+    const parsed = classifyCommand(cmd);
+    if (parsed.class === 'destructive' || parsed.class === 'privileged') {
+      hits.add(`${parsed.class}: ${cmd.slice(0, 120)}`);
+    }
+  }
+  return hits.size > 0 ? [...hits].join('; ') : undefined;
+}
 
 export function registerPtyTools(
   { server, registry }: ToolDeps,
@@ -130,6 +154,10 @@ export function registerPtyTools(
       // Truncate BEFORE redaction so a runaway paste cannot bloat the audit log
       // through the one path that is not policy-gated.
       const command = `pty:write ${cleanName} ${input.length > 2000 ? input.slice(0, 2000) + `…(+${input.length - 2000} chars)` : input}`;
+      const alert = detectPtyAlerts(input);
+      if (alert) {
+        console.error(`PTY-ALERT on "${cleanName}": ${alert}`);
+      }
       const startedAt = Date.now();
       try {
         profileName = defaultProfileName(profile);
@@ -142,6 +170,7 @@ export function registerPtyTools(
           exitCode: outcome.delivered ? 0 : 1,
           durationMs: Date.now() - startedAt,
           profile: profileName,
+          ...(alert ? { ptyAlert: alert } : {}),
           ...(outcome.note ? { error: outcome.note } : {}),
         });
         return textResult(

@@ -27,6 +27,8 @@ export interface Profile {
   algorithms?: AlgorithmOverride;
   /** Vendor personality (network-device compatibility); absent = generic. */
   deviceType?: DeviceType;
+  /** Raw-PTY output decoding; absent = utf8. */
+  ptyEncoding?: 'utf8' | 'gbk';
   /** Answer keyboard-interactive prompts with the resolved password. */
   keyboardInteractive: boolean;
   timeout: number;
@@ -233,6 +235,8 @@ export interface AuditRecord {
   ruleId?: string;
   /** True when the command ran on a profile that widens FROZEN_ALGORITHMS. */
   algorithmsOverride?: boolean;
+  /** Raw-PTY input matched a dangerous pattern; names the classes hit. */
+  ptyAlert?: string;
   exitCode?: number;
   durationMs?: number;
   approver?: string;

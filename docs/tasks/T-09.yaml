@@ -1,0 +1,8 @@
+id: T-09
+title: CLI 直连执行与调试面（run/info 子命令，过分类与审计）
+level: L1
+status: 待执行
+root: E:\\Development\\Code\\nodejs\\agent-ssh
+createdAt: 2026-10-11 08:41:58
+events:
+  - 2026-10-11 08:41:58 | create | by=lome | level=L1 | accept=①agent-ssh run <profile> <command> 直连执行,exit code 透传,审计留痕(approver=cli-direct)②agent-ssh info <profile> 连接测试与信息输出③单测覆盖——出处：技术方案 CLI 外壳定义(假设2,主人 2026-10-11 裁决不接受半成品)
