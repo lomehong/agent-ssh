@@ -1,5 +1,5 @@
 import { describe, expect, it, afterEach } from 'vitest';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startHost, type RunningHost } from '../../../src/host/main.js';
@@ -25,11 +25,15 @@ afterEach(async () => {
   dir = undefined;
 });
 
-async function start(): Promise<{ port: number; token: string }> {
+async function start(profileEndpoint?: { host: string; port: number }): Promise<{ port: number; token: string }> {
   dir ??= mkdtempSync(join(tmpdir(), 'host-main-'));
   const token = generateAgentToken();
+  const config = createAppConfig();
+  if (profileEndpoint) {
+    config.profiles = config.profiles.map((p) => ({ ...p, host: profileEndpoint.host, port: profileEndpoint.port }));
+  }
   host = await startHost({
-    config: createAppConfig(),
+    config,
     agentToken: token,
     operatorPasswordHash: hashPassword(PASSWORD),
     auditPath: join(dir, 'audit.log'),
@@ -118,6 +122,43 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
     await c.connect();
     const listed = await c.call<{ resources: Array<{ uri: string }> }>('resource.list');
     expect(listed.resources.some((r) => r.uri === 'ssh://connections')).toBe(true);
+  });
+
+  // ── T-17：cli.run / cli.info 语义桥（D4：人即批准者，无审批门）──
+  it('cli.info 经 operator 会话返回结构化 profile 信息（无 SSH 触达）', async () => {
+    const started = await start();
+    const pre = client(started.port, '', { skipHello: true });
+    await pre.connect();
+    const session = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
+    const operator = client(started.port, session.sessionToken);
+    await operator.connect();
+    const info = await operator.call<{ profile: { name: string; host: string; user: string }; connected: boolean }>('cli.info', { profile: 'admin' });
+    expect(info.profile.name).toBe('admin');
+    expect(info.profile.user).toBe('admin');
+    expect(info.connected).toBe(false);
+  });
+
+  it('cli.run 禁止名单先于一切：FORBIDDEN_PATTERN 拒绝且不触 SSH', async () => {
+    const started = await start();
+    const pre = client(started.port, '', { skipHello: true });
+    await pre.connect();
+    const session = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
+    const operator = client(started.port, session.sessionToken);
+    await operator.connect();
+    await expect(operator.call('cli.run', { command: 'rm -rf /' })).rejects.toThrow(/FORBIDDEN_PATTERN/);
+  });
+
+  it('cli.run 目标不可达：deny 审计留痕（ruleId=cli-direct-error）+ 结构化拒绝', async () => {
+    const started = await start({ host: '127.0.0.1', port: 1 }); // ECONNREFUSED 立即失败
+    const pre = client(started.port, '', { skipHello: true });
+    await pre.connect();
+    const session = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
+    const operator = client(started.port, session.sessionToken);
+    await operator.connect();
+    await expect(operator.call('cli.run', { profile: 'admin', command: 'echo hi' })).rejects.toThrow(/cli-run failed/);
+    const auditText = readFileSync(join(dir!, 'audit.log'), 'utf8');
+    expect(auditText).toContain('"ruleId":"cli-direct-error"');
+    expect(auditText).toContain('"approver":"cli-direct"');
   });
 
   it('stop() 后连接与桥全部拆除（后续调用 fail-fast）', async () => {

@@ -29,6 +29,8 @@ import { SERVER_VERSION } from '../version.js';
 import { registerResources, registerTools } from '../tools/registry.js';
 import { AuditStore } from '../audit/store.js';
 import { PolicyEngine } from '../policy/engine.js';
+import { classifyCommand, findForbiddenMatch } from '../policy/classifier.js';
+import { redactText } from '../guard/redactor.js';
 import { ConnectionRegistry } from '../ssh/connection-registry.js';
 import type { HostKeyMode } from '../ssh/host-key.js';
 import type { AppConfig } from '../types.js';
@@ -167,6 +169,93 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       tables.agentTokens.add(tokenDigest(fresh));
       log('agent token rotated: a new token was issued (old token remains valid until revocation)');
       return { agentToken: fresh };
+    },
+    'cli.info': async (params) => {
+      // T-17（D4）：operator 面的连接/profile 信息——无 SSH 触达，纯注册表读。
+      const p = params as { profile?: unknown };
+      const profileName = typeof p?.profile === 'string' ? p.profile : undefined;
+      const profile = registry.getProfile(profileName);
+      const conn = registry.get(profile.name);
+      return {
+        profile: {
+          name: profile.name,
+          user: profile.user,
+          host: profile.host,
+          port: profile.port,
+          auth: profile.auth,
+          keyRef: profile.keyRef,
+          role: profile.role,
+          group: profile.group,
+          deviceType: profile.deviceType,
+          algorithms: profile.algorithms ? Object.keys(profile.algorithms) : null,
+          approvalPolicy: profile.approvalPolicy,
+        },
+        connected: conn?.isConnected?.() ?? false,
+        sessions: conn?.listSessions?.().length ?? 0,
+        ptySessions: conn?.listPtySessions?.().length ?? 0,
+      };
+    },
+    'cli.run': async (params, ctx: RpcHandlerContext) => {
+      // D4 语义桥（cli-direct 移植）：人即批准者——无审批门；分类、禁止名单、
+      // redact 与审计（approver=cli-direct）全部保持，审计增 rpcCallerClass。
+      const p = params as { command?: unknown; profile?: unknown };
+      if (typeof p?.command !== 'string' || p.command.trim() === '') {
+        throw new Error('cli.run requires params.command');
+      }
+      const command = p.command;
+      // 禁止名单先于一切（T-13 High-1 整改语义随迁）：红线优先于配置与执行。
+      const forbidden = findForbiddenMatch(command);
+      if (forbidden !== null) {
+        throw new Error(`FORBIDDEN_PATTERN: ${forbidden} — 禁止名单对人工与模型一视同仁；确需此类操作请在服务器 shell 上自行评估执行。`);
+      }
+      const profileName = typeof p.profile === 'string' ? p.profile : undefined;
+      const profile = registry.getProfile(profileName);
+      try {
+        const conn = await registry.getOrCreate(profile.name);
+        const parsed = classifyCommand(command);
+        const result = await conn.exec(command);
+        await audit.record({
+          mcpRequestId: 0,
+          profile: profile.name,
+          user: profile.user,
+          command: redactText(command),
+          commandClass: parsed.class,
+          binary: parsed.binary,
+          decision: 'allow',
+          ruleId: 'cli-direct',
+          exitCode: result.exitCode,
+          durationMs: result.durationMs,
+          approver: 'cli-direct',
+          rpcCallerClass: ctx.callerClass === 'operator' ? 'operator' : undefined,
+        });
+        return {
+          stdout: result.stdout,
+          stderr: result.stderr,
+          exitCode: result.exitCode,
+          durationMs: result.durationMs,
+          profile: profile.name,
+          commandClass: parsed.class,
+        };
+      } catch (err) {
+        // cli-direct catch 语义随迁：失败也留 deny 审计（redact 后），错误
+        // 转结构化拒绝直传 CLI（redact 防 profile 错误消息夹带秘密）。
+        const message = err instanceof Error ? err.message : String(err);
+        await audit
+          .record({
+            mcpRequestId: 0,
+            profile: profile.name,
+            user: profile.user,
+            command: redactText('cli-run'),
+            commandClass: 'safe',
+            binary: 'cli:run',
+            decision: 'deny',
+            ruleId: 'cli-direct-error',
+            error: redactText(message),
+            approver: 'cli-direct',
+          })
+          .catch(() => {});
+        throw new Error(`cli-run failed on "${profile.name}": ${redactText(message)}`);
+      }
     },
   };
 
