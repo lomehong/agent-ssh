@@ -1,12 +1,13 @@
 id: T-17
 title: CLI 改造：approvals/run/info 经 RPC（口令→会话）
 level: L1
-status: 执行中
+status: 待确认
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:52:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 06:45:00
-progress: Host 侧 cli.run/cli.info 语义桥完成（da19c7f），余 CLI 侧 RPC 重写+旧直连删除
+reportedAt: 2026-10-12 07:10:00
+progress: Host 侧语义桥+CLI 侧 RPC 重写+旧直连删除完成（da19c7f/6559f0a/4a6cd61），双轴收口
 blockedBy: [T-14]
 accept:
   - approvals list/approve/reject 经 RPC：口令→auth.session.start→会话；语义保持（全文展示/指纹校验/approver=cli:<用户> 审计）
@@ -15,5 +16,6 @@ accept:
   - 旧直连代码路径删除；tsc 0 错；相关单测全绿
 source: 方案 §2.1/§4.3/§11 T-17 行、§12 D1'/D4
 events:
+  - 2026-10-12 07:10:00 | report | by=digital-architect | 自报待主人 confirm。四提交：da19c7f（Host 侧语义桥）/6559f0a（CLI 侧 RPC 重写+旧直连删除）/5c69c6f+4a6cd61（进度+评审收口）。证据：cli-rpc 8/8 绿+host 10/10 绿（含 FORBIDDEN deny 审计断言）；tsc 0；全量终轮 29败/2107过/65跳（2201 总）失败文件精确 6 既有环境族。双轴评审：标准轴无硬违规（6 jc：jc1 pin×口令引导互斥已修/jc4 Ctrl+C 终端态恢复已修/jc3 forbidden deny 审计已补+断言/jc2 info 恒 exit 0=登记语义决策/jc5 成功路径审计断言需真实 SSH 登记 T-19/jc6 DIRECT_VERBS 保留）；规格轴 4 pass+1 pass-with-note（旗标名 --session-token-stdin vs 方案 --session-token 漂移→登记 T-19 规格回写裁决；低危附注 getProfile 错误通道经评估=旧语义对齐维持）。附：运行事件（审批队列垃圾）已于 T-15 轮清理并防再发。
   - 2026-10-12 06:50:00 | claim | by=digital-architect | 接缝勘察完成，实现方案：①Host 侧（host/main.ts 增 handlers）：cli.run=复刻 cli-direct 语义（分类+禁止名单+redact+registry.exec+audit approver=cli-direct，无审批门——人即批准者，D4）；cli.info=连接/profile 信息；approval.list/decide=队列面（decide 已有）by=cli:<用户> 语义保持；auth.session.start/renew 会话引导（T-15 已有）②CLI 侧（新 src/cli-rpc.ts）：runApprovalsCli+runDirectCli 改 RPC 客户端（交互口令→auth.session.start（skipHello 引导）→会话；--session-token stdin 脚本场景明示风险）③旧直连删除：cli-direct.ts 进程内 SSH 路径+runApprovalsCli 文件队列直读路径（队列已归 Host）。测试：host 侧 handlers 单测（复用 main.test 模式）+CLI 侧经 startHost+RpcClient 端到端。
   - 2026-10-11 20:52:00 | create | by=lome | level=L1 | blocked_by=T-14
