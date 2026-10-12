@@ -1,7 +1,9 @@
 id: T-17.5d
 title: 桌面审批交互完善：托盘未决数/原生 toast/锁屏回锁
 level: L1
-status: 待确认
+status: 已落定
+confirmedBy: lome
+confirmedVia: 会话内 ask 选项作答「确认落定」，2026-10-13 00:40 前后——真机视觉验证随主人后续运行
 reportedAt: 2026-10-13 00:30:00
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-13 00:15:00
