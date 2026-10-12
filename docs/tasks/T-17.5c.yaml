@@ -4,7 +4,7 @@ level: L1
 status: 待执行
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 21:00:00
-progress: 第一批完成（8cfc799）；K2 裁决落地（主人选「引入 tauri 2 依赖树」，2026-10-12 21:20 ask）——Tauri 集成分两刀：刀1 骨架编译+UI 壳，刀2 事件桥+托盘+自启+NSIS
+progress: 刀1 完成（14c7955：Tauri 2 集成编译通过+ui/ 静态审批窗 textNode 合规+gen/schemas 入库）；余刀2：main.rs tauri 化+RPC 事件桥+托盘+自启+NSIS bundle
 blockedBy: [T-17.5b]
 accept:
   - 托盘显未决数+「IM 面离线」在线态（与 T-17.6 联动）
