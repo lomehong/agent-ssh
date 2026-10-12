@@ -1,12 +1,12 @@
 {
-  "name": "ssh-mcp",
+  "name": "agent-ssh",
   "license": "MIT",
   "version": "2.18.0",
-  "description": "MCP server exposing policy-gated, audited SSH access for Linux and Windows hosts via the Model Context Protocol.",
-  "mcpName": "io.github.tufantunc/ssh-mcp",
+  "description": "Policy-gated, audited SSH access for Linux and Windows hosts via the Model Context Protocol. Host 分离架构（v2）：MCP 前端 stub + 凭证守护 Host。",
+  "mcpName": "io.github.tufantunc/agent-ssh",
   "type": "module",
   "bin": {
-    "ssh-mcp": "build/index.js"
+    "agent-ssh": "build/index.js"
   },
   "scripts": {
     "prepare": "npm run build",

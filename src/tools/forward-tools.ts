@@ -51,7 +51,7 @@ export function registerForwardTools(
       // dynamic 模式没有目标：不得继承上一次调用的形态。
       const dynamic = mode === 'dynamic';
       const target = dynamic ? '(dynamic)' : `${targetHost}:${targetPort}`;
-      const listen = `${listenHost ?? '127.0.0.1'}:${listenPort}`;
+      const listen = `${listenHost ?? '127.0.0.1'}:${listenPort}（Host 机侧监听——分离架构后 local/dynamic 监听开在 Host 守护所在机器，方案 §5）`;
       return runAudited(
         `forward:open ${mode} ${listen} -> ${target}`,
         {
