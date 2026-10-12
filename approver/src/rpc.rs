@@ -5,6 +5,8 @@
 //! 断线即 ConnectionClosed——重连由调用方按指数退避驱动（骨架阶段不做
 //! 内部自动重连；自动重连在 T-17.5b 与 UI/托盘一起落地）。
 
+use rand::RngCore;
+use rand::rngs::OsRng;
 use serde_json::Value;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -18,6 +20,14 @@ pub const RPC_FRAME_LIMIT_BYTES: usize = 4 * 1024 * 1024;
 
 /// 协议版本（与 TS 侧 RPC_PROTOCOL_VERSION 一致）。
 pub const RPC_PROTOCOL_VERSION: &str = "0.2.0";
+
+/// 生成 agent 令牌（32 字节随机 → base64url，≥256bit，K8-⑦ 最小熵）。
+pub fn fresh_agent_token() -> String {
+    use base64::Engine as _;
+    let mut bytes = [0u8; 32];
+    OsRng.fill_bytes(&mut bytes);
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(bytes)
+}
 
 #[derive(Debug, Clone)]
 pub enum RpcError {
@@ -110,6 +120,14 @@ pub struct RpcClient {
 impl RpcClient {
     pub async fn connect(addr: &str, token: &str) -> RpcClient {
         Self::connect_with_version(addr, token, RPC_PROTOCOL_VERSION).await
+    }
+
+    /// 无凭据引导连接（跳过 hello）：start 为 pre-auth 方法（D1' operator 引导）。
+    pub async fn connect_no_hello(addr: &str) -> RpcClient {
+        let stream = TcpStream::connect(addr)
+            .await
+            .unwrap_or_else(|e| panic!("tcp connect {addr}: {e}"));
+        Self::from_stream_and_handshake_no_hello(stream).await
     }
 
     /// 指数退避重连（1s 起步逐次翻倍，封顶 30s）：Host 暂不可达时按

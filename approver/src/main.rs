@@ -1,14 +1,149 @@
-//! approver 进程入口（T-17.5a 骨架）：smoke 用——连 Host、hello、ping。
-//! UI 与常驻逻辑在 T-17.5b/c 落地。
+#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+
+//! agent-ssh 桌面审批端（T-17.5c）：Tauri 2 窗口 + RPC 桥 + 托盘 + 自启。
+//!
+//! 架构：RPC 客户端跑在 tauri async_runtime；Host 推送（approval.pending/
+//! settled）经 AppHandle.emit 转发窗口；窗口决定经 invoke('decide') 回桥。
+//! operator 会话：UI 口令表单 → invoke('unlock') → 内部 start 换会话令牌
+//! （内存态，K8-⑦ Zeroizing）；agent 令牌连接仅用于只读面（ping/manifest）。
 
 use approver::rpc::RpcClient;
+use serde_json::Value;
+use std::sync::Arc;
+use tauri::{AppHandle, Emitter, Manager, State};
+use tokio::sync::Mutex;
 
-#[tokio::main]
-async fn main() {
-    let addr = std::env::var("AGENT_SSH_HOST_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
+struct HostState {
+    addr: String,
+    /// agent 只读连接（ping/manifest）。
+    agent_client: Mutex<Option<Arc<RpcClient>>>,
+    /// operator 会话连接（解锁后建立，订阅+decide）。
+    operator_client: Mutex<Option<Arc<RpcClient>>>,
+    token: Arc<String>,
+    pin: Option<String>,
+}
+
+fn err_str(e: impl std::fmt::Display) -> String {
+    e.to_string()
+}
+
+#[tauri::command]
+async fn ping(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.agent_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not connected"))?;
+    client.ping().await.map_err(err_str)
+}
+
+/// 口令→会话（operator 引导）：skipHello 连接 start → 会话令牌建正式连接并订阅。
+#[tauri::command]
+async fn unlock(
+    app: AppHandle,
+    state: State<'_, HostState>,
+    password: String,
+) -> Result<Value, String> {
+    let pre = RpcClient::connect_no_hello(&state.addr).await;
+    let started = pre
+        .call(
+            "auth.session.start",
+            serde_json::json!({ "password": password }),
+        )
+        .await
+        .map_err(err_str)?;
+    pre.close().await;
+    let session_token = started
+        .get("sessionToken")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| err_str("auth.session.start: missing sessionToken"))?
+        .to_string();
+
+    let operator = Arc::new(RpcClient::connect(&state.addr, &session_token).await);
+    // 订阅并把推送转发到窗口（K8-③：数据经 event 进 UI，秘密不落 JS 全局）。
+    let emitter = app.clone();
+    let operator_for_push = operator.clone();
+    operator
+        .set_notification_handler(Arc::new(move |frame: Value| {
+            if let Some(method) = frame.get("method").and_then(|v| v.as_str()) {
+                let event_name = match method {
+                    "approval.pending" => "approval.pending",
+                    "approval.settled" => "approval.settled",
+                    _ => return,
+                };
+                let payload = frame.get("params").cloned().unwrap_or(Value::Null);
+                let _ = emitter.emit(event_name, payload);
+            }
+        }))
+        .await;
+    operator.subscribe_approvals().await.map_err(err_str)?;
+    *state.operator_client.lock().await = Some(operator.clone());
+
+    Ok(json_ok(true))
+}
+
+fn json_ok(v: bool) -> Value {
+    serde_json::json!({ "ok": v })
+}
+
+#[tauri::command]
+async fn decide(
+    state: State<'_, HostState>,
+    id: String,
+    decision: String,
+    face: String,
+    challenge: Option<String>,
+) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let by = format!("desktop:{}", std::env::var("USERNAME").unwrap_or_default());
+    client
+        .decide_approval(&id, &decision, &by, challenge.as_deref())
+        .await
+        .map_err(err_str)
+}
+
+#[tauri::command]
+async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("approval.list", Value::Null).await.map_err(err_str)
+}
+
+fn main() {
+    let host_addr =
+        std::env::var("AGENT_SSH_HOST_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
     let token = std::env::var("AGENT_SSH_TOKEN").unwrap_or_default();
-    let mut client = RpcClient::connect(&addr, &token).await;
-    let pong = client.ping().await;
-    println!("host.ping → {:?}", pong);
-    client.close().await;
+    let pin = std::env::var("AGENT_SSH_HOST_PIN").ok().filter(|s| !s.is_empty());
+
+    tauri::Builder::default()
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .manage(HostState {
+            addr: host_addr.clone(),
+            agent_client: Mutex::new(None),
+            operator_client: Mutex::new(None),
+            token: Arc::new(token.clone()),
+            pin: pin.clone(),
+        })
+        .setup(move |app| {
+            let handle = app.handle().clone();
+            let addr = host_addr.clone();
+            let token = approver::rpc::fresh_agent_token();
+            tauri::async_runtime::spawn(async move {
+                // agent 只读连接：失败退避重试（常驻语义）。
+                loop {
+                    let c = RpcClient::connect(&addr, &token).await;
+                    *handle
+                        .state::<HostState>()
+                        .agent_client
+                        .lock()
+                        .await = Some(Arc::new(c));
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                }
+            });
+            Ok(())
+        })
+        .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending])
+        .run(tauri::generate_context!())
+        .expect("error while running tauri application");
 }
