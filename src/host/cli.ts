@@ -45,15 +45,20 @@ export async function runHostCli(args: string[]): Promise<number> {
   }
 
   if (verb === 'serve') {
-    // 端口：--port=N（缺省 0=OS 分配）。实际端口经 stderr 就绪行输出
-    // （`host-rpc-ready port=N`）——e2e harness/运维探测面。
-    const portFlag = args.indexOf('--port');
-    const portArg = portFlag >= 0 ? Number(args[portFlag + 1]) : 0;
+        // 旗标解析（approvals 文法同源：只接受 --x=v 等号形式）。
+    // 评审 T-18b 教训：indexOf('--config') 是精确匹配，等号形式永远 -1——
+    // 须按前缀解析；前缀须含 --（初版两连错：精确匹配+漏 -- 前缀）。
+    const flagValue = (name: string): string | undefined => {
+      const entry = args.find((a) => a.startsWith(`--${name}=`));
+      return entry === undefined ? undefined : entry.slice(name.length + 3);
+    };
+    const portRaw = flagValue('port');
+    const portArg = portRaw !== undefined ? Number(portRaw) : 0;
     if (!Number.isInteger(portArg) || portArg < 0 || portArg > 65_535) {
       console.error('[host-serve] invalid --port');
       return 1;
     }
-    const configPath = getConfigPath();
+    const configPath = flagValue('config') ?? getConfigPath();
     if (!existsSync(configPath)) {
       console.error(`[host-serve] 配置不存在（${configPath}）——先运行 agent-ssh host init。`);
       return 1;
