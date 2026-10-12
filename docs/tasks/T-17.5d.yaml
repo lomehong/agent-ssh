@@ -1,0 +1,18 @@
+id: T-17.5d
+title: 桌面审批交互完善：托盘未决数/原生 toast/锁屏回锁
+level: L1
+status: 执行中
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-13 00:15:00
+claimedBy: digital-architect
+claimedAt: 2026-10-13 00:15:00
+progress: 实现中
+blockedBy: []
+accept:
+  - 托盘未决数：pending 到达→托盘 tooltip 更新；decide/settled 递减
+  - 原生 toast：pending 到达系统通知（tauri-plugin-notification）
+  - 锁屏回锁：会话过期→清内存会话+窗口回解锁态（locked 事件）
+  - cargo test+build 通过；tsc 0
+source: T-17.5c wiringBoundary 遗留+T-19 继承项；主人 2026-10-13 指令
+events:
+  - 2026-10-13 00:15:00 | create+claim | by=digital-architect | 主人指令「继续推行完成挂起项」立项。接缝：main.rs 托盘计数+notification 插件+locked 事件；ui/ui.js 解锁表单复用。
