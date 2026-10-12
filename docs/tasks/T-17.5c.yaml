@@ -1,18 +1,30 @@
 id: T-17.5c
 title: 桌面端常驻化：托盘/自启/锁屏/NSIS 分发
 level: L1
-status: 待执行
+status: 执行中
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 21:00:00
-progress: 刀1 完成（14c7955：Tauri 2 集成编译通过+ui/ 静态审批窗 textNode 合规+gen/schemas 入库）；余刀2：main.rs tauri 化+RPC 事件桥+托盘+自启+NSIS bundle
+claimedBy: digital-architect
+claimedAt: 2026-10-12 20:06:00
+progress: 刀1（14c7955 Tauri 2 骨架编译通过+ui/ 静态审批窗+gen/schemas 入库）+刀2（568ac53 main.rs tauri 化：HostState/unlock 会话引导/decide+list_pending command/通知转发/agent 常驻连接）完成；余：托盘图标+autostart 接线+NSIS bundle（tauri-cli 待装）+终轮对照+双轴评审+自报
+deletedTests: []
+wiringBoundary:
+  - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
+  - Rust 侧自动重连为骨架版（connect_with_retry 供调用方退避驱动），托盘联动随 5c
+  - 【评审缺口待裁决】K8-⑦ zeroize：已落地（8cfc799，zeroize crate 入 approver Cargo.toml——随 NSIS 分发面供应链核查）
+  - 【评审裁决登记】decide 面分流：desktop/im 携码（过期即拒）、cli 兜底免码（face 客户端声明+会话持有者信任假设）
+  - 【评审登记随 5c】PushHub 异常隔离已修（8cfc799）/读循环 DRY 收拢/CHALLENGE_REJECTED reason 收窄已修（8cfc799）/mock Host 保真度注释/README+DOCS approvalChannel 残留（T-19）
+  - 诊断记录：本轮 pwsh 工作目录漂移曾产生 0 字节 src/rpc.rs 残留+yaml 写入失败×3——均以真字节核对后清理/重写，cargo 为真信号源
 blockedBy: [T-17.5b]
 accept:
   - 托盘显未决数+「IM 面离线」在线态（与 T-17.6 联动）
-  - Windows 登录自启（Tauri autostart，可选开关）
-  - 锁屏/超时回锁完整；原生 toast
+  - Windows 登录自启（Tauri autostart 插件，可选开关）
+  - 锁屏/超时回锁行为完整
+  - 原生 toast 通知
   - NSIS 安装包构建（~10MB 级）；分发面入供应链声明（K2）
-  - cargo test+构建产物本地验证；tsc 0 错
+  - cargo test + 构建产物本地验证；tsc（前端部分）0 错
 source: 方案 §4.1/§11 T-17.5c 行；评审 K3/K2
 events:
-  - 2026-10-12 21:08:00 | claim | by=digital-architect | 接缝约定：UI 壳合并交付（T-17.5b 降范围项：Tauri 2 壳+textNode 渲染+锁 CSP+Tauri command 数据面）+zeroize 裁决落地（K8-⑦：Rust 侧 zeroize crate 供应链核查随本票 NSIS 分发面）+PushHub 异常隔离/读循环 DRY 收拢/CHALLENGE reason 收窄（T-17.5b jc 登记）+托盘/自启/NSIS。前置事实：rustc/cargo 1.93.0 已核。
+  - 2026-10-12 21:10:00 | progress | by=digital-architect | 刀1（14c7955）+刀2（568ac53）完成：Tauri 2 集成编译通过（tauri/tray-icon/autostart/NSIS target）+ui/ 静态审批窗（K8-③ 合规）+main.rs tauri 化（HostState/unlock 会话引导/decide/list_pending/通知转发/agent 常驻连接）。诊断记录：pwsh 工作目录漂移曾产生 0 字节 src/rpc.rs 残留+yaml 写入失败×3——均以真字节核对后清理。
+  - 2026-10-12 20:06:00 | claim | by=digital-architect | 接缝约定：UI 壳合并交付+zeroize 裁决落地+托盘/自启/NSIS（前置 rustc/cargo 1.93.0 已核）
   - 2026-10-11 21:00:00 | create | by=lome | level=L1 | blocked_by=T-17.5b
