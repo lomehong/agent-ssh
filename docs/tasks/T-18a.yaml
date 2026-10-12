@@ -26,6 +26,7 @@ accept:
   - tsc 0 ✓（失败集波及单列 T-18b 改写）
 source: 方案 §5/§6/§7/§11 T-18a 行、§12 D14/H1-a
 events:
+  - 2026-10-12 22:14:00 | confirm | by=lome | 会话 ask 选项「确认落定，继续 T-18b」——confirmedBy=lome
   - 2026-10-12 22:10:00 | report | by=digital-architect | 自报待主人 confirm。提交 05069cc：index.ts 重写为薄分发器（approvals/run/info→cli-rpc；host serve/init→host/cli.ts 新建——serve=loadConfig+startHost+pidfile+守护语义，init=buildHostInitArtifacts+wx 写骨架+令牌一次打印；--transport=http 显式报错；默认→stubMain）；package.json name/mcpName/bin 改 agent-ssh（D14）；forward-open 文本标注 Host 机侧（§5）。证据：三冒烟（serve 缺配置 fail-fast 指引 init/stub 缺 AGENT_SSH_HOST_ADDR fail-fast/定向回归绿）+tsc 0+build exit 0。全量对照：42败/11 文件=既有 6 环境族（29 败口径内）+入口切换波及 5 文件 13 败——**全部属「spawn 直连引擎/name 断言」族，随 T-18b 改写，票面验收 6/7 单列登记**（非语义回归：隔离跑 policy/upload 33/33 绿）。wiringBoundary：server.json/sync 脚本未随 name 改（T-18b）；config 目录名未改（数据安全，说明随 T-19）。
   - 2026-10-12 22:02:00 | claim | by=digital-architect | 接缝约定：①bin 改名②入口切 stub③forward-open 文本标注+http 旗标清理④删测登记纪律
   - 2026-10-11 21:02:00 | create | by=lome | level=L1 | blocked_by=T-15/T-16/T-17
