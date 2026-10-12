@@ -125,25 +125,43 @@ fn main() {
             token: Arc::new(token.clone()),
             pin: pin.clone(),
         })
-        .setup(move |app| {
-            let handle = app.handle().clone();
-            let addr = host_addr.clone();
-            let token = approver::rpc::fresh_agent_token();
-            tauri::async_runtime::spawn(async move {
-                // agent 只读连接：失败退避重试（常驻语义）。
-                loop {
-                    let c = RpcClient::connect(&addr, &token).await;
-                    *handle
-                        .state::<HostState>()
-                        .agent_client
-                        .lock()
-                        .await = Some(Arc::new(c));
-                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+.setup(move |app| {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+    // 托盘（T-17.5c 验收 1）：常驻图标+菜单。未决数/IM 面离线随 T-17.6 接线。
+    let show = MenuItem::with_id(app, "show", "显示审批窗", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    TrayIconBuilder::with_id("main-tray")
+        .icon(app.default_window_icon().unwrap().clone())
+        .menu(&menu)
+        .on_menu_event(|app, event| {
+            if event.id.as_ref() == "quit" {
+                app.exit(0);
+            } else if event.id.as_ref() == "show" {
+                if let Some(win) = app.get_webview_window("main") {
+                    let _ = win.show();
+                    let _ = win.set_focus();
                 }
-            });
-            Ok(())
+            }
         })
-        .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(app)?;
+    // 自启（验收 2）：插件默认关，运维经设置开关。
+    let _ = tauri_plugin_autostart::ManagerExt::autolaunch(app).disable();
+    let handle = app.handle().clone();
+    let addr = host_addr.clone();
+    let token = approver::rpc::fresh_agent_token();
+    tauri::async_runtime::spawn(async move {
+        // agent 只读连接：断线 3s 重试（常驻语义）。
+        loop {
+            let c = RpcClient::connect(&addr, &token).await;
+            *handle.state::<HostState>().agent_client.lock().await = Some(Arc::new(c));
+            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+        }
+    });
+    Ok(())
+    })
+    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending])
+    .run(tauri::generate_context!())
+    .expect("error while running tauri application");
 }
