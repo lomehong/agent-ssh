@@ -465,6 +465,9 @@ OPA sidecar 不是通往同一授权的后门。OPA 只对本地策略已经放�
 
 #### 应答审批提示
 
+> **v2 分离架构**：elicitation 路径随 stub 移除——审批走 Host 的 `approvalSurfaces`（队列 CLI/
+> 桌面端，见下节）。本小节保留为上游 elicitation 行为的历史说明。
+
 审批经 MCP elicitation 请求完成，你看到的就是客户端的对话框。接受即批准该命令——没有需要再填的第二个字段。
 
 你有 **10 分钟**作答。超时后请求过期，命令被拒绝而不是悬而未决，拒绝消息会说明原因；提示框可能还开在你的客户端里，若是这样，准备好后再运行一次命令即可。如果客户端完全不支持 elicitation，所有破坏性与特权命令都会被拒绝并报 `APPROVAL_UNAVAILABLE` 注明原因——审批在设计上就是 fail-closed 的。
@@ -602,6 +605,10 @@ gh attestation verify ssh-mcp-*.tgz --repo tufantunc/ssh-mcp --predicate-type ht
 
 ## 传输方式
 
+> **v2 分离架构**：MCP 宿主↔stub 走 stdio；stub↔Host 走 RPC over TCP（见 HOST-RUNBOOK）。
+> 本节的 **HTTP 传输已废止**（`--transport=http` 显式报错）；远程场景=Host 监听+反向代理 TLS。
+> 下文 HTTP 节保留为 v1 历史说明，其中旗标/端点在 v2 均不存在。
+
 ### stdio（默认）
 
 面向本地 MCP 客户端（Claude Code、Cursor、Windsurf）。无网络暴露。
@@ -669,6 +676,11 @@ Docker 镜像以非 root 的 UID 65532 运行，基础镜像为最小化的 `nod
 ---
 
 ## CLI 标志（v2）
+
+> **v2 分离架构**：下表中旧直连服务器的旗标（`--host/--user/--password/--group/--transport=http/
+> --bearerToken/--httpPort` 等）已随 stdio 直连与 HTTP 传输废止——传入即显式报错（removed in v2）。
+> 现役命令面：`agent-ssh`（stub：`--host-addr` 或 env）／`agent-ssh host serve|init`（`--port=0`
+> `--config=路径`）／`agent-ssh approvals …`。权威清单见 [HOST-RUNBOOK](docs/HOST-RUNBOOK.md)。
 
 机密**绝不**通过 CLI 参数传递。
 
