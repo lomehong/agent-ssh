@@ -1,4 +1,11 @@
-# SSH MCP Server v2
+# agent-ssh（Host 分离架构 v2）
+
+> **⚠️ 架构通告（v2，2026-10）**：本包已切换 **Host 分离架构**——`agent-ssh` 默认入口是
+> **纯单向 MCP stub 前端**，SSH 凭证只存在于一旁的 **Host 守护**（`agent-ssh host serve`）。
+> **Host 不在线 = 产品全灭**（stub 零工具诚实态，绝不本地降级，fail-closed）。
+> 首次部署走 [HOST-RUNBOOK](docs/HOST-RUNBOOK.md)（host init 五步→serve→宿主接 env）；
+> 从 v1（ssh-mcp）升级见同文档「升级顺序」节（先 Host 后 stub，切换窗口会话全灭预告）。
+> 健康检查：宿主侧 `host.ping`；stub 启动需要 env `AGENT_SSH_HOST_ADDR` + `AGENT_SSH_TOKEN`。
 
 [![NPM Version](https://img.shields.io/npm/v/ssh-mcp)](https://www.npmjs.com/package/ssh-mcp)
 [![Downloads](https://img.shields.io/npm/dm/ssh-mcp)](https://www.npmjs.com/package/ssh-mcp)
@@ -462,13 +469,13 @@ OPA sidecar 不是通往同一授权的后门。OPA 只对本地策略已经放�
 
 你有 **10 分钟**作答。超时后请求过期，命令被拒绝而不是悬而未决，拒绝消息会说明原因；提示框可能还开在你的客户端里，若是这样，准备好后再运行一次命令即可。如果客户端完全不支持 elicitation，所有破坏性与特权命令都会被拒绝并报 `APPROVAL_UNAVAILABLE` 注明原因——审批在设计上就是 fail-closed 的。
 
-#### 审批队列（agent-ssh）
+#### 审批面（Host 分离架构 v2）
 
-Elicitation 需要客户端支持。`approvalChannel` 设置（默认 `both`）为其他所有宿主环境提供了第二道门，同样有 10 分钟的时限：
+Elicitation 需要客户端支持。分离架构下审批面由 Host 配置 `approvalSurfaces`（默认 `["desktop", "queue"]`）决定，与 MCP 宿主解耦：
 
-- `elicitation` —— 仅用客户端对话框（上游行为）。
-- `queue` —— 绝不询问客户端；每条破坏性命令都在文件队列中等待人工处理。
-- `both` —— 先试客户端对话框；若该客户端完全无法被询问，命令进入队列等待而不是失败。客户端回答**拒绝**即为终局——显式拒绝之后绝不会再去问队列。
+- `desktop` —— 桌面审批端（Tauri 壳）收 `approval.pending` 推送，人工携校验码决定（破坏性类）。
+- `im` —— 飞书面（T-17.6，需飞书开放平台前置）。
+- `queue` —— 绝不询问客户端；每条破坏性命令都在文件队列中等待人工处理（`agent-ssh approvals` CLI 或桌面端决定）。
 
 队列位于平台数据目录下（`…/agent-ssh/approvals/`，每条待审命令一个 JSON 文件，`0700` 目录内 `0600` 权限）。服务器会把精确的命令打印到 stderr：
 

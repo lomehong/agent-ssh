@@ -7,7 +7,7 @@
 
 - [ ] **专用最小权限账号**：为 agent 单独建账号（如 `agent-op`），只授予只读级 CLI 权限（display/show 类）；**绝不用 root/admin/超级管理员**。
 - [ ] **设备侧 AAA 记账兜底**：在设备/网管侧开启 TACACS+/RADIUS 命令记账——本工具的审计日志记录了 agent 侧的每次输入输出，但设备侧记账是独立于本系统的第二道留痕，两者都开。
-- [ ] **审批通道确认**：接入生产设备前，确认 `approvalChannel`（默认 `both`）与 `approvalPolicy`（生产建议 `ask-all`）符合贵方变更管理要求；raw PTY 会话的开启永远要过人工审批。
+- [ ] **审批面确认**：接入生产设备前，确认 Host 配置 `approvalSurfaces`（默认 `["desktop", "queue"]`，分离架构 v2 语义）与 `approvalPolicy`（生产建议 `ask-all`）符合贵方变更管理要求；raw PTY 会话的开启永远要过人工审批。
 - [ ] **算法协商**：老设备若握手失败，在 profile 上按需放开 `algorithms`（见 README 配置节）——放开即降低传输安全下限，范围只限该设备。
 - [ ] 不配置 root/超级管理员；`readOnly = true` 的监控类 profile 只允许只读命令。
 
