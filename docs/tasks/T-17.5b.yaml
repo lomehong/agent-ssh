@@ -1,9 +1,11 @@
 id: T-17.5b
 title: 桌面端审批闭环：口令→会话+弹窗+决定+校验码（Host 侧限次）
 level: L1
-status: 待执行
+status: 执行中
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:58:00
+claimedBy: digital-architect
+claimedAt: 2026-10-12 20:06:00
 blockedBy: [T-17.5a]
 accept:
   - 口令→auth.session.start→内存态会话（30min 滑动）；锁屏/超时回锁；磁盘零 operator 秘密
@@ -16,4 +18,5 @@ accept:
   - cargo test 全绿
 source: 方案 §4.1/§11 T-17.5b 行；评审 K8-②③⑦、K3
 events:
+  - 2026-10-12 20:06:00 | claim | by=digital-architect | 接缝约定：approver/ 增审批会话模块（口令→auth.session.start→内存会话，零落盘）+approval.subscribe 订阅+approval.decide 决定提交；校验码（D10/K8-②）为 Host 生成-窗口展示-单次消费——Host 侧增量（host/main.ts 增 approval.challenge 生成+decide 携码校验）随本票；弹窗 UI 以 Tauri command+纯文本渲染（K8-③ textNode+锁 CSP）随 5b UI 段；K9 递归白名单扫描扩展 approver/src
   - 2026-10-11 20:58:00 | create | by=lome | level=L1 | blocked_by=T-17.5a
