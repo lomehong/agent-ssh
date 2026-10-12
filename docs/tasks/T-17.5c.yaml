@@ -13,4 +13,5 @@ accept:
   - cargo test+构建产物本地验证；tsc 0 错
 source: 方案 §4.1/§11 T-17.5c 行；评审 K3/K2
 events:
+  - 2026-10-12 21:08:00 | claim | by=digital-architect | 接缝约定：UI 壳合并交付（T-17.5b 降范围项：Tauri 2 壳+textNode 渲染+锁 CSP+Tauri command 数据面）+zeroize 裁决落地（K8-⑦：Rust 侧 zeroize crate 供应链核查随本票 NSIS 分发面）+PushHub 异常隔离/读循环 DRY 收拢/CHALLENGE reason 收窄（T-17.5b jc 登记）+托盘/自启/NSIS。前置事实：rustc/cargo 1.93.0 已核。
   - 2026-10-11 21:00:00 | create | by=lome | level=L1 | blocked_by=T-17.5b

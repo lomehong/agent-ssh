@@ -1,12 +1,12 @@
 id: T-17.5b
 title: 桌面端审批闭环：口令→会话+弹窗+决定+校验码（Host 侧限次）
 level: L1
-status: 执行中
+status: 已落定
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:58:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 20:06:00
-progress: 三刀完成（校验码库/推送桥+携码 decide/Rust 通知分发+退避重连），余 UI 段（Tauri 壳）与终轮对照
+progress: 已落定——协议闭环双侧落地；UI 壳随 T-17.5c 合并交付（降范围登记经主人 confirm 追认）
 deletedTests: []
 wiringBoundary:
   - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
