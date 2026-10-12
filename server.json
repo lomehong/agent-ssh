@@ -1,18 +1,18 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "io.github.tufantunc/ssh-mcp",
+  "name": "io.github.tufantunc/agent-ssh",
   "title": "SSH — policy-gated remote access",
   "description": "Policy-gated, audited SSH for Linux and Windows hosts: roles, approvals, and an audit log.",
   "version": "2.18.0",
-  "websiteUrl": "https://github.com/tufantunc/ssh-mcp#readme",
+  "websiteUrl": "https://github.com/tufantunc/agent-ssh#readme",
   "repository": {
-    "url": "https://github.com/tufantunc/ssh-mcp",
+    "url": "https://github.com/tufantunc/agent-ssh",
     "source": "github"
   },
   "packages": [
     {
       "registryType": "npm",
-      "identifier": "ssh-mcp",
+      "identifier": "agent-ssh",
       "version": "2.18.0",
       "transport": {
         "type": "stdio"
