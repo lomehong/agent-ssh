@@ -1,12 +1,14 @@
 id: T-18a
 title: 入口切换+传输废止：默认切 stub/bin 改名 agent-ssh/stdio 直连删除
 level: L1
-status: 待确认
+status: 已落定
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 21:02:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 22:00:00
 reportedAt: 2026-10-12 22:10:00
+confirmedBy: lome
+confirmedVia: 会话内 ask 选项作答「确认落定，继续 T-18b」，2026-10-12 22:12 前后
 progress: 完成（05069cc 入口重写+bin 改名+forward 标注；dc9005f 接缝）
 deletedTests:
   - 无直接删测；入口切换波及 5 文件（e2e/introspection、e2e/packaging、e2e/tools、unit/sync-server-json、unit/tools/approval-channel）挂于「spawn 直连引擎/package name 断言」——随 T-18b 改写（tools.e2e 三破坏性用例此前已 skip）
