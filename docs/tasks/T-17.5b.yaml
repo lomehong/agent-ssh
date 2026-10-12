@@ -6,6 +6,11 @@ root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:58:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 20:06:00
+progress: 三刀完成（校验码库/推送桥+携码 decide/Rust 通知分发+退避重连），余 UI 段（Tauri 壳）与终轮对照
+deletedTests: []
+wiringBoundary:
+  - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
+  - Rust 侧自动重连为骨架版（connect_with_retry 供调用方退避驱动），托盘联动随 5c
 blockedBy: [T-17.5a]
 accept:
   - 口令→auth.session.start→内存态会话（30min 滑动）；锁屏/超时回锁；磁盘零 operator 秘密
