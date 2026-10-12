@@ -27,6 +27,14 @@ interface ChallengeEntry {
   consumed: boolean;
 }
 
+/**
+ * 生成 4 位码。CSPRNG（crypto.randomInt）而非 Math.random：码是唯一门槛
+ * 因子时不应引入可预测源（3 败+60s 限下风险受控，但惯例优先）。
+ */
+function randomCode4(): string {
+  return randomInt(0, 10_000).toString().padStart(4, '0');
+}
+
 export class ChallengeStore {
   private readonly entries = new Map<string, ChallengeEntry>();
   private readonly clock: () => number;
@@ -41,7 +49,7 @@ export class ChallengeStore {
     if (existing && !existing.invalidated && !existing.consumed) {
       return existing.code;
     }
-    const code = String(Math.floor(Math.random() * 10_000)).padStart(4, '0');
+    const code = randomCode4();
     this.entries.set(approvalId, {
       code,
       createdAt: this.clock(),
@@ -51,6 +59,12 @@ export class ChallengeStore {
       consumed: false,
     });
     return code;
+  }
+
+  /** 只读：该 id 是否存在未消费码（decide 分流依据；含过期态）。 */
+  hasPendingChallenge(approvalId: string): boolean {
+    const entry = this.entries.get(approvalId);
+    return entry !== undefined && !entry.invalidated && !entry.consumed;
   }
 
   /** 只读：当前码（审计/诊断用；失效态返回 undefined）。 */

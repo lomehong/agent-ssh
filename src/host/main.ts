@@ -160,20 +160,34 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       return { pending };
     },
     'approval.decide': async (params, ctx: RpcHandlerContext) => {
-      const p = params as { id?: unknown; decision?: unknown; by?: unknown; challenge?: unknown };
+      const p = params as {
+        id?: unknown;
+        decision?: unknown;
+        by?: unknown;
+        challenge?: unknown;
+        /** 决定面声明：desktop/im 携码校验；cli 兜底免码（人已在 shell）。 */
+        face?: unknown;
+      };
       if (typeof p?.id !== 'string' || (p.decision !== 'approved' && p.decision !== 'rejected')) {
         throw new Error('approval.decide requires params {id, decision: approved|rejected}');
       }
-      // 校验码（D10/K8-②）：该 id 存在未消费码时必须携对码，单次有效，
-      // 3 次失败作废 + 60s TTL（全在 Host 侧，窗口本地计数不可信）。
-      if (challenges.codeOf(p.id) !== undefined) {
+      // 校验码（D10/K8-②）：该 id 存在未消费码时，desktop/im 面的 decide
+      // 必须携对码（单次有效、3 次失败作废、60s TTL、过期即拒——码过期
+      // 免码会掏空 D10 窗口）；cli 面免码（兜底语义：人已在 shell 现场，
+      // 且 CLI 看不到窗口码）。face 由客户端显式声明，缺省按最严处理。
+      if (challenges.hasPendingChallenge(p.id)) {
+        const face = typeof p.face === 'string' ? p.face : '';
         const code = typeof p.challenge === 'string' ? p.challenge : '';
-        const verified = challenges.verify(p.id, code);
-        if (!verified.ok) {
-          const detail = verified.invalidated
-            ? 'challenge invalidated after 3 failed attempts'
-            : `challenge ${verified.reason ?? 'mismatch'}`;
-          throw new Error(`CHALLENGE_REJECTED: ${detail}`);
+        if (face !== 'cli') {
+          const verified = challenges.verify(p.id, code);
+          if (!verified.ok) {
+            const detail = verified.invalidated
+              ? 'challenge invalidated after 3 failed attempts'
+              : verified.reason === 'expired'
+                ? 'challenge expired — re-fetch the pending list for a fresh window'
+                : `challenge ${verified.reason ?? 'mismatch'}`;
+            throw new Error(`CHALLENGE_REJECTED: ${detail}`);
+          }
         }
       }
       // approver 语义（§4.4）：面来源 + 操作者。operator 会话的面身份在
