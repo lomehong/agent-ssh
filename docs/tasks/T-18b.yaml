@@ -16,6 +16,7 @@ accept:
   - 单连接并发 tool.call RPC 层用例：id 关联/大响应与推送交织（K9-③）
   - 时钟回拨不延长窗口用例；债务表述核对（K9-⑦）
 events:
+  - 2026-10-12 23:26:00 | confirm | by=lome | 会话 ask 选项「确认落定，继续 T-19」——confirmedBy=lome
   - 2026-10-12 23:20:00 | report | by=digital-architect | 自报待主人 confirm。提交 4f5b32d（双进程 harness+rpc-flow 三用例）+0c7d4c6（e2e 三文件收口）+cb39f63（基线冻结对照 docs/reports/T-18b-baseline.md）。证据：红线四项终验 97/97 全绿（matrix 7 态 98 断言+stub 白名单+并发仲裁+重放拒+challenge D10+rpc-flow 全链路）；全量 30败/6 文件=既有环境族口径；tsc 0；删测 2 文件登记（覆盖去向明确）。诊断：pwsh 行手术损坏文件已重写恢复；serve 旗标两连错探针实证修复入注释。
   - 2026-10-12 23:12:00 | progress | by=digital-architect | e2e 三文件收口（0c7d4c6）：introspection 删（并入 rpc-flow 用例1）/tools.e2e 删（12 skip+闸门并入 rpc-flow 用例3）/packaging 改写（v1 迁移提示+reportFatal 保留验证；分发器恢复 removed-in-v2 显式报错）。全量 30败/6 文件=既有族口径恢复 ✓。余：红线四项对照清单+基线冻结对照文档（docs/reports/）+终轮+双轴+自报。
   - 2026-10-12 23:00:00 | progress | by=digital-architect | e2e 双进程 RPC harness 落地（4f5b32d）：spawnRpcHost+队列泵+rpc-flow 三用例绿（tools/list 23 经 stub→Host ✓/无凭据 fail-closed ✓/破坏性队列泵闸门 ✓）+serve 旗标前缀解析修复（indexOf 精确匹配+漏 -- 两连错，探针实证）。全量 39败/9 文件（既有 6+e2e 3：introspection/packaging/tools 旧直连断言待改写）。余：e2e 两文件改写+红线对照清单+基线冻结文档。
