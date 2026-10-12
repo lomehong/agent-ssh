@@ -11,6 +11,20 @@ deletedTests: []
 wiringBoundary:
   - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
   - Rust 侧自动重连为骨架版（connect_with_retry 供调用方退避驱动），托盘联动随 5c
+status: 待确认
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-11 20:58:00
+claimedBy: digital-architect
+claimedAt: 2026-10-12 20:06:00
+reportedAt: 2026-10-12 21:05:00
+progress: 三刀完成+双轴收口（face 分流/CSPRNG/forbidden 审计/no_hello 分发已修；UI 壳降范围随 5c；zeroize 缺口登记 T-17.5c 待裁决）
+deletedTests: []
+wiringBoundary:
+  - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
+  - Rust 侧自动重连为骨架版（connect_with_retry 供调用方退避驱动），托盘联动随 5c
+  - 【评审缺口待裁决】K8-⑦ zeroize：Rust String 持令牌无 zeroize（需 zeroize crate=新依赖随 5c 供应链核查）；JS 侧语言限制登记
+  - 【评审裁决登记】decide 面分流：desktop/im 携码（过期即拒）、cli 兜底免码（face 客户端声明+会话持有者信任假设）
+  - 【评审登记随 5c】PushHub 异常隔离/读循环 DRY 收拢/CHALLENGE_REJECTED reason 收窄/mock Host 保真度注释/README+DOCS approvalChannel 残留（T-19）
 blockedBy: [T-17.5a]
 accept:
   - 口令→auth.session.start→内存态会话（30min 滑动）；锁屏/超时回锁；磁盘零 operator 秘密
