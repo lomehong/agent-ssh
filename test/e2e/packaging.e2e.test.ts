@@ -77,44 +77,31 @@ describe.skipIf(!serverBuilt)('E2E — packaging', () => {
   }, 20000);
 
   // #91: the CLI profile had no way to declare a host group, so it fell to the
-  // strictest tier and `sudo` could never run without writing a config file.
-  // A mistyped group must not quietly land back on those prod bindings — the
-  // operator would read the refusal as policy rather than as their own typo.
-  it('rejects an unknown --group instead of falling back to the strictest tier', async () => {
+  // T-18a：CLI --host/--user/--group 快速启动路径随 stdio 直连废止（D14）。
+  // 旧「Invalid --group」校验随 buildAppConfig CLI 分支删除；新语义=v1 旗标
+  // 迁移提示（分发器显式报错，绝不静默忽略）。
+  it('rejects removed v1 --group with the migration hint', async () => {
     await expect(
       runIsolated([SERVER_ENTRY, '--host=x', '--user=y', '--group=production']),
-    ).rejects.toMatchObject({ stderr: expect.stringContaining('Invalid --group=production') });
+    ).rejects.toMatchObject({ stderr: expect.stringContaining('removed in v2') });
   }, 20000);
 
   /**
    * How the error is *presented*, which only a spawned process can show.
-   *
-   * Every failure used to go through `console.error('Fatal error:', error)`,
-   * which prints the Error object: name, message, and a stack through
-   * buildAppConfig and main. A mistyped flag therefore reached the operator
-   * looking like a crash in our code, with the explanation we wrote for them
-   * wrapped in frames that only matter to someone debugging this repo. It is
-   * the first thing the reporter of #138 pasted, and it told them nothing.
-   *
-   * The complementary half — a real defect keeps its stack — is asserted in
-   * test/unit/cli-fatal-reporting.test.ts, which can construct one.
+   * reportFatal 语义（#138）在分发器报错路径上保留：人话一行、无堆栈框、exit 2。
    */
   it('reports an invocation mistake as a message, with exit status 2', async () => {
-    // --group is only validated on the no-config-file path — `resolveHostGroup` is called
-    // from the CLI-args branch of `buildAppConfig` — so the run cannot be pinned with
-    // --config; `runIsolated` points the home directory at an empty temp dir instead.
     const err = await runIsolated([SERVER_ENTRY, '--host=x', '--user=y', '--group=production'])
       .then(
         () => { throw new Error('expected a non-zero exit for --group=production'); },
         (e: { stderr: string; code: number }) => e,
       );
 
-    // Asserted on the report rather than the whole stream: an unrelated Node
-    // ExperimentalWarning can carry indented `at ` frames of its own.
-    const report = err.stderr.slice(err.stderr.indexOf('Invalid --group=production'));
+    const report = err.stderr.slice(err.stderr.indexOf('removed in v2'));
     expect(report).not.toBe('');
     expect(report.trimEnd()).toBe(
-      'Invalid --group=production. Expected one of: prod, staging, dev.',
+      'removed in v2: --host/--user/--password/--group CLI flags are gone. ' +
+      'Profiles live in config.toml (agent-ssh host init); the MCP frontend is spawned with AGENT_SSH_HOST_ADDR.',
     );
     expect(err.stderr).not.toContain('Fatal error:');
     // The distinction reportFatal draws is only machine-readable through this.

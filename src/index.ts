@@ -24,6 +24,22 @@ async function main(): Promise<void> {
       }),
   ) as Record<string, string | null>;
 
+  // v1 已移除旗标的迁移提示（packaging e2e 契约）：分发器也必须显式报错，
+  // 绝不静默忽略未知旗标（M 系评审「不静默」基线）。
+  if ('host' in argv || 'user' in argv || 'password' in argv || 'group' in argv) {
+    throw new OperatorError(
+      'removed in v2: --host/--user/--password/--group CLI flags are gone. ' +
+      'Profiles live in config.toml (agent-ssh host init); the MCP frontend is spawned with AGENT_SSH_HOST_ADDR.',
+    );
+  }
+  if (argv.transport === 'http') {
+    // T-15/T-18a：HTTP 传输整体废止——显式报错而非静默回落。
+    throw new OperatorError(
+      '--transport=http was removed: the HTTP transport is abolished in the Host 分离架构 (v2). ' +
+      'Run the MCP frontend on stdio (default) and start `agent-ssh host serve` for the credential-holding daemon.',
+    );
+  }
+
   if (positionals[0] === 'approvals') {
     const { runApprovalsCli } = await import('./cli-rpc.js');
     process.exit(await runApprovalsCli(process.argv.slice(2)));
@@ -35,13 +51,6 @@ async function main(): Promise<void> {
   if (positionals[0] === 'host') {
     const { runHostCli } = await import('./host/cli.js');
     process.exit(await runHostCli(process.argv.slice(3)));
-  }
-  if (argv.transport === 'http') {
-    // T-15/T-18a：HTTP 传输整体废止——显式报错而非静默回落。
-    throw new OperatorError(
-      '--transport=http was removed: the HTTP transport is abolished in the Host 分离架构 (v2). ' +
-      'Run the MCP frontend on stdio (default) and start `agent-ssh host serve` for the credential-holding daemon.',
-    );
   }
 
   // 默认：MCP stub 前端（纯单向 stdio）。需要 Host 守护在场：
