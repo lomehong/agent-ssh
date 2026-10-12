@@ -17,4 +17,5 @@ accept:
   - 主人真实验收后方可待确认
 source: 方案 §7/§8/§9/§11 T-19 行；评审 K9-⑧、H6
 events:
+  - 2026-10-12 23:28:00 | claim | by=digital-architect | 接缝约定：①localhost 全链路 E2E——rpc-flow.e2e 三用例已覆盖（tools/list 23/无凭据 fail-closed/破坏性队列泵闸门，4f5b32d），本票复核口径 ②Linux 复跑+PTY 吞吐需主人前提（K9-⑧：目标机地址/SSH 账号/认证方式——缺项先要，不硬凑）③文档收口（README 置顶 Host 不在线=全灭/host.ping/审批面静默/飞书两步+SECURITY/DEVICE-ONBOARDING 旗标名裁决回写+init 五步 runbook+升级顺序 runbook+宿主 tools/list_changed 差异）④T-15 继承项回销（e2e 破坏性用例重建→rpc-flow 用例 3 已覆盖闸门链路，privileged-command 交互会话随 Linux 复跑）⑤主人迁移清单交付 ⑥主人真实验收后待确认。继承项核对：README:467/DEVICE-ONBOARDING:10 approvalChannel 残留（T-16 登记）随文档收口。
   - 2026-10-11 21:04:00 | create | by=lome | level=L1 | blocked_by=T-18b
