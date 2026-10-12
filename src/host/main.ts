@@ -24,6 +24,7 @@ import { listPending, decideApproval, type ApprovalSurface } from '../guard/appr
 import { acquirePidfile } from '../rpc/pidfile.js';
 import { generateAgentToken, hashPassword, tokenDigest, OperatorSessionStore } from '../rpc/auth.js';
 import { RpcHostServer, type RpcHandler, type RpcHandlerContext } from '../rpc/server.js';
+import { ChallengeStore } from '../rpc/challenge.js';
 import type { RpcTables } from '../rpc/authorize.js';
 import { SERVER_VERSION } from '../version.js';
 import { registerResources, registerTools } from '../tools/registry.js';
@@ -87,11 +88,37 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     { name: 'agent-ssh host', version: SERVER_VERSION },
     { capabilities: { tools: {}, resources: {} } },
   );
+
+  const queueDir = opts.approvalQueueDir;
+  // 校验码库（T-17.5b，D10/K8-②）：破坏性类入队即生成，decide 携码单次校验。
+  const challenges = new ChallengeStore();
+
+  // server 句柄提升：推送回调运行时 hub 已就绪（listen 后才会触发）。
+  let serverRef: RpcHostServer | undefined;
+
+  // 审批推送桥（T-17.5b）：pipeline 入队 → hub.publish（approval.pending）。
+  // 破坏性/特权类生成 4 位校验码随推送下发（仅窗口可见，D10/K8-②）。
+  const onApprovalQueued = (payload: {
+    id: string;
+    profile: string;
+    command: string;
+    commandClass: string;
+    expiresAt: string;
+  }): void => {
+    const challenge =
+      payload.commandClass === 'destructive' || payload.commandClass === 'privileged'
+        ? challenges.generate(payload.id)
+        : undefined;
+    serverRef?.hub.publish('approval.pending', { ...payload, ...(challenge ? { challenge } : {}) });
+    log(`approval.push id=${payload.id} class=${payload.commandClass}${challenge ? ' challenge=****' : ''}`);
+  };
+
   registerTools(mcpServer, registry, policy, audit, {
     approvalGrantTtlMs: opts.approvalGrantTtlMs ?? opts.config.defaults.approvalGrantTtlMs,
     approvalSurfaces: opts.config.defaults.approvalSurfaces as ApprovalSurface[],
     approvalQueueDir: opts.approvalQueueDir,
     approvalQueuePollMs: opts.approvalQueuePollMs,
+    onApprovalQueued,
   });
   registerResources(mcpServer, registry);
 
@@ -109,8 +136,6 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     sessions,
     imDecisionTokens: new Set<string>(),
   };
-
-  const queueDir = opts.approvalQueueDir;
 
   const handlers: Record<string, RpcHandler> = {
     // 真实管线桥接：MCP 语义原样（isError/content 结构透传）。
@@ -135,9 +160,21 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       return { pending };
     },
     'approval.decide': async (params, ctx: RpcHandlerContext) => {
-      const p = params as { id?: unknown; decision?: unknown; by?: unknown };
+      const p = params as { id?: unknown; decision?: unknown; by?: unknown; challenge?: unknown };
       if (typeof p?.id !== 'string' || (p.decision !== 'approved' && p.decision !== 'rejected')) {
         throw new Error('approval.decide requires params {id, decision: approved|rejected}');
+      }
+      // 校验码（D10/K8-②）：该 id 存在未消费码时必须携对码，单次有效，
+      // 3 次失败作废 + 60s TTL（全在 Host 侧，窗口本地计数不可信）。
+      if (challenges.codeOf(p.id) !== undefined) {
+        const code = typeof p.challenge === 'string' ? p.challenge : '';
+        const verified = challenges.verify(p.id, code);
+        if (!verified.ok) {
+          const detail = verified.invalidated
+            ? 'challenge invalidated after 3 failed attempts'
+            : `challenge ${verified.reason ?? 'mismatch'}`;
+          throw new Error(`CHALLENGE_REJECTED: ${detail}`);
+        }
       }
       // approver 语义（§4.4）：面来源 + 操作者。operator 会话的面身份在
       // T-17.5b/T-17.6 登记绑定表；过渡期以 callerClass 标注。
@@ -146,6 +183,9 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
         ...(queueDir ? { dir: queueDir } : {}),
         by,
       });
+      // settled 推送 + 未消费码吊销（他面已决定时码即作废）。
+      challenges.revoke(p.id);
+      serverRef?.hub.publish('approval.settled', { id: p.id, decision: p.decision, approved: outcome.decided });
       return outcome;
     },
     'auth.session.start': async (params) => {
@@ -283,6 +323,7 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     audit: (event) => log(`rpc-audit kind=${event.kind} method=${event.method ?? ''}`),
   });
   const port = await server.listen({ host: opts.host ?? '127.0.0.1', port: opts.port ?? 0, tls: opts.tls });
+  serverRef = server;
   log(`agent-ssh host ready port=${port} tools=23 resources=3`);
 
   // ── 资产继承（M6）：60s 回收器（index.ts 原注释随迁，回收顺序承重）──

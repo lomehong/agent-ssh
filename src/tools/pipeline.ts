@@ -65,6 +65,14 @@ export interface ToolDeps {
   approvalQueuePollMs?: number;
   /** Queue directory override; a test hook — production uses the platform default. */
   approvalQueueDir?: string;
+  /** 审批推送桥（T-17.5b）：入队即回调（Host 装配层转 hub.publish + 校验码）。 */
+  onApprovalQueued?: (payload: {
+    id: string;
+    profile: string;
+    command: string;
+    commandClass: string;
+    expiresAt: string;
+  }) => void;
   /** Test hook: inject the Windows ACL inspection for the queue directory. */
   approvalQueueInspectAcl?: import('../guard/approval-queue.js').QueueAclInspect;
   registry: ConnectionRegistry;
@@ -98,6 +106,7 @@ export function createPipeline({
   approvalQueuePollMs,
   approvalQueueDir,
   approvalQueueInspectAcl,
+  onApprovalQueued,
 }: ToolDeps) {
   const quota = new CommandQuota();
   const grants = new ApprovalGrants(approvalGrantTtlMs);
@@ -189,6 +198,15 @@ export function createPipeline({
               `for a human. Decide with: agent-ssh approvals approve ${id}   (or reject ${id}). ` +
               `It expires ${request.expiresAt}.`,
             );
+            // 审批推送桥（T-17.5b）：入队即通知装配层（Host 侧转 hub.publish，
+            // 携破坏性类校验码；CLI-only 部署可不传此回调）。
+            onApprovalQueued?.({
+              id,
+              profile: conn.profile.name,
+              command,
+              commandClass: evaluation.commandClass,
+              expiresAt: request.expiresAt,
+            });
           },
         });
         const decideSpan = tracer.startSpan('approval.decide');
