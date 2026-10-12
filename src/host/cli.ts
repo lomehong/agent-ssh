@@ -45,6 +45,14 @@ export async function runHostCli(args: string[]): Promise<number> {
   }
 
   if (verb === 'serve') {
+    // 端口：--port=N（缺省 0=OS 分配）。实际端口经 stderr 就绪行输出
+    // （`host-rpc-ready port=N`）——e2e harness/运维探测面。
+    const portFlag = args.indexOf('--port');
+    const portArg = portFlag >= 0 ? Number(args[portFlag + 1]) : 0;
+    if (!Number.isInteger(portArg) || portArg < 0 || portArg > 65_535) {
+      console.error('[host-serve] invalid --port');
+      return 1;
+    }
     const configPath = getConfigPath();
     if (!existsSync(configPath)) {
       console.error(`[host-serve] 配置不存在（${configPath}）——先运行 agent-ssh host init。`);
@@ -57,9 +65,10 @@ export async function runHostCli(args: string[]): Promise<number> {
       agentToken: process.env.AGENT_SSH_TOKEN ?? '',
       operatorPasswordHash: config.defaults.approvalSurfaces.includes('queue') ? undefined : undefined,
       auditPath: `${configPath}.audit.log`,
+      port: portArg,
       ...(process.env.AGENT_SSH_QUEUE_DIR ? { approvalQueueDir: process.env.AGENT_SSH_QUEUE_DIR } : {}),
     });
-    console.error(`[host-serve] listening (pidfile ${pidfilePath()})`);
+    console.error(`host-rpc-ready port=${host.port} (pidfile ${pidfilePath()})`);
     // 守护语义：stdin EOF 不退出；SIGTERM/SIGINT → stop（停机梯在 startHost 内）。
     const shutdown = (): void => {
       void host.stop().then(() => {
