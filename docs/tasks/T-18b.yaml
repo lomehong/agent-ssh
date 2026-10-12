@@ -13,5 +13,6 @@ accept:
   - 单连接并发 tool.call RPC 层用例：id 关联/大响应与推送交织（K9-③）
   - 时钟回拨不延长窗口用例；债务表述核对（K9-⑦）
 events:
+  - 2026-10-12 22:30:00 | progress | by=digital-architect | 波及收口①：server.json 随 name 同步 agent-ssh（sync-server-json 16/16 绿——该文件消除）。余：e2e 三文件（introspection/packaging/tools）双进程化改造（stub→Host per-file 复用+mkdtemp）+红线对照清单+基线冻结文档。
   - 2026-10-12 22:15:00 | claim | by=digital-architect | 接缝约定：①波及 5 文件收口（server.json/sync 随 package name 同步；approval-channel/tools.e2e 改队列裁决器或 skip 登记；introspection/packaging 改 stub 入口语义）②双进程化 per-file 复用 Host+mkdtemp ③并发 tool.call RPC 层用例 ④时钟回拨用例（单调钟已实现——补测试钉死）⑤红线四项对照表（多数已在前票落地：矩阵 T-14/无 ssh2 T-16a白名单/challenge D10——本票收口对照清单）⑥基线冻结对照文档 docs/reports/。注：K9-⑨ 口径已在 T-16 落地（stub 白名单重写），本票核对了结。
   - 2026-10-11 21:04:00 | create | by=lome | level=L1 | blocked_by=T-18a
