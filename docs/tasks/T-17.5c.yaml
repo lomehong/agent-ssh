@@ -1,11 +1,12 @@
 id: T-17.5c
 title: 桌面端常驻化：托盘/自启/锁屏/NSIS 分发
 level: L1
-status: 执行中
+status: 待确认
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 21:00:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 20:06:00
+reportedAt: 2026-10-12 21:55:00
 progress: 刀1（14c7955 Tauri 2 骨架编译通过+ui/ 静态审批窗+gen/schemas 入库）+刀2（568ac53 main.rs tauri 化：HostState/unlock 会话引导/decide+list_pending command/通知转发/agent 常驻连接）完成；余：托盘图标+autostart 接线+NSIS bundle（tauri-cli 待装）+终轮对照+双轴评审+自报
 deletedTests: []
 wiringBoundary:
