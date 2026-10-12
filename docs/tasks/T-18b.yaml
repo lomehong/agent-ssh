@@ -1,8 +1,10 @@
 id: T-18b
 title: 测试迁移+红线四项改写（双进程化/基线对照）
 level: L1
-status: 待确认
+status: 已落定
 reportedAt: 2026-10-12 23:20:00
+confirmedBy: lome
+confirmedVia: 会话内 ask 选项作答「确认落定，继续 T-19」，2026-10-12 23:25 前后
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 21:04:00
 claimedBy: digital-architect
