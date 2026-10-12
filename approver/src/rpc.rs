@@ -145,6 +145,15 @@ impl RpcClient {
         Self::from_stream_and_handshake(stream, token, protocol_version).await
     }
 
+    /// operator 引导变体：跳过 hello（无凭据面先 auth.session.start 换会话——
+    /// hello 需有效凭据，start 是 pre-auth 方法）。
+    pub async fn connect_skip_hello(addr: &str) -> RpcClient {
+        let stream = TcpStream::connect(addr)
+            .await
+            .unwrap_or_else(|e| panic!("tcp connect {addr}: {e}"));
+        Self::from_stream_and_handshake_no_hello(stream).await
+    }
+
     async fn from_stream_and_handshake(
         stream: TcpStream,
         token: &str,
@@ -232,6 +241,66 @@ impl RpcClient {
                 client.close().await;
                 panic!("hello failed: {err}");
             }
+        }
+    }
+
+    /// 无凭据引导构造：跳过 hello（start 为 pre-auth），令牌缺省 None。
+    async fn from_stream_and_handshake_no_hello(stream: TcpStream) -> RpcClient {
+        let (read_half, write_half) = stream.into_split();
+        let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+        let notification_handler: Arc<Mutex<Option<NotificationHandler>>> = Arc::new(Mutex::new(None));
+
+        let pending_for_reader = pending.clone();
+        let notification_for_reader = notification_handler.clone();
+        let read_task = tokio::spawn(async move {
+            let mut reader = BufReader::new(read_half);
+            loop {
+                match read_frame_line(&mut reader).await {
+                    Ok((value, _bytes)) => {
+                        let is_response = value.get("id").is_some()
+                            && (value.get("result").is_some() || value.get("error").is_some());
+                        if is_response {
+                            let numeric_id = value.get("id").and_then(|v| v.as_i64()).unwrap_or(-1);
+                            if let Some(pending_value) = {
+                                let mut map = pending_for_reader.lock().await;
+                                map.remove(&numeric_id)
+                            } {
+                                if let Some(e) = value.get("error") {
+                                    let code = e.get("code").and_then(|v| v.as_i64()).unwrap_or(-32603);
+                                    let message = e
+                                        .get("message")
+                                        .and_then(|v| v.as_str())
+                                        .unwrap_or("unknown")
+                                        .to_string();
+                                    let _ = pending_value
+                                        .send(Err(RpcError::ServerError { code, message }));
+                                } else {
+                                    let _ = pending_value
+                                        .send(Ok(value.get("result").cloned().unwrap_or(Value::Null)));
+                                }
+                            }
+                            continue;
+                        }
+                        // 通知（无 id）：T-17.5b 审批推送接线。
+                    }
+                    Err(err) => {
+                        let mut map = pending_for_reader.lock().await;
+                        for (_, pending_value) in map.drain() {
+                            let _ = pending_value.send(Err(err.clone()));
+                        }
+                        break;
+                    }
+                }
+            }
+        });
+
+        RpcClient {
+            agent_token: None,
+            pending,
+            writer: Mutex::new(write_half),
+            next_id: Mutex::new(1),
+            read_task,
+            notification_handler,
         }
     }
 
