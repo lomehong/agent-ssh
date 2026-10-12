@@ -91,6 +91,9 @@ async fn read_frame_line(reader: &mut BufReader<OwnedReadHalf>) -> Result<(Value
 
 type PendingMap = Arc<Mutex<HashMap<i64, oneshot::Sender<Result<Value, RpcError>>>>>;
 
+/// 审批推送回调：收到的通知帧（approval.pending/settled 完整信封）。
+pub type NotificationHandler = Arc<dyn Fn(Value) + Send + Sync>;
+
 /// RPC 客户端：连接→hello→按 id 关联的请求/应答。
 /// 断线即 ConnectionClosed（重连由调用方按指数退避驱动；骨架阶段不做
 /// 内部自动重连）。
@@ -100,6 +103,7 @@ pub struct RpcClient {
     writer: Mutex<OwnedWriteHalf>,
     next_id: Mutex<i64>,
     read_task: tokio::task::JoinHandle<()>,
+    notification_handler: Arc<Mutex<Option<NotificationHandler>>>,
 }
 
 impl RpcClient {
@@ -148,11 +152,13 @@ impl RpcClient {
     ) -> RpcClient {
         let (read_half, write_half) = stream.into_split();
         let pending: PendingMap = Arc::new(Mutex::new(HashMap::new()));
+        let notification_handler: Arc<Mutex<Option<NotificationHandler>>> = Arc::new(Mutex::new(None));
 
         // 读循环：帧→JSON；response（有 id 且带 result/error）→ 唤醒 pending；
-        // 通知（无 id）在 T-17.5b 审批推送接线；致命错误→drain pending 并终止
+        // 通知（无 id）→ 审批推送回调；致命错误→drain pending 并终止
         // 读循环（断线由调用方按退避重连）。
         let pending_for_reader = pending.clone();
+        let notification_for_reader = notification_handler.clone();
         let read_task = tokio::spawn(async move {
             let mut reader = BufReader::new(read_half);
             loop {
@@ -182,7 +188,16 @@ impl RpcClient {
                             }
                             continue;
                         }
-                        // 通知（无 id）：T-17.5b 审批推送接线。
+                        // 通知（无 id）：审批推送（approval.pending/settled）。
+                        if let Some(method) = value.get("method").and_then(|v| v.as_str()) {
+                            if method == "approval.pending" || method == "approval.settled" {
+                                let handler = notification_for_reader.lock().await.clone();
+                                if let Some(handler) = handler {
+                                    handler(value.clone());
+                                }
+                            }
+                            continue;
+                        }
                     }
                     Err(err) => {
                         let mut map = pending_for_reader.lock().await;
@@ -201,6 +216,7 @@ impl RpcClient {
             writer: Mutex::new(write_half),
             next_id: Mutex::new(1),
             read_task,
+            notification_handler,
         };
 
         // hello 握手：版本不匹配即 panic（骨架语义；正式错误通道在 5b）。
@@ -260,6 +276,31 @@ impl RpcClient {
 
     pub async fn ping(&self) -> Result<Value, RpcError> {
         self.call("host.ping", Value::Null).await
+    }
+
+    /// 注册审批推送回调（approval.pending/settled 通知帧）。重复注册替换。
+    pub async fn set_notification_handler(&self, handler: NotificationHandler) {
+        *self.notification_handler.lock().await = Some(handler);
+    }
+
+    /// approval.subscribe：向 Host 订阅审批推送。
+    pub async fn subscribe_approvals(&self) -> Result<Value, RpcError> {
+        self.call("approval.subscribe", Value::Null).await
+    }
+
+    /// approval.decide：携可选校验码提交决定（D10/K8-②）。
+    pub async fn decide_approval(
+        &self,
+        id: &str,
+        decision: &str,
+        by: &str,
+        challenge: Option<&str>,
+    ) -> Result<Value, RpcError> {
+        let mut params = serde_json::json!({ "id": id, "decision": decision, "by": by });
+        if let Some(code) = challenge {
+            params["challenge"] = Value::String(code.to_string());
+        }
+        self.call("approval.decide", params).await
     }
 
     pub async fn close(&self) {
