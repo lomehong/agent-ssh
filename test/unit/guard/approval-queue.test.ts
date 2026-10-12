@@ -1,8 +1,9 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
-import { mkdtempSync, rmSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, readFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
+  assertQueueDirPrivate,
   createApprovalRequest,
   waitForDecision,
   decideApproval,
@@ -121,6 +122,16 @@ describe('queue directory default', () => {
     const p = getApprovalQueueDir();
     expect(p).toContain('agent-ssh');
     expect(p).toMatch(/approvals$/);
+  });
+});
+
+describe('assertQueueDirPrivate（T-19 验收②实证）', () => {
+  it('目录未建时先建后查：Windows 首次部署不再 icacls read-refused（红灯→绿灯）', async () => {
+    if (process.platform !== 'win32') return; // 检查本身 win32 专属（POSIX 空操作）
+    const dir = join(mkdtempSync(join(tmpdir(), 'acl-t19-')), 'approvals');
+    // 红灯基线：目录不存在时旧实现 icacls read-refused → fail-closed 拒绝。
+    await expect(assertQueueDirPrivate(dir)).resolves.toBeUndefined(); // 绿：先建后查
+    expect(existsSync(dir)).toBe(true);
   });
 });
 

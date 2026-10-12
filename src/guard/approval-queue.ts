@@ -107,6 +107,9 @@ export async function assertQueueDirPrivate(
   inspect?: QueueAclInspect,
 ): Promise<void> {
   if (platform() !== 'win32') return;
+  // T-19 验收②实证（评审前红灯）：目录未建时 icacls 对不存在路径 read-refused
+  // → Windows 首次部署审批队列必挂。先建（与 POSIX「创建时取 0700」对齐）再查。
+  await ensureDir(dir);
   await assertPrivateOnWindows(dir, {}, inspect);
 }
 
