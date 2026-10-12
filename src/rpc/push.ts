@@ -29,13 +29,18 @@ export class PushHub {
     };
   }
 
-  /** 扇出；返回实际投递数（无订阅者即 0，审批不静默丢失由队列兜底语义保证）。 */
+  /** 扇出；返回实际投递数（无订阅者即 0，审批不静默丢失由队列兜底语义保证）。
+   *  单订阅者回调异常被隔离（不波及其他订阅者与入队路径）。 */
   publish(channel: ApprovalChannel, payload: unknown): number {
     let delivered = 0;
     for (const set of this.subs.values()) {
       for (const send of set) {
-        send({ channel, payload });
-        delivered++;
+        try {
+          send({ channel, payload });
+          delivered++;
+        } catch {
+          // 坏订阅者：跳过（其退订由 close/dropAll 生命周期处理）。
+        }
       }
     }
     return delivered;

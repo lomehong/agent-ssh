@@ -98,7 +98,8 @@ pub type NotificationHandler = Arc<dyn Fn(Value) + Send + Sync>;
 /// 断线即 ConnectionClosed（重连由调用方按指数退避驱动；骨架阶段不做
 /// 内部自动重连）。
 pub struct RpcClient {
-    agent_token: Option<String>,
+    /// K8-⑦：Zeroizing 包裹——drop 时清零内存；clone 共享堆仍由最后持有者清零。
+    agent_token: Option<zeroize::Zeroizing<String>>,
     pending: PendingMap,
     writer: Mutex<OwnedWriteHalf>,
     next_id: Mutex<i64>,
@@ -220,7 +221,7 @@ impl RpcClient {
         });
 
         let client = RpcClient {
-            agent_token: Some(token.to_string()),
+            agent_token: Some(zeroize::Zeroizing::new(token.to_string())),
             pending,
             writer: Mutex::new(write_half),
             next_id: Mutex::new(1),
@@ -281,7 +282,17 @@ impl RpcClient {
                             }
                             continue;
                         }
-                        // 通知（无 id）：T-17.5b 审批推送接线。
+                        // 通知（无 id）：与 hello 版读循环同分发（skipHello 引导
+                        // 连接也可能在 start 前收到订阅推送——5c 收拢双循环）。
+                        if let Some(method) = value.get("method").and_then(|v| v.as_str()) {
+                            if method == "approval.pending" || method == "approval.settled" {
+                                let handler = notification_for_reader.lock().await.clone();
+                                if let Some(handler) = handler {
+                                    handler(value.clone());
+                                }
+                            }
+                            continue;
+                        }
                     }
                     Err(err) => {
                         let mut map = pending_for_reader.lock().await;
@@ -318,7 +329,7 @@ impl RpcClient {
             envelope["params"] = params;
         }
         if let Some(token) = &self.agent_token {
-            envelope["auth"] = Value::String(token.clone());
+            envelope["auth"] = Value::String(token.to_string());
         }
 
         let (tx, rx) = oneshot::channel();

@@ -11,6 +11,8 @@
 export const CHALLENGE_TTL_MS = 60_000;
 export const CHALLENGE_MAX_FAILURES = 3;
 
+import { randomInt } from 'node:crypto';
+
 export interface VerifyOutcome {
   ok: boolean;
   /** 本次失败是否触发 3 次作废。 */

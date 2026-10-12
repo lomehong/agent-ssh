@@ -181,12 +181,22 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
         if (face !== 'cli') {
           const verified = challenges.verify(p.id, code);
           if (!verified.ok) {
-            const detail = verified.invalidated
-              ? 'challenge invalidated after 3 failed attempts'
-              : verified.reason === 'expired'
-                ? 'challenge expired — re-fetch the pending list for a fresh window'
-                : `challenge ${verified.reason ?? 'mismatch'}`;
-            throw new Error(`CHALLENGE_REJECTED: ${detail}`);
+            // reason 细类进审计不入 CLI 消息（可探测码状态，评审 jc7）。
+            await audit
+              .record({
+                mcpRequestId: 0,
+                profile: '(approval-decide)',
+                user: '(operator)',
+                command: redactText(`approval.decide ${p.id}`),
+                commandClass: 'safe',
+                binary: 'approval.decide',
+                decision: 'deny',
+                ruleId: 'challenge-rejected',
+                error: `challenge ${verified.reason ?? 'invalid'}`,
+                approver: 'cli-direct',
+              })
+              .catch(() => {});
+            throw new Error('CHALLENGE_REJECTED: challenge invalid');
           }
         }
       }
