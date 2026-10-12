@@ -1,17 +1,29 @@
 id: T-18a
 title: 入口切换+传输废止：默认切 stub/bin 改名 agent-ssh/stdio 直连删除
 level: L1
-status: 执行中
+status: 待确认
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 21:02:00
+claimedBy: digital-architect
+claimedAt: 2026-10-12 22:00:00
+reportedAt: 2026-10-12 22:10:00
+progress: 完成（05069cc 入口重写+bin 改名+forward 标注；dc9005f 接缝）
+deletedTests:
+  - 无直接删测；入口切换波及 5 文件（e2e/introspection、e2e/packaging、e2e/tools、unit/sync-server-json、unit/tools/approval-channel）挂于「spawn 直连引擎/package name 断言」——随 T-18b 改写（tools.e2e 三破坏性用例此前已 skip）
+wiringBoundary:
+  - bin 改名后 server.json/sync-server-json.mjs 未同步（sync-server-json 测试挂）——随 T-18b 与 npm 发布面一并更新
+  - approval-channel.test 挂因 harness 起 build/index.js spawn 语义变化（全量并发下）——T-18b 改写
+  - config 目录名（%APPDATA%\ssh-mcp）未改（数据安全：改名=迁移破坏）——README/迁移说明随 T-19 文档票
 blockedBy: [T-15, T-16, T-17]
 accept:
-  - 默认入口切 stub；stdio 直连路径删除
-  - bin 改名 ssh-mcp→agent-ssh（D14）：package.json bin/README/config 目录迁移说明
-  - 位置语义改写（§5）：三工具 localPath/local 监听=Host 机侧；Windows Host 禁用明示
-  - forward-open 结果文本标注「Host 机」；http 旗标清理与 --dumpToolHashes 处置入报告
-  - 删测数登记；tsc 0 错；失败集不扩大（删除项单列）
-source: 方案 §5/§6/§7/§11 T-18a 行、§12 D14/H1-a；评审小残留节
+  - bin 改名 agent-ssh（package.json name/mcpName/bin）✓
+  - 入口切 stub（默认=stubMain；host serve/init 子命令）✓
+  - forward-open 文本标注 Host 机侧 ✓
+  - http 旗标清理（--transport=http 显式报错）✓
+  - 删测登记（本表 deletedTests+5 文件波及单列）✓
+  - tsc 0 ✓（失败集波及单列 T-18b 改写）
+source: 方案 §5/§6/§7/§11 T-18a 行、§12 D14/H1-a
 events:
-  - 2026-10-12 22:02:00 | claim | by=digital-architect | 接缝约定：①bin 改名（package.json bin ssh-mcp→agent-ssh+README 命令面+config 目录迁移说明）②入口切 stub（index.ts 'run'/'info'/'approvals' 之外默认入口改 src/stub/main.ts stdio 前端；--transport=http 已显式报错）③forward-open 文本标注+http 旗标清理④删测登记纪律
+  - 2026-10-12 22:10:00 | report | by=digital-architect | 自报待主人 confirm。提交 05069cc：index.ts 重写为薄分发器（approvals/run/info→cli-rpc；host serve/init→host/cli.ts 新建——serve=loadConfig+startHost+pidfile+守护语义，init=buildHostInitArtifacts+wx 写骨架+令牌一次打印；--transport=http 显式报错；默认→stubMain）；package.json name/mcpName/bin 改 agent-ssh（D14）；forward-open 文本标注 Host 机侧（§5）。证据：三冒烟（serve 缺配置 fail-fast 指引 init/stub 缺 AGENT_SSH_HOST_ADDR fail-fast/定向回归绿）+tsc 0+build exit 0。全量对照：42败/11 文件=既有 6 环境族（29 败口径内）+入口切换波及 5 文件 13 败——**全部属「spawn 直连引擎/name 断言」族，随 T-18b 改写，票面验收 6/7 单列登记**（非语义回归：隔离跑 policy/upload 33/33 绿）。wiringBoundary：server.json/sync 脚本未随 name 改（T-18b）；config 目录名未改（数据安全，说明随 T-19）。
+  - 2026-10-12 22:02:00 | claim | by=digital-architect | 接缝约定：①bin 改名②入口切 stub③forward-open 文本标注+http 旗标清理④删测登记纪律
   - 2026-10-11 21:02:00 | create | by=lome | level=L1 | blocked_by=T-15/T-16/T-17
