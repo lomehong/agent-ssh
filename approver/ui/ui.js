@@ -131,6 +131,39 @@ function onSettled(payload) {
   removeCard(payload.id);
 }
 
+// ─── 锁屏/解锁（T-17.5d 验收 3）：locked 事件或初始态显示口令表单 ───
+function showLockForm(reason) {
+  const old = document.getElementById('lock-form');
+  if (old) old.remove();
+  const form = document.createElement('section');
+  form.className = 'card';
+  form.id = 'lock-form';
+  form.appendChild(textNode('p', 'meta', reason || '输入 operator 口令解锁审批面'));
+  const row = document.createElement('div');
+  row.className = 'challenge-row';
+  const input = document.createElement('input');
+  input.type = 'password';
+  input.autocomplete = 'off';
+  row.appendChild(input);
+  const btn = document.createElement('button');
+  btn.className = 'approve';
+  btn.appendChild(document.createTextNode('解锁'));
+  btn.addEventListener('click', async () => {
+    try {
+      await invoke('unlock', { password: input.value });
+      form.remove();
+    } catch (err) {
+      const msg = typeof err === 'string' ? err : (err?.message ?? String(err));
+      form.appendChild(textNode('p', 'meta', `解锁失败: ${msg}`));
+    }
+  });
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
+  row.appendChild(btn);
+  form.appendChild(row);
+  queue.insertBefore(form, queue.firstChild);
+  input.focus();
+}
+
 async function main() {
   if (!invoke || !listen) {
     queue.appendChild(textNode('p', 'meta', 'Tauri 桥不可用（纯浏览模式，无审批功能）'));
@@ -138,6 +171,8 @@ async function main() {
   }
   await listen('approval.pending', (event) => onPending(event.payload));
   await listen('approval.settled', (event) => onSettled(event.payload));
+  await listen('locked', (event) => showLockForm(`会话已回锁：${event.payload?.reason ?? ''}`));
+  showLockForm('输入 operator 口令解锁审批面');
 }
 
 main();
