@@ -1,0 +1,27 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "agent-ssh approver",
+  "version": "0.1.0",
+  "identifier": "dev.agent-ssh.approver",
+  "build": {
+    "frontendDist": "./ui"
+  },
+  "app": {
+    "security": {
+      "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
+    },
+    "windows": [
+      {
+        "title": "agent-ssh 审批",
+        "width": 420,
+        "height": 560,
+        "visible": true
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": []
+  }
+}

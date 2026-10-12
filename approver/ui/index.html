@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <!-- K8-③：锁 CSP——零远程内容、无内联脚本/样式；渲染全部 textNode。 -->
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" />
+  <title>agent-ssh 审批</title>
+  <link rel="stylesheet" href="./ui.css" />
+</head>
+<body>
+  <h1 id="title">agent-ssh 审批</h1>
+  <section id="queue" aria-live="polite">
+    <p id="empty-hint">等待审批请求…（未连接或队列为空）</p>
+  </section>
+  <!-- 纯静态脚本：渲染只用 createTextNode，无 innerHTML/eval（K8-③）。 -->
+  <script type="module" src="./ui.js"></script>
+</body>
+</html>

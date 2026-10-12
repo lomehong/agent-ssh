@@ -2,15 +2,20 @@
 name = "approver"
 version = "0.1.0"
 edition = "2021"
-description = "agent-ssh 桌面审批端（Tauri 2 技术栈）——T-17.5a 骨架：RPC 客户端 + 契约对拍，无 UI"
+description = "agent-ssh 桌面审批端（Tauri 2 技术栈）——RPC 客户端 + 审批窗 + 托盘常驻"
 license = "MIT"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-autostart = "2"
 # K8-⑦：会话令牌 drop 时清零内存（zeroize crate，RustSec 收录的成熟件）。
 zeroize = { version = "1", features = ["zeroize_derive"] }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
 
 [lib]
 name = "approver"
