@@ -13,6 +13,7 @@ rand = "0.8"
 base64 = "0.22"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
 # K8-⑦：会话令牌 drop 时清零内存（zeroize crate，RustSec 收录的成熟件）。
 zeroize = { version = "1", features = ["zeroize_derive"] }
 

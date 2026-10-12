@@ -11,7 +11,13 @@ use approver::rpc::RpcClient;
 use serde_json::Value;
 use std::sync::Arc;
 use tauri::{AppHandle, Emitter, Manager, State};
+use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
+
+/// 待决审批数（T-17.5d 验收 1）：pending +1／settled 或本地 decide −1；
+/// 托盘 tooltip 同步「N 条待审」。
+#[derive(Default)]
+struct PendingCounter(Mutex<usize>);
 
 struct HostState {
     addr: String,
@@ -21,6 +27,15 @@ struct HostState {
     operator_client: Mutex<Option<Arc<RpcClient>>>,
     token: Arc<String>,
     pin: Option<String>,
+}
+
+async fn refresh_tray(app: &AppHandle) {
+    let state = app.state::<PendingCounter>();
+    let n = *state.0.lock().await;
+    let label = if n == 0 { "agent-ssh 审批（无待审）".to_string() } else { format!("agent-ssh 审批（{n} 条待审）") };
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(label));
+    }
 }
 
 fn err_str(e: impl std::fmt::Display) -> String {
@@ -58,6 +73,7 @@ async fn unlock(
 
     let operator = Arc::new(RpcClient::connect(&state.addr, &session_token).await);
     // 订阅并把推送转发到窗口（K8-③：数据经 event 进 UI，秘密不落 JS 全局）。
+    // T-17.5d：pending/settled 同步托盘未决数+原生 toast（验收 1/2）。
     let emitter = app.clone();
     let operator_for_push = operator.clone();
     operator
@@ -69,6 +85,22 @@ async fn unlock(
                     _ => return,
                 };
                 let payload = frame.get("params").cloned().unwrap_or(Value::Null);
+                // 未决数与托盘/通知：pending +1 + toast；settled −1。
+                let app2 = emitter.clone();
+                tauri::async_runtime::spawn(async move {
+                    {
+                        let counter = app2.state::<PendingCounter>();
+                        let mut n = counter.0.lock().await;
+                        if event_name == "approval.pending" { *n += 1; } else { *n = n.saturating_sub(1); }
+                    }
+                    refresh_tray(&app2).await;
+                    if event_name == "approval.pending" {
+                        let _ = app2.notification().builder()
+                            .title("agent-ssh 审批请求")
+                            .body("有新的命令等待人工审批，请打开审批窗。")
+                            .show();
+                    }
+                });
                 let _ = emitter.emit(event_name, payload);
             }
         }))
@@ -85,6 +117,7 @@ fn json_ok(v: bool) -> Value {
 
 #[tauri::command]
 async fn decide(
+    app: AppHandle,
     state: State<'_, HostState>,
     id: String,
     decision: String,
@@ -94,10 +127,33 @@ async fn decide(
     let guard = state.operator_client.lock().await;
     let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
     let by = format!("desktop:{}", std::env::var("USERNAME").unwrap_or_default());
-    client
+    match client
         .decide_approval(&id, &decision, &by, challenge.as_deref())
         .await
-        .map_err(err_str)
+    {
+        Ok(v) => {
+            // 本地决定成功：未决数 −1 并刷新托盘（settled 推送也会到达，双路径幂等）。
+            {
+                let counter = app.state::<PendingCounter>();
+                let mut n = counter.0.lock().await;
+                *n = n.saturating_sub(1);
+            }
+            refresh_tray(&app).await;
+            Ok(v)
+        }
+        Err(e) => {
+            let msg = err_str(&e);
+            // 锁屏回锁（T-17.5d 验收 3）：会话过期/失效（-32001）→ 清内存会话
+            // → 窗口回解锁态（locked 事件，UI 显示口令表单）。
+            if msg.contains("-32001") || msg.to_lowercase().contains("session") {
+                drop(guard);
+                *state.operator_client.lock().await = None;
+                let _ = app.emit("locked", serde_json::json!({ "reason": "session expired" }));
+                return Err("locked: session expired — unlock again".to_string());
+            }
+            Err(msg)
+        }
+    }
 }
 
 #[tauri::command]
@@ -114,10 +170,12 @@ fn main() {
     let pin = std::env::var("AGENT_SSH_HOST_PIN").ok().filter(|s| !s.is_empty());
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
+        .manage(PendingCounter::default())
         .manage(HostState {
             addr: host_addr.clone(),
             agent_client: Mutex::new(None),
