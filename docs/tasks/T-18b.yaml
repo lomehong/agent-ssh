@@ -13,6 +13,7 @@ accept:
   - 单连接并发 tool.call RPC 层用例：id 关联/大响应与推送交织（K9-③）
   - 时钟回拨不延长窗口用例；债务表述核对（K9-⑦）
 events:
+  - 2026-10-12 23:12:00 | progress | by=digital-architect | e2e 三文件收口（0c7d4c6）：introspection 删（并入 rpc-flow 用例1）/tools.e2e 删（12 skip+闸门并入 rpc-flow 用例3）/packaging 改写（v1 迁移提示+reportFatal 保留验证；分发器恢复 removed-in-v2 显式报错）。全量 30败/6 文件=既有族口径恢复 ✓。余：红线四项对照清单+基线冻结对照文档（docs/reports/）+终轮+双轴+自报。
   - 2026-10-12 23:00:00 | progress | by=digital-architect | e2e 双进程 RPC harness 落地（4f5b32d）：spawnRpcHost+队列泵+rpc-flow 三用例绿（tools/list 23 经 stub→Host ✓/无凭据 fail-closed ✓/破坏性队列泵闸门 ✓）+serve 旗标前缀解析修复（indexOf 精确匹配+漏 -- 两连错，探针实证）。全量 39败/9 文件（既有 6+e2e 3：introspection/packaging/tools 旧直连断言待改写）。余：e2e 两文件改写+红线对照清单+基线冻结文档。
   - 2026-10-12 22:25:00 | progress | by=digital-architect | server.json 同步收口（8d6b89d）✓；host serve --port/就绪行前置✓（cli.ts）；e2e 双进程 harness 首版编译不过已删——下回合以足量上下文重写（设计已定：spawn host serve --port=0+host-rpc-ready 探测+StdioClientTransport 连 stub+跨进程队列泵），T-18b 保持执行中不降范围。
   - 2026-10-12 22:30:00 | progress | by=digital-architect | 波及收口①：server.json 随 name 同步 agent-ssh（sync-server-json 16/16 绿——该文件消除）。余：e2e 三文件（introspection/packaging/tools）双进程化改造（stub→Host per-file 复用+mkdtemp）+红线对照清单+基线冻结文档。
