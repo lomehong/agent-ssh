@@ -13,4 +13,5 @@ accept:
   - 删测数登记；tsc 0 错；失败集不扩大（删除项单列）
 source: 方案 §5/§6/§7/§11 T-18a 行、§12 D14/H1-a；评审小残留节
 events:
+  - 2026-10-12 22:02:00 | claim | by=digital-architect | 接缝约定：①bin 改名（package.json bin ssh-mcp→agent-ssh+README 命令面+config 目录迁移说明）②入口切 stub（index.ts 'run'/'info'/'approvals' 之外默认入口改 src/stub/main.ts stdio 前端；--transport=http 已显式报错）③forward-open 文本标注+http 旗标清理④删测登记纪律
   - 2026-10-11 21:02:00 | create | by=lome | level=L1 | blocked_by=T-15/T-16/T-17
