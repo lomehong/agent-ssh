@@ -1,9 +1,14 @@
 # 可执行技术方案：agent-ssh（AI Agent SSH 客户端，fork ssh-mcp 补缺）
 
+> ⚠️ **已被取代（2026-10-11）**：本方案的传输/进程架构（单体 MCP server 持凭证直连）被
+> 《2026-10-11-AI-Agent-SSH客户端-Host分离架构-技术方案.md》（Host 分离 + RPC + 审批面）
+> 架构级取代。本文件保留为历史与需求覆盖依据；其中威胁对策、治理机制（分级/审批/审计/脱敏/配额）
+> 的设计仍被新方案整体继承。R6 的 elicitation 半边被新方案 §4 审批面取代。
+
 ```yaml
 ---
 title: agent-ssh 技术方案
-status: 已落定          # 草稿 → 已评审 → 已落定（主人确认后） → 已执行
+status: 已被取代        # 草稿 → 已评审 → 已落定（主人确认后） → 已执行 → 已被取代
 requirement: docs/designs/2026-10-11-AI-Agent-SSH客户端-需求包.md
 author: 架构师 Agent（digital-architect 总仓）
 created: 2026-10-11

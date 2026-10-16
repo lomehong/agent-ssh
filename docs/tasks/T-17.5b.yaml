@@ -6,18 +6,8 @@ root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:58:00
 claimedBy: digital-architect
 claimedAt: 2026-10-12 20:06:00
-progress: 已落定——协议闭环双侧落地；UI 壳随 T-17.5c 合并交付（降范围登记经主人 confirm 追认）
-deletedTests: []
-wiringBoundary:
-  - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
-  - Rust 侧自动重连为骨架版（connect_with_retry 供调用方退避驱动），托盘联动随 5c
-status: 待确认
-root: E:\Development\Code\nodejs\agent-ssh
-createdAt: 2026-10-11 20:58:00
-claimedBy: digital-architect
-claimedAt: 2026-10-12 20:06:00
 reportedAt: 2026-10-12 21:05:00
-progress: 三刀完成+双轴收口（face 分流/CSPRNG/forbidden 审计/no_hello 分发已修；UI 壳降范围随 5c；zeroize 缺口登记 T-17.5c 待裁决）
+progress: 已落定——协议闭环双侧落地；UI 壳随 T-17.5c 合并交付（降范围登记经主人 confirm 追认）
 deletedTests: []
 wiringBoundary:
   - 弹窗 UI（Tauri Webview 壳+textNode 渲染）随 T-17.5b UI 段/T-17.5c 常驻化；协议闭环（会话/订阅/携码 decide/push 分发）已双侧落地
