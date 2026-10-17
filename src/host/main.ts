@@ -31,6 +31,7 @@ import { SERVER_VERSION } from '../version.js';
 import { registerResources, registerTools } from '../tools/registry.js';
 import { AuditStore } from '../audit/store.js';
 import { queryAudit, auditStats } from '../audit/query.js';
+import { listProfiles } from '../config/profiles-edit.js';
 import { PolicyEngine } from '../policy/engine.js';
 import { CommandQuota } from '../policy/quota.js';
 import { classifyCommand, findForbiddenMatch } from '../policy/classifier.js';
@@ -396,6 +397,38 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
         queueDir: queueDir ?? '(platform default)',
         port,
       };
+    },
+    'host.profiles.list': async () => {
+      // T-22 主机管理：config 内 profile 只读投影（不含凭证）。
+      return { profiles: listProfiles(configFilePath) };
+    },
+    'host.profiles.upsert': async (params) => {
+      // T-22：新增/编辑主机（密码→凭据管理器；结构化 TOML 改写+备份+校验+回滚）。
+      const p = (params ?? {}) as Record<string, unknown>;
+      const input = {
+        name: String(p.name ?? ''),
+        host: String(p.host ?? ''),
+        port: typeof p.port === 'number' ? p.port : Number.parseInt(String(p.port ?? '22'), 10),
+        user: String(p.user ?? ''),
+        auth: (p.auth === 'key' ? 'key' : 'password') as 'key' | 'password',
+        ...(typeof p.password === 'string' && p.password !== '' ? { password: p.password } : {}),
+        ...(typeof p.keyRef === 'string' && p.keyRef !== '' ? { keyRef: p.keyRef } : {}),
+        ...(typeof p.group === 'string' && p.group !== '' ? { group: p.group } : {}),
+      };
+      const { upsertProfile } = await import('../config/profiles-edit.js');
+      const { Entry } = await import('@napi-rs/keyring');
+      const result = upsertProfile(configFilePath, input);
+      if (input.auth === 'password') {
+        const target = (await import('../config/profiles-edit.js')).keychainTarget(input.name);
+        new Entry(target.service, target.account).setPassword(input.password ?? '');
+      }
+      return { ...result, note: '配置已写入。Host 需重启后生效（设置页可一键重启）。' };
+    },
+    'host.profiles.remove': async (params) => {
+      const p = (params ?? {}) as { name?: unknown };
+      if (typeof p.name !== 'string') throw new Error('host.profiles.remove requires params.name');
+      const { removeProfile } = await import('../config/profiles-edit.js');
+      return removeProfile(configFilePath, p.name);
     },
     'agents.scan': async () => {
       // T-21g：本机宿主识别（安装指纹扫描，只读）。

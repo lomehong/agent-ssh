@@ -352,6 +352,36 @@ async fn agents_remove(state: State<'_, HostState>, id: String) -> Result<Value,
         .map_err(err_str)
 }
 
+/// 主机清单（T-22 主机管理）：operator 会话转发 host.profiles.list。
+#[tauri::command]
+async fn profiles_list(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("host.profiles.list", Value::Null).await.map_err(err_str)
+}
+
+/// 主机新增/编辑（T-22）：转发 host.profiles.upsert（密码经 Host 写凭据管理器）。
+#[tauri::command]
+async fn profiles_upsert(
+    state: State<'_, HostState>,
+    profile: Value,
+) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("host.profiles.upsert", profile).await.map_err(err_str)
+}
+
+/// 主机删除（T-22）：转发 host.profiles.remove。
+#[tauri::command]
+async fn profiles_remove(state: State<'_, HostState>, name: String) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client
+        .call("host.profiles.remove", serde_json::json!({ "name": name }))
+        .await
+        .map_err(err_str)
+}
+
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
@@ -543,7 +573,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password, host_status, agents_scan, agents_configure, agents_remove])
+    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

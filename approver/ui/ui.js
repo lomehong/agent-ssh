@@ -603,3 +603,142 @@ document.getElementById('host-restart')?.addEventListener('click', async () => {
 });
 document.getElementById('host-openlog')?.addEventListener('click', () => invoke('open_host_log'));
 
+
+
+// ─── 主机管理（主人指令：配置远程 SSH 服务器的 ip/端口/用户/密码/密钥） ──────
+
+const hostForm = {
+  editing: null, // 正在编辑的 profile 名（null=新建）
+};
+
+function renderHosts(profiles) {
+  const list = document.getElementById('hosts-list');
+  list.textContent = '';
+  if ((profiles ?? []).length === 0) {
+    const box = document.createElement('div');
+    box.className = 'empty-state';
+    box.appendChild(textNode('div', 'glyph', '⌘'));
+    box.appendChild(textNode('p', 'headline', '还没有配置主机'));
+    box.appendChild(textNode('p', 'sub', '点「添加主机」配置第一台远程 SSH 服务器（IP/端口/用户/密码或密钥）。'));
+    list.appendChild(box);
+    return;
+  }
+  for (const p of profiles) {
+    const row = document.createElement('div');
+    row.className = 'hosts-row';
+    const info = document.createElement('div');
+    info.className = 'info';
+    info.appendChild(textNode('div', 'name', p.name));
+    const authText = p.auth === 'keychain' ? '密码（凭据管理器）' : p.auth === 'key' ? `密钥 ${p.keyRef ?? ''}` : p.auth;
+    info.appendChild(textNode('div', 'detail', `${p.user}@${p.host}:${p.port ?? 22} · ${authText}`));
+    row.appendChild(info);
+    const edit = document.createElement('button');
+    edit.appendChild(document.createTextNode('编辑'));
+    edit.addEventListener('click', () => openHostForm(p));
+    row.appendChild(edit);
+    const remove = document.createElement('button');
+    remove.className = 'reject';
+    remove.appendChild(document.createTextNode('删除'));
+    remove.addEventListener('click', async () => {
+      if (!confirm(`删除主机 \"${p.name}\"？配置文件会自动备份。`)) return;
+      try {
+        await invoke('profiles_remove', { name: p.name });
+        await loadHosts();
+        loadConnections();
+      } catch (err) {
+        alert(`删除失败: ${typeof err === 'string' ? err : err?.message}`);
+      }
+    });
+    row.appendChild(remove);
+    list.appendChild(row);
+  }
+}
+
+async function loadHosts() {
+  if (!invoke || !unlocked) return;
+  const list = document.getElementById('hosts-list');
+  try {
+    const res = await invoke('profiles_list');
+    renderHosts(res?.profiles ?? []);
+  } catch (err) {
+    if (handleNotUnlocked(err)) return;
+    list.textContent = '';
+    list.appendChild(textNode('p', 'meta', `加载失败: ${typeof err === 'string' ? err : err?.message}`));
+  }
+}
+
+function openHostForm(p) {
+  hostForm.editing = p ? p.name : null;
+  document.getElementById('host-form-title').textContent = '';
+  document.getElementById('host-form-title').appendChild(
+    document.createTextNode(p ? `编辑主机: ${p.name}` : '添加主机'),
+  );
+  document.getElementById('hf-name').value = p?.name ?? '';
+  document.getElementById('hf-name').disabled = Boolean(p); // 名称是主键，编辑时锁定
+  document.getElementById('hf-host').value = p?.host ?? '';
+  document.getElementById('hf-port').value = String(p?.port ?? 22);
+  document.getElementById('hf-user').value = p?.user ?? '';
+  document.getElementById('hf-auth').value = p?.auth === 'key' ? 'key' : 'password';
+  document.getElementById('hf-secret').value = '';
+  document.getElementById('hf-secret-label').childNodes[0]?.remove?.();
+  document.getElementById('hf-secret-label').textContent = '';
+  document.getElementById('hf-secret-label').appendChild(document.createTextNode(p?.auth === 'key' ? '私钥路径（留空=不变）' : '密码（留空=不变）'));
+  document.getElementById('hf-group').value = p?.group ?? '';
+  document.getElementById('hf-result').textContent = '';
+  document.getElementById('host-form-card').classList.remove('hidden');
+  document.getElementById('host-form-card').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+document.getElementById('host-add')?.addEventListener('click', () => openHostForm(null));
+document.getElementById('hosts-refresh')?.addEventListener('click', () => loadHosts());
+document.getElementById('hf-cancel')?.addEventListener('click', () => document.getElementById('host-form-card').classList.add('hidden'));
+document.getElementById('hf-auth')?.addEventListener('change', (e) => {
+  const isKey = e.target.value === 'key';
+  const label = document.getElementById('hf-secret-label');
+  label.textContent = '';
+  label.appendChild(document.createTextNode(isKey ? '私钥路径' : '密码'));
+  const secret = document.getElementById('hf-secret');
+  secret.type = isKey ? 'text' : 'password';
+  secret.value = '';
+});
+
+document.getElementById('hf-save')?.addEventListener('click', async () => {
+  const result = document.getElementById('hf-result');
+  result.textContent = '';
+  const name = document.getElementById('hf-name').value.trim();
+  const payload = {
+    name,
+    host: document.getElementById('hf-host').value.trim(),
+    port: Number.parseInt(document.getElementById('hf-port').value, 10) || 22,
+    user: document.getElementById('hf-user').value.trim(),
+    auth: document.getElementById('hf-auth').value,
+    group: document.getElementById('hf-group').value.trim(),
+  };
+  const secret = document.getElementById('hf-secret').value;
+  if (payload.auth === 'password') payload.password = secret;
+  if (payload.auth === 'key') payload.keyRef = secret;
+  try {
+    const res = await invoke('profiles_upsert', { profile: payload });
+    result.appendChild(document.createTextNode(`已写入（备份: ${res.backupPath ?? '无'}）。重启 Host 后生效——是否立即重启？`));
+    const btn = document.createElement('button');
+    btn.className = 'approve small';
+    btn.appendChild(document.createTextNode('立即重启 Host'));
+    btn.addEventListener('click', async () => {
+      await invoke('restart_host');
+      result.textContent = '';
+      result.appendChild(document.createTextNode('Host 重启中，几秒后配置生效。'));
+    });
+    result.appendChild(document.createTextNode(' '));
+    result.appendChild(btn);
+    await loadHosts();
+  } catch (err) {
+    result.appendChild(document.createTextNode(`保存失败: ${typeof err === 'string' ? err : err?.message}`));
+  }
+});
+
+// 主机清单并入连接视图刷新链。
+const origLoadConnections = loadConnections;
+loadConnections = async function () {
+  await origLoadConnections();
+  await loadHosts();
+};

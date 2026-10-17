@@ -42,6 +42,9 @@ export const METHOD_MATRIX: Record<string, MethodRow> = {
   'agents.scan': { agent: false, operator: true, im: false, none: false },
   'agents.configure': { agent: false, operator: true, im: false, none: false },
   'agents.remove': { agent: false, operator: true, im: false, none: false },
+  'host.profiles.list': { agent: false, operator: true, im: false, none: false },
+  'host.profiles.upsert': { agent: false, operator: true, im: false, none: false },
+  'host.profiles.remove': { agent: false, operator: true, im: false, none: false },
 };
 
 export function isKnownMethod(method: string): boolean {

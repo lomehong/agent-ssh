@@ -38,6 +38,9 @@ const SPEC_ROWS: Record<string, { agent: boolean; operator: boolean; im: boolean
   'agents.scan': { agent: false, operator: true, im: false },
   'agents.configure': { agent: false, operator: true, im: false },
   'agents.remove': { agent: false, operator: true, im: false },
+  'host.profiles.list': { agent: false, operator: true, im: false },
+  'host.profiles.upsert': { agent: false, operator: true, im: false },
+  'host.profiles.remove': { agent: false, operator: true, im: false },
 };
 
 interface Harness {

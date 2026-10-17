@@ -73,6 +73,35 @@
         <button id="audit-more" class="ghost hidden">加载更多</button>
       </section>
       <section id="view-connections" class="view hidden">
+        <h1>主机管理</h1>
+        <div class="row" style="justify-content: flex-start; margin-bottom: 12px;">
+          <button id="host-add" class="approve small">添加主机</button>
+          <button id="hosts-refresh" class="ghost small">刷新</button>
+        </div>
+        <div id="hosts-list" aria-live="polite"></div>
+        <section class="card hidden" id="host-form-card">
+          <h2 id="host-form-title">添加主机</h2>
+          <div class="form-grid">
+            <label>名称<input id="hf-name" placeholder="字母/数字/-/_" /></label>
+            <label>主机地址<input id="hf-host" placeholder="IP 或域名" /></label>
+            <label>端口<input id="hf-port" value="22" /></label>
+            <label>用户<input id="hf-user" /></label>
+            <label>认证方式
+              <select id="hf-auth">
+                <option value="password">密码</option>
+                <option value="key">私钥（路径）</option>
+              </select>
+            </label>
+            <label id="hf-secret-label">密码<input type="password" id="hf-secret" autocomplete="off" /></label>
+            <label>主机组（可选）<input id="hf-group" placeholder="dev / prod…" /></label>
+          </div>
+          <p class="meta">密码存入 Windows 凭据管理器（不写入配置文件）；写入后需重启 Host 生效（自动提示）。</p>
+          <div class="row">
+            <button id="hf-cancel" class="ghost">取消</button>
+            <button id="hf-save" class="approve">保存</button>
+          </div>
+          <p id="hf-result" class="meta"></p>
+        </section>
         <h1>连接与会话</h1>
         <div id="conn-list" aria-live="polite"></div>
         <h1>配额用量（滚动 24h）</h1>
