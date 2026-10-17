@@ -27,6 +27,10 @@ export function buildHostInitArtifacts(
   // 安全纪律（评审 T-15 jc2）：agent 令牌明文不进 config.toml——令牌经 init
   // 输出（stdout，一次）交运维注入 stub 的 env（D6 禁 argv）；配置里只留
   // 指引注释。落盘最小化：哈希是配置里唯一的秘密衍生材料。
+  //
+  // 骨架必须可加载（T-17.6 部署顺手修复：profiles 全注释曾撞 schema
+  // min(1)——init 产物 serve 直拒「no profiles」，init→serve 链走不通）。
+  // example 指向不可达主机：可加载、连接必拒，与「缺省即拒绝」同哲学。
   const configToml = `# agent-ssh Host 配置（由 \`agent-ssh host init\` 生成，${new Date().toISOString()}）
 # 凭证引用与策略都在 Host 机；本文件不出 Host（方案 §1 信任域）。
 
@@ -44,10 +48,12 @@ operatorPasswordHash = "${operatorHash}"
 
 # transferRoot 未设置：流式文件工具持续拒绝，直到显式指名目录（缺省即拒绝）。
 
+# 骨架占位 profile：可加载但不可达（example.example 无法解析）——
+# 替换成你的真实主机，或删除后加入自己的。
 [[profiles]]
-# name = "example"
-# host = "example.example"
-# user = "operator"
+name = "example"
+host = "example.example"
+user = "operator"
 `;
   return { configToml, agentToken, operatorHash };
 }
