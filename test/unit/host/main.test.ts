@@ -72,28 +72,22 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
     expect(manifest.resources).toHaveLength(3);
   });
 
-  it('矩阵在真实装配下仍然生效：agent 调 approval.list → -32002', async () => {
+  it('D15 单令牌模型：agent 调 approval.list 直连放行（旧 -32002 已废止）', async () => {
     const { port, token } = await start();
     const c = client(port, token);
     await c.connect();
-    await expect(c.call('approval.list')).rejects.toMatchObject({ code: RPC_ERROR.FORBIDDEN });
+    const outcome = await c.call<{ pending: unknown[] }>('approval.list');
+    expect(Array.isArray(outcome.pending)).toBe(true);
   });
 
-  it('operator 会话全流程：无凭据 start（agent 凭据会被矩阵拒）→会话→approval.decide', async () => {
+  it('D15：auth.session.start 已废止（Unknown method）+agent 直连 approval.decide', async () => {
     const { port, token } = await start();
-    // 矩阵红线实例：agent 凭据调 auth.session.start 必须 FORBIDDEN（不可自铸 operator 会话）。
     const agentClient = client(port, token);
     await agentClient.connect();
-    await expect(agentClient.call('auth.session.start', { password: PASSWORD })).rejects.toMatchObject({
-      code: RPC_ERROR.FORBIDDEN,
-    });
-    // start 是 pre-auth 方法：凭无凭据信封 + 口令换会话。
-    const pre = client(port, '', { skipHello: true });
-    await pre.connect();
-    const started = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
-    const operator = client(port, started.sessionToken);
-    await operator.connect();
-    const outcome = await operator.call<{ decided: boolean; message: string }>('approval.decide', {
+    await expect(agentClient.call('auth.session.start', { password: PASSWORD })).rejects.toThrow(
+      /Unknown method/,
+    );
+    const outcome = await agentClient.call<{ decided: boolean; message: string }>('approval.decide', {
       id: 'no-such-id',
       decision: 'approved',
     });
@@ -101,12 +95,9 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
     expect(outcome.message).toMatch(/No such approval request/);
   });
 
-  it('host.admin.rotateToken：operator 触发，新令牌立即可用（M9 双活宽限）', async () => {
-    const { port } = await start();
-    const pre = client(port, '', { skipHello: true });
-    await pre.connect();
-    const started = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
-    const operator = client(port, started.sessionToken);
+  it('host.admin.rotateToken：agent 直连触发，新令牌立即可用（M9 双活宽限）', async () => {
+    const { port, token } = await start();
+    const operator = client(port, token);
     await operator.connect();
     const rotated = await operator.call<{ agentToken: string }>('host.admin.rotateToken');
     expect(rotated.agentToken).toMatch(/^[A-Za-z0-9_-]{43}$/);
@@ -127,10 +118,7 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
   // ── T-17：cli.run / cli.info 语义桥（D4：人即批准者，无审批门）──
   it('cli.info 经 operator 会话返回结构化 profile 信息（无 SSH 触达）', async () => {
     const started = await start();
-    const pre = client(started.port, '', { skipHello: true });
-    await pre.connect();
-    const session = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
-    const operator = client(started.port, session.sessionToken);
+    const operator = client(started.port, started.token);
     await operator.connect();
     const info = await operator.call<{ profile: { name: string; host: string; user: string }; connected: boolean }>('cli.info', { profile: 'admin' });
     expect(info.profile.name).toBe('admin');
@@ -140,10 +128,7 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
 
   it('cli.run 禁止名单先于一切：FORBIDDEN_PATTERN 拒绝 + deny 审计留痕（评审 jc3）', async () => {
     const started = await start();
-    const pre = client(started.port, '', { skipHello: true });
-    await pre.connect();
-    const session = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
-    const operator = client(started.port, session.sessionToken);
+    const operator = client(started.port, started.token);
     await operator.connect();
     await expect(operator.call('cli.run', { command: 'rm -rf /' })).rejects.toThrow(/FORBIDDEN_PATTERN/);
     const auditText = readFileSync(join(dir!, 'audit.log'), 'utf8');
@@ -152,10 +137,7 @@ describe('Host 引擎迁入（T-15 验收 1）', () => {
 
   it('cli.run 目标不可达：deny 审计留痕（ruleId=cli-direct-error）+ 结构化拒绝', async () => {
     const started = await start({ host: '127.0.0.1', port: 1 }); // ECONNREFUSED 立即失败
-    const pre = client(started.port, '', { skipHello: true });
-    await pre.connect();
-    const session = await pre.call<{ sessionToken: string }>('auth.session.start', { password: PASSWORD });
-    const operator = client(started.port, session.sessionToken);
+    const operator = client(started.port, started.token);
     await operator.connect();
     await expect(operator.call('cli.run', { profile: 'admin', command: 'echo hi' })).rejects.toThrow(/cli-run failed/);
     const auditText = readFileSync(join(dir!, 'audit.log'), 'utf8');
