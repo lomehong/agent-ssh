@@ -1,19 +1,24 @@
-// Added for testing purposes, requires docker compose to run
+// Host 分离架构后的 omp/opencode 项目级 MCP 样例。
+//
+// 实际的启用实例在 omp 全局配置（~/.omp/agent/mcp.json，名字 agent-ssh）——
+// 本文件 kept enabled=false 以免同仓重复加载两份 stub（旧单体条目
+// ssh-mcp-server 已随架构废止失效，spawn 即退，曾触发连接失败警告）。
+//
+// 新架构宿主接入要点（HOST-RUNBOOK §一③）：
+//   command: stub 入口（默认 main=stub），凭证与地址全经 env——禁 argv（D6）：
+//     AGENT_SSH_HOST_ADDR=127.0.0.1:<host serve 端口>
+//     AGENT_SSH_TOKEN=<host init 打印的 agent 令牌>
 {
   "$schema": "https://opencode.ai/config.json",
   "mcp": {
-    "ssh-mcp-server": {
+    "agent-ssh": {
       "type": "local",
-      "command": [
-        "node",
-        "build/index.js",
-        "--host=127.0.0.1",
-        "--port=2222",
-        "--user=test",
-        "--password=secret",
-        "--timeout=60000"
-      ],
-      "enabled": true,
+      "command": ["node", "build/index.js"],
+      "environment": {
+        "AGENT_SSH_HOST_ADDR": "127.0.0.1:7788",
+        "AGENT_SSH_TOKEN": "<host init 打印——经 env 注入，不入库>",
+      },
+      "enabled": false,
     },
   },
 }
