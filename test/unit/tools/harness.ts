@@ -173,7 +173,8 @@ export async function createHarness(
   const pump = async (): Promise<void> => {
     try {
       for (const p of await listPending({ dir: queueDir })) {
-        const outcome = await decideApproval(p.id, approve ? 'approved' : 'rejected', { dir: queueDir, by: 'harness-pump' });
+        // by 面身份写入方携带（cli:，T-21b 前缀归位连带修正）。
+        const outcome = await decideApproval(p.id, approve ? 'approved' : 'rejected', { dir: queueDir, by: 'cli:harness-pump' });
         // 只计生效裁决：同条目的重复泵询（竞态输家）不算人工决定次数。
         if (outcome.decided) approvalDecisions++;
       }

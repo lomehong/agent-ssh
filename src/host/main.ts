@@ -29,10 +29,13 @@ import type { RpcTables } from '../rpc/authorize.js';
 import { SERVER_VERSION } from '../version.js';
 import { registerResources, registerTools } from '../tools/registry.js';
 import { AuditStore } from '../audit/store.js';
+import { queryAudit, auditStats } from '../audit/query.js';
 import { PolicyEngine } from '../policy/engine.js';
+import { CommandQuota } from '../policy/quota.js';
 import { classifyCommand, findForbiddenMatch } from '../policy/classifier.js';
 import { redactText } from '../guard/redactor.js';
 import { ConnectionRegistry } from '../ssh/connection-registry.js';
+import { initKeychain } from '../config/credential-resolver.js';
 import type { HostKeyMode } from '../ssh/host-key.js';
 import type { AppConfig } from '../types.js';
 import { ImBot } from '../im/bot.js';
@@ -82,6 +85,10 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     console.error(line);
   };
 
+  // OS 密钥链初始化（T-20 部署实测修复）：v2 重写入口时上游 WD-1 的
+  // initKeychain 接线被静默丢失——keychain 型 profile 从此全部
+  // 「returned nothing」。测试全用 password/env 故从未暴露。
+  await initKeychain();
   const registry = new ConnectionRegistry(opts.config, opts.hostKeyMode ?? 'tofu');
   const policy = new PolicyEngine();
   const audit = new AuditStore(opts.auditPath);
@@ -201,12 +208,15 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     log(`approval.push id=${payload.id} class=${payload.commandClass}${challenge ? ' challenge=****' : ''}${imBot ? ' surfaces=hub+im' : ''}`);
   };
 
+  // 配额实例 Host 级持有（T-21d）：同实例入管线（计数）+ 快照面（读取）。
+  const quota = new CommandQuota();
   registerTools(mcpServer, registry, policy, audit, {
     approvalGrantTtlMs: opts.approvalGrantTtlMs ?? opts.config.defaults.approvalGrantTtlMs,
     approvalSurfaces: opts.config.defaults.approvalSurfaces as ApprovalSurface[],
     approvalQueueDir: opts.approvalQueueDir,
     approvalQueuePollMs: opts.approvalQueuePollMs,
     onApprovalQueued,
+    quota,
   });
   registerResources(mcpServer, registry);
 
@@ -246,6 +256,47 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     'approval.list': async () => {
       const pending = await listPending(queueDir ? { dir: queueDir } : {});
       return { pending };
+    },
+    'audit.query': async (params) => {
+      // T-21c：审计过滤查询（operator 面；审计写入侧已脱敏，按存储原样出）。
+      const p = (params ?? {}) as { offsetTail?: unknown; limit?: unknown; filter?: Record<string, unknown> };
+      const f = p.filter ?? {};
+      return queryAudit({
+        auditPath: opts.auditPath,
+        filter: {
+          ...(typeof f.profile === 'string' && f.profile !== '' ? { profile: f.profile } : {}),
+          ...(typeof f.commandClass === 'string' && f.commandClass !== '' ? { commandClass: f.commandClass } : {}),
+          ...(typeof f.decision === 'string' && f.decision !== '' ? { decision: f.decision } : {}),
+          ...(typeof f.ruleId === 'string' && f.ruleId !== '' ? { ruleId: f.ruleId } : {}),
+          ...(typeof f.keyword === 'string' && f.keyword !== '' ? { keyword: f.keyword } : {}),
+        },
+        ...(typeof p.offsetTail === 'number' ? { offsetTail: p.offsetTail } : {}),
+        ...(typeof p.limit === 'number' ? { limit: p.limit } : {}),
+      });
+    },
+    'audit.stats': async () => auditStats(opts.auditPath),
+    'host.connections': async () => {
+      // T-21d：连接/会话状态投影（registry 只读）。
+      return {
+        connections: registry.listConnections().map((info) => {
+          const conn = registry.get(info.profile);
+          return {
+            ...info,
+            sessions: conn?.listSessions?.().length ?? 0,
+            ptySessions: conn?.listPtySessions?.().length ?? 0,
+          };
+        }),
+      };
+    },
+    'quota.snapshot': async () => {
+      // T-21d：每 profile 当日（滚动 24h）配额用量快照。
+      return {
+        quotas: opts.config.profiles.map((p) => ({
+          profile: p.name,
+          used: quota.used(p.name),
+          limit: p.commandQuotaPerDay,
+        })),
+      };
     },
     'approval.history': async (params) => {
       // T-21b：已决/过期审批流水（operator 面便利视图；法律级留痕仍在审计）。

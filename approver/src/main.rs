@@ -205,6 +205,51 @@ async fn history(
     client.call("approval.history", params).await.map_err(err_str)
 }
 
+/// 审计查询/统计/连接/配额（T-21c/d）：operator 会话转发 Host 运维 RPC。
+#[tauri::command]
+async fn audit_query(
+    state: State<'_, HostState>,
+    offset_tail: Option<i64>,
+    limit: Option<i64>,
+    profile: Option<String>,
+    command_class: Option<String>,
+    decision: Option<String>,
+    rule_id: Option<String>,
+    keyword: Option<String>,
+) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let filter = serde_json::json!({
+        "profile": profile, "commandClass": command_class,
+        "decision": decision, "ruleId": rule_id, "keyword": keyword,
+    });
+    let params = serde_json::json!({
+        "offsetTail": offset_tail.unwrap_or(0), "limit": limit.unwrap_or(50), "filter": filter,
+    });
+    client.call("audit.query", params).await.map_err(err_str)
+}
+
+#[tauri::command]
+async fn audit_stats(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("audit.stats", Value::Null).await.map_err(err_str)
+}
+
+#[tauri::command]
+async fn connections(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("host.connections", Value::Null).await.map_err(err_str)
+}
+
+#[tauri::command]
+async fn quota_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("quota.snapshot", Value::Null).await.map_err(err_str)
+}
+
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
@@ -396,7 +441,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history])
+    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

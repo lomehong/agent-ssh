@@ -66,6 +66,8 @@ export interface ToolDeps {
   /** Queue directory override; a test hook — production uses the platform default. */
   approvalQueueDir?: string;
   /** 审批推送桥（T-17.5b）：入队即回调（Host 装配层转 hub.publish + 校验码）。 */
+  /** 注入式配额实例（T-21d 快照面）；缺省管线自建。 */
+  quota?: CommandQuota;
   onApprovalQueued?: (payload: {
     id: string;
     profile: string;
@@ -107,8 +109,10 @@ export function createPipeline({
   approvalQueueDir,
   approvalQueueInspectAcl,
   onApprovalQueued,
+  quota: quotaIn,
 }: ToolDeps) {
-  const quota = new CommandQuota();
+  // quota 可注入（T-21d：Host main 持有同一实例暴露 quota.snapshot）；缺省自建。
+  const quota = quotaIn ?? new CommandQuota();
   const grants = new ApprovalGrants(approvalGrantTtlMs);
   async function resolveConn(profileName?: string) {
     return registry.getOrCreate(profileName);

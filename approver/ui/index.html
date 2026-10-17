@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="./ui.css" />
 </head>
 <body>
+  <header id="titlebar" data-tauri-drag-region>
+    <span id="titlebar-title" data-tauri-drag-region>agent-ssh 控制台</span>
+    <div id="win-controls">
+      <button id="win-min" title="最小化">&#x2500;</button>
+      <button id="win-max" title="最大化/还原">&#x25A1;</button>
+      <button id="win-close" title="隐藏到托盘">&#x2715;</button>
+    </div>
+  </header>
   <div id="app">
     <nav id="nav" aria-label="主导航">
       <div id="nav-brand">agent-ssh</div>
@@ -41,11 +49,26 @@
       </section>
       <section id="view-audit" class="view hidden">
         <h1>审计日志</h1>
-        <p class="meta">随 T-21c 落地：审计 JSONL 查看器（过滤/搜索/尾随/聚合统计）。</p>
+        <div class="row" id="audit-filters">
+          <input id="audit-profile" placeholder="profile（精确）" />
+          <input id="audit-keyword" placeholder="命令关键词（子串）" />
+          <select id="audit-decision">
+            <option value="">全部决定</option>
+            <option value="allow">allow</option>
+            <option value="deny">deny</option>
+            <option value="require-approval">require-approval</option>
+          </select>
+          <button id="audit-apply" class="approve small">查询</button>
+        </div>
+        <p id="audit-stats" class="meta"></p>
+        <div id="audit-list"></div>
+        <button id="audit-more" class="ghost hidden">加载更多</button>
       </section>
       <section id="view-connections" class="view hidden">
         <h1>连接与会话</h1>
-        <p class="meta">随 T-21d 落地：每 profile 连接状态、活动会话、配额用量、PTY 强关。</p>
+        <div id="conn-list" aria-live="polite"></div>
+        <h1>配额用量（滚动 24h）</h1>
+        <div id="quota-list"></div>
       </section>
       <section id="view-settings" class="view hidden">
         <h1>设置</h1>

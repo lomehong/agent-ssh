@@ -72,3 +72,39 @@ button { padding: 8px 0; border-radius: 6px; border: 1px solid #8884; cursor: po
   border: 1px solid #8884; border-radius: 4px;
 }
 .countdown { font-size: 11px; color: #b26a00; }
+
+/* ── 无边框标题栏（T-21 窗控） ── */
+#titlebar {
+  display: flex; align-items: center;
+  height: 36px; flex: none;
+  background: #8881; border-bottom: 1px solid #8884;
+  user-select: none;
+}
+#titlebar-title { font-size: 12px; color: #888; padding-left: 12px; flex: 1; }
+#win-controls { display: flex; height: 100%; }
+#win-controls button {
+  width: 44px; height: 100%;
+  border: none; border-radius: 0;
+  background: transparent; color: inherit;
+  font-size: 12px; cursor: pointer; flex: none;
+}
+#win-controls button:hover { background: #8883; }
+#win-close:hover { background: #c62828; color: white; }
+body { display: flex; flex-direction: column; }
+
+/* ── 过滤器/列表（T-21c/d） ── */
+#audit-filters { gap: 6px; margin-bottom: 8px; max-width: 720px; }
+#audit-filters input, #audit-filters select {
+  flex: 1; padding: 6px; border-radius: 6px;
+  border: 1px solid #8884; background: transparent; color: inherit;
+  font-size: 12px;
+}
+#audit-filters .approve { flex: none; padding: 6px 14px; }
+button.ghost { background: transparent; color: inherit; padding: 6px 14px; margin-top: 8px; }
+button.small { font-size: 12px; }
+.audit-row { border-bottom: 1px solid #8882; padding: 6px 0; max-width: 720px; }
+.audit-row .t { font-size: 11px; color: #888; }
+.audit-row .cmd { font-family: ui-monospace, Consolas, monospace; font-size: 12px; word-break: break-all; }
+.denied { color: #ef5350; }
+.allowed { color: #66bb6a; }
+.pending-c { color: #b26a00; }

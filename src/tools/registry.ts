@@ -30,7 +30,7 @@ export function registerTools(
   policy: PolicyEngine,
   audit: AuditStore,
   opts: Omit<ToolDeps, 'server' | 'registry' | 'policy' | 'audit'> = {},
-) {
+): { pipeline: ReturnType<typeof createPipeline> } {
   const deps: ToolDeps = { server, registry, policy, audit, ...opts };
   const pipeline = createPipeline(deps);
 
@@ -40,4 +40,6 @@ export function registerTools(
   registerTransferTools(deps, pipeline);
   registerPtyTools(deps, pipeline);
   registerForwardTools(deps, pipeline);
+  // pipeline 交还调用方（T-21d：Host main 经 pipeline.quota 暴露配额快照）。
+  return { pipeline };
 }

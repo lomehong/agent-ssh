@@ -19,8 +19,10 @@ function showView(name) {
   for (const btn of navItems) {
     btn.classList.toggle('active', btn.dataset.view === name);
   }
-  // 首次进入历史视图拉取（T-21b；loadHistory 声明在文件后部，调用时已定义）。
+  // 首次进入视图拉取（T-21b/c/d；load* 声明在文件后部，调用时已定义）。
   if (name === 'history' && typeof loadHistory === 'function' && !historyState.loaded) loadHistory();
+  if (name === 'audit' && !auditState.loaded) { auditState.loaded = true; loadAudit(true); }
+  if (name === 'connections') loadConnections();
 }
 
 for (const btn of navItems) {
@@ -291,3 +293,97 @@ for (const btn of document.querySelectorAll('#history-filters .filter')) {
 }
 document.getElementById('history-more').addEventListener('click', () => loadHistory());
 
+
+
+// ─── 无边框窗控（T-21：自定义最小化/最大化/关闭=隐藏到托盘） ──────────────────
+
+const win = window.__TAURI__?.window?.getCurrentWindow?.();
+document.getElementById('win-min')?.addEventListener('click', () => win?.minimize());
+document.getElementById('win-max')?.addEventListener('click', () => win?.toggleMaximize());
+// 关闭=隐藏到托盘（托盘常驻语义；真正退出走托盘「退出（停 Host）」）。
+document.getElementById('win-close')?.addEventListener('click', () => win?.hide());
+
+// ─── 审计视图（T-21c） ───────────────────────────────────────────────────────
+
+const auditState = { offsetTail: 0, loaded: false };
+const auditList = document.getElementById('audit-list');
+const auditMore = document.getElementById('audit-more');
+const auditStatsEl = document.getElementById('audit-stats');
+
+function auditRow(rec) {
+  const row = document.createElement('div');
+  row.className = 'audit-row';
+  const cls = rec.decision === 'deny' ? 'denied' : rec.decision === 'allow' ? 'allowed' : 'pending-c';
+  row.appendChild(textNode('p', 't', `${rec.timestamp ?? ''} · ${rec.profile ?? ''} · ${rec.decision ?? ''} · ${rec.ruleId ?? ''}`));
+  const cmd = document.createElement('div');
+  cmd.className = `cmd ${cls}`;
+  cmd.appendChild(document.createTextNode(rec.command ?? ''));
+  row.appendChild(cmd);
+  row.appendChild(textNode('p', 't', `approver: ${rec.approver ?? '-'} · exit: ${rec.exitCode ?? '-'} · ${rec.durationMs ?? '-'}ms`));
+  return row;
+}
+
+async function loadAudit(reset = false) {
+  if (!invoke) return;
+  if (reset) { auditState.offsetTail = 0; auditList.textContent = ''; }
+  try {
+    const res = await invoke('audit_query', {
+      offsetTail: auditState.offsetTail,
+      limit: 50,
+      profile: document.getElementById('audit-profile').value || null,
+      keyword: document.getElementById('audit-keyword').value || null,
+      decision: document.getElementById('audit-decision').value || null,
+      commandClass: null,
+      ruleId: null,
+    });
+    const items = Array.isArray(res?.items) ? res.items : [];
+    for (const rec of items) auditList.appendChild(auditRow(rec));
+    auditState.offsetTail += items.length;
+    auditMore.classList.toggle('hidden', items.length < 50);
+    try {
+      const st = await invoke('audit_stats');
+      auditStatsEl.textContent = '';
+      auditStatsEl.appendChild(document.createTextNode(`今日 ${st.today} 条 · 拒绝 ${st.denied} · 审批决定 ${st.approvalsDecided}`));
+    } catch {}
+  } catch (err) {
+    const msg = typeof err === 'string' ? err : (err?.message ?? String(err));
+    auditList.textContent = '';
+    auditList.appendChild(textNode('p', 'meta', `加载失败: ${msg}`));
+  }
+}
+
+document.getElementById('audit-apply')?.addEventListener('click', () => loadAudit(true));
+auditMore?.addEventListener('click', () => loadAudit(false));
+
+// ─── 连接与配额视图（T-21d） ────────────────────────────────────────────────
+
+async function loadConnections() {
+  if (!invoke) return;
+  const connList = document.getElementById('conn-list');
+  const quotaList = document.getElementById('quota-list');
+  try {
+    const conns = await invoke('connections');
+    connList.textContent = '';
+    for (const c of conns?.connections ?? []) {
+      const card = document.createElement('section');
+      card.className = 'card';
+      card.appendChild(textNode('p', 'meta', `${c.profile} → ${c.user ?? ''}@${c.host ?? ''}:${c.port ?? ''}`));
+      card.appendChild(textNode('p', 'meta', `状态: ${c.status ?? '?'} · 会话 ${c.sessions ?? 0} · PTY ${c.ptySessions ?? 0}`));
+      connList.appendChild(card);
+    }
+    if ((conns?.connections ?? []).length === 0) connList.appendChild(textNode('p', 'meta', '无连接记录'));
+  } catch (err) {
+    connList.textContent = '';
+    connList.appendChild(textNode('p', 'meta', `加载失败: ${typeof err === 'string' ? err : err?.message}`));
+  }
+  try {
+    const qs = await invoke('quota_snapshot');
+    quotaList.textContent = '';
+    for (const q of qs?.quotas ?? []) {
+      const row = document.createElement('p');
+      row.className = 'meta';
+      row.appendChild(document.createTextNode(`${q.profile}: ${q.used}${q.limit ? ` / ${q.limit}` : '（不限）'} 条`));
+      quotaList.appendChild(row);
+    }
+  } catch {}
+}
