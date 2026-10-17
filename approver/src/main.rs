@@ -189,6 +189,22 @@ async fn decide(
     }
 }
 
+/// 历史审批（T-21b）：经 operator 会话转发 Host approval.history（分页）。
+#[tauri::command]
+async fn history(
+    state: State<'_, HostState>,
+    offset: Option<i64>,
+    limit: Option<i64>,
+) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let params = serde_json::json!({
+        "offset": offset.unwrap_or(0),
+        "limit": limit.unwrap_or(50),
+    });
+    client.call("approval.history", params).await.map_err(err_str)
+}
+
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
@@ -380,7 +396,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending])
+    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

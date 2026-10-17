@@ -20,7 +20,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import type { TlsOptions } from 'node:tls';
-import { listPending, decideApproval, type ApprovalSurface } from '../guard/approval-queue.js';
+import { listPending, listDecided, decideApproval, type ApprovalSurface } from '../guard/approval-queue.js';
 import { acquirePidfile } from '../rpc/pidfile.js';
 import { generateAgentToken, hashPassword, tokenDigest, OperatorSessionStore } from '../rpc/auth.js';
 import { RpcHostServer, type RpcHandler, type RpcHandlerContext } from '../rpc/server.js';
@@ -246,6 +246,15 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     'approval.list': async () => {
       const pending = await listPending(queueDir ? { dir: queueDir } : {});
       return { pending };
+    },
+    'approval.history': async (params) => {
+      // T-21b：已决/过期审批流水（operator 面便利视图；法律级留痕仍在审计）。
+      const p = (params ?? {}) as { limit?: unknown; offset?: unknown };
+      return listDecided({
+        ...(queueDir ? { dir: queueDir } : {}),
+        ...(typeof p.limit === 'number' ? { limit: p.limit } : {}),
+        ...(typeof p.offset === 'number' ? { offset: p.offset } : {}),
+      });
     },
     'approval.decide': async (params, ctx: RpcHandlerContext) => {
       const p = params as {

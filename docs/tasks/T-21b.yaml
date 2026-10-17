@@ -1,12 +1,13 @@
 id: T-21b
 title: 审批增强+历史审批
 level: L1
-status: 待执行
-blockedBy: [T-21a]
+status: 待确认
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 14:40:00
 accept:
   - 队列流 UI + approval.history（Host 侧+红线测试）；历史过滤/分页
 source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
 events:
+  - 2026-10-17 15:40:00 | report | by=digital-architect | 自报待主人 confirm。①Host 侧：approval.history 方法（matrix 增行 operator-only+SPEC 抄录同步，红线枚举自动覆盖）+listDecided（队列目录非 pending 记录倒序分页，留存边界=决定后文件本就留存）+main handler。②桌面侧：Rust history 命令转发+历史视图实装（过滤全部/批准/拒绝/过期+加载更多+解锁后首切自动拉取）。③验证：tsc 0；rpc/guard/host 225 测试绿（matrix 7/7 含新行）；RPC 端到端冒烟=口令→会话→history 返回真实流水（正式队列写入两条样本：approved(im:)/expired——样本即主人历史视图首屏数据）。部署运行中。
+  - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a
   - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a

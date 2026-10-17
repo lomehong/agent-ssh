@@ -28,6 +28,7 @@ export const METHOD_MATRIX: Record<string, MethodRow> = {
   'auth.session.renew': { agent: false, operator: true, im: false, none: false },
   'approval.subscribe': { agent: false, operator: true, im: false, none: false },
   'approval.list': { agent: false, operator: true, im: false, none: false },
+  'approval.history': { agent: false, operator: true, im: false, none: false },
   'approval.decide': { agent: false, operator: true, im: true, none: false },
   'cli.run': { agent: false, operator: true, im: false, none: false },
   'cli.info': { agent: false, operator: true, im: false, none: false },

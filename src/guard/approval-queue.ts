@@ -229,6 +229,23 @@ export async function waitForDecision(
   }
 }
 
+/**
+ * 历史审批（T-21b）：全部队列文件中非 pending 的记录（approved/rejected/expired），
+ * 按决定/创建时间倒序分页。决定后文件留存于 pending/ 目录（状态在文件内演进），
+ * 即历史的持久化面——不另设存储（控制台 v2 设计 §2.2 留存边界）。
+ */
+export async function listDecided(
+  opts: { dir?: string; limit?: number; offset?: number } = {},
+): Promise<{ total: number; items: PendingApproval[] }> {
+  const all = await listPending(opts);
+  const decided = all
+    .filter((p) => p.status !== 'pending')
+    .sort((a, b) => (b.decidedAt ?? b.createdAt).localeCompare(a.decidedAt ?? a.createdAt));
+  const offset = Math.max(0, opts.offset ?? 0);
+  const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+  return { total: decided.length, items: decided.slice(offset, offset + limit) };
+}
+
 /** 队列中每条待审请求，最老的在前（CLI 的 list）。 */
 export async function listPending(opts: { dir?: string } = {}): Promise<PendingApproval[]> {
   const dir = opts.dir ?? getApprovalQueueDir();

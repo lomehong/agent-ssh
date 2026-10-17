@@ -24,6 +24,7 @@ const SPEC_ROWS: Record<string, { agent: boolean; operator: boolean; im: boolean
   'auth.session.renew': { agent: false, operator: true, im: false },
   'approval.subscribe': { agent: false, operator: true, im: false },
   'approval.list': { agent: false, operator: true, im: false },
+  'approval.history': { agent: false, operator: true, im: false },
   'approval.decide': { agent: false, operator: true, im: true },
   'cli.run': { agent: false, operator: true, im: false },
   'cli.info': { agent: false, operator: true, im: false },

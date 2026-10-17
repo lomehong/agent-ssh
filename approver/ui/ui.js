@@ -19,6 +19,8 @@ function showView(name) {
   for (const btn of navItems) {
     btn.classList.toggle('active', btn.dataset.view === name);
   }
+  // 首次进入历史视图拉取（T-21b；loadHistory 声明在文件后部，调用时已定义）。
+  if (name === 'history' && typeof loadHistory === 'function' && !historyState.loaded) loadHistory();
 }
 
 for (const btn of navItems) {
@@ -229,3 +231,63 @@ async function main() {
 }
 
 main();
+
+
+// ─── 历史审批视图（T-21b）：operator 解锁后可拉取；过滤 + 分页 ───────────────
+
+const historyState = { items: [], filter: 'all', loaded: false };
+
+function historyRow(p) {
+  const card = document.createElement('section');
+  card.className = 'card';
+  const statusText = { approved: '已批准', rejected: '已拒绝', expired: '已过期' }[p.status] ?? p.status;
+  card.appendChild(textNode('p', 'meta', `${statusText} · ${p.commandClass ?? ''} · ${p.profile ?? ''}`));
+  const cmd = document.createElement('pre');
+  cmd.className = 'command';
+  cmd.appendChild(document.createTextNode(p.command ?? ''));
+  card.appendChild(cmd);
+  const decidedAt = p.decidedAt ?? p.createdAt ?? '';
+  card.appendChild(textNode('p', 'meta', `时间: ${decidedAt}`));
+  if (p.decidedBy) card.appendChild(textNode('p', 'meta', `决定人: ${p.decidedBy}`));
+  return card;
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  list.textContent = '';
+  const shown = historyState.items.filter((p) => historyState.filter === 'all' || p.status === historyState.filter);
+  if (shown.length === 0) {
+    list.appendChild(textNode('p', 'meta', '暂无记录（operator 解锁后自动拉取）'));
+    return;
+  }
+  for (const p of shown) list.appendChild(historyRow(p));
+}
+
+async function loadHistory() {
+  if (!invoke) return;
+  try {
+    const res = await invoke('history', { offset: historyState.items.length, limit: 50 });
+    const items = Array.isArray(res?.items) ? res.items : [];
+    historyState.items.push(...items);
+    historyState.loaded = true;
+    renderHistory();
+    const more = document.getElementById('history-more');
+    more.classList.toggle('hidden', historyState.items.length >= (res?.total ?? 0));
+  } catch (err) {
+    const msg = typeof err === 'string' ? err : (err?.message ?? String(err));
+    const list = document.getElementById('history-list');
+    list.textContent = '';
+    list.appendChild(textNode('p', 'meta', `加载失败: ${msg}`));
+  }
+}
+
+for (const btn of document.querySelectorAll('#history-filters .filter')) {
+  btn.addEventListener('click', () => {
+    for (const b of document.querySelectorAll('#history-filters .filter')) b.classList.remove('active');
+    btn.classList.add('active');
+    historyState.filter = btn.dataset.f;
+    renderHistory();
+  });
+}
+document.getElementById('history-more').addEventListener('click', () => loadHistory());
+

@@ -30,7 +30,14 @@
       </section>
       <section id="view-history" class="view hidden">
         <h1>历史审批</h1>
-        <p class="meta">随 T-21b 落地：已决定/过期审批流水（时间、决定人、命令、结果，可过滤）。</p>
+        <div class="row" id="history-filters">
+          <button class="filter active" data-f="all">全部</button>
+          <button class="filter" data-f="approved">已批准</button>
+          <button class="filter" data-f="rejected">已拒绝</button>
+          <button class="filter" data-f="expired">已过期</button>
+        </div>
+        <div id="history-list" aria-live="polite"></div>
+        <button id="history-more" class="ghost hidden">加载更多</button>
       </section>
       <section id="view-audit" class="view hidden">
         <h1>审计日志</h1>
