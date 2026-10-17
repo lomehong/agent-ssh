@@ -244,6 +244,7 @@ function renderUnlockHint(name) {
 
 async function main() {
   showView('approvals');
+  showEmptyHint(); // 初始空态（静态占位行已删，空态由动态渲染全权负责）
   refreshHostStatus();
   if (!invoke || !listen) {
     queue.appendChild(textNode('p', 'meta', 'Tauri 桥不可用（纯浏览模式，无审批功能）'));
