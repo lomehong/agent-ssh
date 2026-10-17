@@ -2,7 +2,7 @@ id: T-20
 title: Host 桌面化：Tauri 控制台托管 Host 子进程（托盘/探活/崩溃重启/随退而停）
 level: L1
 status: 待确认（修复批后复验待主人）
-fixRound: 系统性修复批一 1ae36d7（D15 测试同步/audit 时间过滤/by 白名单）+批二 e785966（D15 回写/configure 确认/keychain 留空/死代码）——审查报告 A 全清、B1/B3/B4/B5 落、B2 PTY 强关降范围登记
+fixRound: 修复批三连（1ae36d7/e785966/3ceeac6+6997a13）——审查报告 A1-A4 全清+B1/B3/B4/B5 落地+B2 降范围登记+C 级登记；D15 测试同步遗漏三篇全补（host/main 10/10+init 4/4+守卫域 90/90）
 reportedAt: 2026-10-17 12:45:00
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 13:45:00
