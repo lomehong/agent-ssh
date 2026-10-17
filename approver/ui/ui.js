@@ -20,9 +20,12 @@ function showView(name) {
   for (const btn of navItems) {
     btn.classList.toggle('active', btn.dataset.view === name);
   }
-  // 视图数据拉取（T-21b/c/d）：operator 面数据须解锁后拉取——未解锁时
-  // 显示引导而非报错（截图事故：四页齐刷 not unlocked）。
-  if (!unlocked) return;
+  // 视图数据拉取（T-21b/c/d）：operator 面数据须解锁后拉取。未解锁时
+  // 渲染解锁引导空态 + 唤起锁屏（截图事故修正：静默空白比报错更糟）。
+  if (!unlocked) {
+    if (name !== 'approvals') renderUnlockHint(name);
+    return;
+  }
   if (name === 'history' && typeof loadHistory === 'function' && !historyState.loaded) loadHistory();
   if (name === 'audit') { auditState.loaded = true; loadAudit(true); }
   if (name === 'connections') loadConnections();
@@ -223,6 +226,35 @@ function showLockForm(reason) {
   input.focus();
 }
 
+/** operator RPC 失败统一入口：会话过期/未解锁 → 全局回锁（返回 true 已处理）。 */
+function handleNotUnlocked(err) {
+  const m = typeof err === 'string' ? err : (err?.message ?? String(err));
+  if (!m.includes('not unlocked')) return false;
+  unlocked = false;
+  showLockForm('会话已过期或未解锁——请重新输入口令');
+  return true;
+}
+
+/** 未解锁时 operator 视图的引导空态（含唤起锁屏按钮）。 */
+function renderUnlockHint(name) {
+  const titles = { history: 'history-list', audit: 'audit-list', connections: 'conn-list' };
+  const target = document.getElementById(titles[name] ?? 'content');
+  if (target === null) return;
+  target.textContent = '';
+  const box = document.createElement('div');
+  box.className = 'empty-state';
+  box.appendChild(textNode('div', 'glyph', '🔒'.slice(0, 1) === '🔒' ? '···' : '···'));
+  box.appendChild(textNode('p', 'headline', '此视图需要解锁'));
+  box.appendChild(textNode('p', 'sub', '输入 operator 口令后即可查看。'));
+  const btn = document.createElement('button');
+  btn.className = 'approve';
+  btn.style.marginTop = '10px';
+  btn.appendChild(document.createTextNode('解锁控制台'));
+  btn.addEventListener('click', () => showLockForm('输入 operator 口令解锁控制台'));
+  box.appendChild(btn);
+  target.appendChild(box);
+}
+
 function wireLockForm() {
   const input = document.getElementById('lock-password');
   const btn = document.getElementById('lock-btn');
@@ -298,6 +330,7 @@ function renderHistory() {
 
 async function loadHistory() {
   if (!invoke) return;
+  if (!unlocked) { renderUnlockHint('history'); return; }
   try {
     const res = await invoke('history', { offset: historyState.items.length, limit: 50 });
     const items = Array.isArray(res?.items) ? res.items : [];
@@ -358,6 +391,7 @@ function auditRow(rec) {
 
 async function loadAudit(reset = false) {
   if (!invoke) return;
+  if (!unlocked) { renderUnlockHint('audit'); return; }
   if (reset) { auditState.offsetTail = 0; auditList.textContent = ''; }
   try {
     const res = await invoke('audit_query', {
@@ -379,6 +413,7 @@ async function loadAudit(reset = false) {
       auditStatsEl.appendChild(document.createTextNode(`今日 ${st.today} 条 · 拒绝 ${st.denied} · 审批决定 ${st.approvalsDecided}`));
     } catch {}
   } catch (err) {
+    if (handleNotUnlocked(err)) return;
     const msg = typeof err === 'string' ? err : (err?.message ?? String(err));
     auditList.textContent = '';
     auditList.appendChild(textNode('p', 'meta', `加载失败: ${msg}`));
@@ -391,7 +426,7 @@ auditMore?.addEventListener('click', () => loadAudit(false));
 // ─── 连接与配额视图（T-21d） ────────────────────────────────────────────────
 
 async function loadConnections() {
-  if (!invoke) return;
+  if (!invoke || !unlocked) return;
   const connList = document.getElementById('conn-list');
   const quotaList = document.getElementById('quota-list');
   try {
@@ -413,6 +448,7 @@ async function loadConnections() {
       connList.appendChild(box);
     }
   } catch (err) {
+    if (handleNotUnlocked(err)) return;
     connList.textContent = '';
     connList.appendChild(textNode('p', 'meta', `加载失败: ${typeof err === 'string' ? err : err?.message}`));
   }
@@ -473,12 +509,14 @@ async function loadSurfaces() {
     }
     el.appendChild(textNode('p', 'meta', `版本: ${st.version ?? '?'} · 端口: ${st.port ?? '?'} · 队列: ${st.queueDir ?? ''}`));
   } catch (err) {
+    if (handleNotUnlocked(err)) return;
     el.textContent = '';
-    el.appendChild(textNode('p', 'meta', `加载失败（需解锁）: ${typeof err === 'string' ? err : err?.message}`));
+    el.appendChild(textNode('p', 'meta', `加载失败: ${typeof err === 'string' ? err : err?.message}`));
   }
 }
 
 async function loadSettings() {
+  if (!unlocked) return;
   try {
     const res = await invoke('autostart_status');
     document.getElementById('set-autostart').checked = res.enabled === true;
@@ -487,13 +525,15 @@ async function loadSettings() {
 }
 
 async function renderAgents() {
+  if (!unlocked) { renderUnlockHint('settings'); return; }
   const list = document.getElementById('agents-list');
   list.textContent = '';
   let hosts;
   try {
     hosts = (await invoke('agents_scan'))?.hosts ?? [];
   } catch (err) {
-    list.appendChild(textNode('p', 'meta', `扫描失败（需解锁）: ${typeof err === 'string' ? err : err?.message}`));
+    if (handleNotUnlocked(err)) return;
+    list.appendChild(textNode('p', 'meta', `扫描失败: ${typeof err === 'string' ? err : err?.message}`));
     return;
   }
   for (const h of hosts) {
