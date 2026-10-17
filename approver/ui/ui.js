@@ -37,10 +37,6 @@ function showView(name) {
   }
   // 视图数据拉取（T-21b/c/d）：operator 面数据须解锁后拉取。未解锁时
   // 渲染解锁引导空态 + 唤起锁屏（截图事故修正：静默空白比报错更糟）。
-  if (!unlocked) {
-    if (name !== 'approvals') renderUnlockHint(name);
-    return;
-  }
   if (name === 'history' && typeof loadHistory === 'function' && !historyState.loaded) loadHistory();
   if (name === 'audit') { auditState.loaded = true; loadAudit(true); }
   if (name === 'connections') loadConnections();
@@ -221,36 +217,13 @@ function onSettled(payload) {
   removeCard(payload.id);
 }
 
-// ─── 锁屏/解锁（T-17.5d 验收 3 + T-21 截图修正）：解锁是**控制台级门**——
-// 全屏覆盖层（历史/审计/连接/设置都是 operator 面，未解锁时整窗只有锁屏），
-// 而非审批视图的局部表单（截图事故：其余四页齐刷 "not unlocked"）。
-let unlocked = false;
-
-function showLockForm(reason) {
-  unlocked = false;
-  const overlay = document.getElementById('lock-overlay');
-  overlay.classList.remove('hidden');
-  document.getElementById('lock-title').textContent = '';
-  document.getElementById('lock-title').appendChild(
-    document.createTextNode(reason || '输入 operator 口令解锁控制台'),
-  );
-  const input = document.getElementById('lock-password');
-  const msg = document.getElementById('lock-msg');
-  msg.textContent = '';
-  input.value = '';
-  input.focus();
-}
-
-/** operator RPC 失败统一入口：会话过期/未解锁 → 全局回锁（返回 true 已处理）。 */
 function handleNotUnlocked(err) {
+  // 单令牌模型下不应出现 not unlocked（矩阵已放行 agent 面）——出现即异常，
+  // 显示提示并保持数据面安静（防御性）。
   const m = typeof err === 'string' ? err : (err?.message ?? String(err));
-  if (!m.includes('not unlocked')) return false;
-  unlocked = false;
-  showLockForm('会话已过期或未解锁——请重新输入口令');
-  return true;
+  return m.includes('not unlocked');
 }
 
-/** 未解锁时 operator 视图的引导空态（含唤起锁屏按钮）。 */
 function renderUnlockHint(name) {
   const titles = { history: 'history-list', audit: 'audit-list', connections: 'conn-list' };
   const target = document.getElementById(titles[name] ?? 'content');
@@ -258,37 +231,10 @@ function renderUnlockHint(name) {
   target.textContent = '';
   const box = document.createElement('div');
   box.className = 'empty-state';
-  box.appendChild(textNode('div', 'glyph', '🔒'.slice(0, 1) === '🔒' ? '···' : '···'));
-  box.appendChild(textNode('p', 'headline', '此视图需要解锁'));
-  box.appendChild(textNode('p', 'sub', '输入 operator 口令后即可查看。'));
-  const btn = document.createElement('button');
-  btn.className = 'approve';
-  btn.style.marginTop = '10px';
-  btn.appendChild(document.createTextNode('解锁控制台'));
-  btn.addEventListener('click', () => showLockForm('输入 operator 口令解锁控制台'));
-  box.appendChild(btn);
+  box.appendChild(textNode('div', 'glyph', '···'));
+  box.appendChild(textNode('p', 'headline', '数据不可用'));
+  box.appendChild(textNode('p', 'sub', '与 Host 的连接异常，请检查 Host 守护是否在线。'));
   target.appendChild(box);
-}
-
-function wireLockForm() {
-  const input = document.getElementById('lock-password');
-  const btn = document.getElementById('lock-btn');
-  const msg = document.getElementById('lock-msg');
-  const submit = async () => {
-    try {
-      await invoke('unlock', { password: input.value });
-      unlocked = true;
-      document.getElementById('lock-overlay').classList.add('hidden');
-      // 解锁后刷新当前视图数据（各视图首拉在解锁前被跳过）。
-      refreshCurrentView(true);
-    } catch (err) {
-      msg.textContent = '';
-      const m = typeof err === 'string' ? err : (err?.message ?? String(err));
-      msg.appendChild(document.createTextNode(`解锁失败: ${m}`));
-    }
-  };
-  btn.addEventListener('click', submit);
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }
 
 async function main() {
@@ -301,12 +247,11 @@ async function main() {
   try {
     await listen('approval-pending', (event) => onPending(event.payload));
     await listen('approval-settled', (event) => onSettled(event.payload));
-    await listen('locked', (event) => showLockForm(`会话已回锁：${event.payload?.reason ?? ''}`));
+    await listen('locked', () => showFatal('会话已回锁（单令牌模型下不应发生）'));
   } catch (err) {
     showFatal(`事件订阅失败: ${err?.message ?? err}`);
   }
-  wireLockForm();
-  showLockForm('输入 operator 口令解锁控制台');
+
 }
 
 main();
@@ -349,7 +294,6 @@ function renderHistory() {
 
 async function loadHistory() {
   if (!invoke) return;
-  if (!unlocked) { renderUnlockHint('history'); return; }
   try {
     const res = await invoke('history', { offset: historyState.items.length, limit: 50 });
     const items = Array.isArray(res?.items) ? res.items : [];
@@ -410,7 +354,6 @@ function auditRow(rec) {
 
 async function loadAudit(reset = false) {
   if (!invoke) return;
-  if (!unlocked) { renderUnlockHint('audit'); return; }
   if (reset) { auditState.offsetTail = 0; auditList.textContent = ''; }
   try {
     const res = await invoke('audit_query', {
@@ -445,7 +388,7 @@ auditMore?.addEventListener('click', () => loadAudit(false));
 // ─── 连接与配额视图（T-21d） ────────────────────────────────────────────────
 
 async function loadConnections() {
-  if (!invoke || !unlocked) return;
+  if (!invoke) return;
   const connList = document.getElementById('conn-list');
   const quotaList = document.getElementById('quota-list');
   try {
@@ -486,8 +429,6 @@ async function loadConnections() {
 
 // ─── 设置页（T-21e/g） ───────────────────────────────────────────────────────
 
-const pwResult = document.getElementById('pw-result');
-
 document.getElementById('set-autostart')?.addEventListener('change', async (e) => {
   const box = e.target;
   try {
@@ -497,21 +438,6 @@ document.getElementById('set-autostart')?.addEventListener('change', async (e) =
     box.checked = !box.checked;
     pwResult.textContent = '';
     pwResult.appendChild(document.createTextNode(`自启设置失败: ${typeof err === 'string' ? err : err?.message}`));
-  }
-});
-
-document.getElementById('pw-change')?.addEventListener('click', async () => {
-  const oldPw = document.getElementById('pw-old').value;
-  const newPw = document.getElementById('pw-new').value;
-  pwResult.textContent = '';
-  if (newPw.length < 8) { pwResult.appendChild(document.createTextNode('新口令至少 8 字符')); return; }
-  try {
-    await invoke('change_password', { oldPassword: oldPw, newPassword: newPw });
-    pwResult.appendChild(document.createTextNode('口令已更换——所有会话已失效，请用新口令重新解锁。'));
-    // 本窗口会话已失效：回锁。
-    showLockForm('口令已更换，请用新口令解锁');
-  } catch (err) {
-    pwResult.appendChild(document.createTextNode(`更换失败: ${typeof err === 'string' ? err : err?.message}`));
   }
 });
 
@@ -535,7 +461,6 @@ async function loadSurfaces() {
 }
 
 async function loadSettings() {
-  if (!unlocked) return;
   try {
     const res = await invoke('autostart_status');
     document.getElementById('set-autostart').checked = res.enabled === true;
@@ -544,7 +469,6 @@ async function loadSettings() {
 }
 
 async function renderAgents() {
-  if (!unlocked) { renderUnlockHint('settings'); return; }
   const list = document.getElementById('agents-list');
   list.textContent = '';
   let hosts;
@@ -655,7 +579,7 @@ function renderHosts(profiles) {
 }
 
 async function loadHosts() {
-  if (!invoke || !unlocked) return;
+  if (!invoke) return;
   const list = document.getElementById('hosts-list');
   try {
     const res = await invoke('profiles_list');

@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { startHost, type RunningHost } from '../../../src/host/main.js';
 import { RpcClient, type RpcClientOpts } from '../../../src/rpc/client.js';
-import { generateAgentToken, hashPassword } from '../../../src/rpc/auth.js';
+import { generateAgentToken } from '../../../src/rpc/auth.js';
 import { RPC_ERROR } from '../../../src/rpc/protocol.js';
 import { createAppConfig } from '../../integration/fixtures.js';
 
@@ -35,7 +35,6 @@ async function start(profileEndpoint?: { host: string; port: number }): Promise<
   host = await startHost({
     config,
     agentToken: token,
-    operatorPasswordHash: hashPassword(PASSWORD),
     configFilePath: join(dir ?? tmpdir(), "config.toml"),
         auditPath: join(dir, 'audit.log'),
     approvalQueueDir: join(dir, 'approvals'),

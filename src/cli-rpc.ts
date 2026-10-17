@@ -47,42 +47,6 @@ function resolveHostAddr(args: string[]): { host: string; port: number } {
 }
 
 /** TTY 隐藏回显读口令；非 TTY（管道）读一行明文。Ctrl+C 恢复终端态。 */
-async function askPassword(prompt: string): Promise<string> {
-  if (process.stdin.isTTY !== true) {
-    const chunks: string[] = [];
-    for await (const chunk of process.stdin) chunks.push(String(chunk));
-    return chunks.join('').trim();
-  }
-  process.stdout.write(prompt);
-  process.stdin.setRawMode(true);
-  process.stdin.resume();
-  let out = '';
-  try {
-    for await (const chunk of process.stdin) {
-      const s = String(chunk);
-      if (s === '\r' || s === '\n') {
-        process.stdout.write('\n');
-        break;
-      }
-      if (s === '\u007f' || s === '\b') {
-        out = out.slice(0, -1);
-        continue;
-      }
-      if (s === '\u0003') {
-        process.stdout.write('\n');
-        throw new OperatorError('Cancelled.');
-      }
-      out += s;
-      process.stdout.write('*');
-    }
-  } finally {
-    // Ctrl+C 抛错路径也必须恢复终端态（评审 T-17 jc4）。
-    process.stdin.setRawMode(false);
-    process.stdin.pause();
-  }
-  return out;
-}
-
 async function readStdinToken(): Promise<string> {
   const chunks: string[] = [];
   for await (const chunk of process.stdin) chunks.push(String(chunk));
@@ -90,39 +54,19 @@ async function readStdinToken(): Promise<string> {
 }
 
 /**
- * operator 客户端引导：会话令牌（env/stdin）直接用；否则交互口令→
- * auth.session.start（skipHello，start 是 pre-auth 方法）→ 以会话令牌
- * 建正式客户端（走 hello，operator 面矩阵生效）。
+ * operator 客户端引导（单令牌信任模型，主人 2026-10-17 裁决取消口令）：
+ * 直接以 agent 令牌连接——本机环回即信任，SSH 凭证隔离仍由 Host 独占保证。
  */
 async function operatorClient(args: string[]): Promise<RpcClient> {
   const { host, port } = resolveHostAddr(args);
   const pin = process.env.AGENT_SSH_HOST_PIN;
-  let token = process.env.AGENT_SSH_SESSION_TOKEN;
+  let token = process.env.AGENT_SSH_SESSION_TOKEN ?? process.env.AGENT_SSH_TOKEN ?? '';
 
   if (args.includes('--session-token-stdin')) {
     console.error(
       '[warn] --session-token-stdin：会话令牌经 stdin 传入，同机进程可窥——脚本场景专用，风险自担。',
     );
     token = await readStdinToken();
-  }
-  if (!token) {
-    const password = await askPassword('operator password: ');
-    const pre = new RpcClient({
-      host,
-      port,
-      token: '',
-      skipHello: true,
-      reconnect: false,
-      requestTimeoutMs: 10_000,
-      ...(pin !== undefined && pin !== '' ? { tls: { pin } } : {}),
-    });
-    try {
-      await pre.connect();
-      const started = (await pre.call('auth.session.start', { password })) as { sessionToken: string };
-      token = started.sessionToken;
-    } finally {
-      await pre.close().catch(() => {});
-    }
   }
 
   const client = new RpcClient({

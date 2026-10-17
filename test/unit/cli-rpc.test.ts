@@ -6,7 +6,7 @@ import { randomBytes } from 'node:crypto';
 import { runDirectCli, runApprovalsCli, DIRECT_VERBS } from '../../src/cli-rpc.js';
 import { startHost, type RunningHost } from '../../src/host/main.js';
 import { createApprovalRequest } from '../../src/guard/approval-queue.js';
-import { hashPassword } from '../../src/rpc/auth.js';
+import {  } from '../../src/rpc/auth.js';
 import { RpcClient } from '../../src/rpc/client.js';
 import { createAppConfig } from '../integration/fixtures.js';
 
@@ -55,7 +55,6 @@ async function startWithSession(
       return cfg;
     })(),
     agentToken: token,
-    operatorPasswordHash: hashPassword(OPERATOR_PASSWORD),
     configFilePath: join(dir ?? tmpdir(), "config.toml"),
         auditPath: join(dir!, 'audit.log'),
     approvalQueueDir: queueDir,

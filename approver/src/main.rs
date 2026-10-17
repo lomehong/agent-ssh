@@ -75,44 +75,14 @@ fn err_str(e: impl std::fmt::Display) -> String {
     e.to_string()
 }
 
-#[tauri::command]
-async fn ping(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.agent_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not connected"))?;
-    client.ping().await.map_err(err_str)
-}
-
-/// 口令→会话（operator 引导）：skipHello 连接 start → 会话令牌建正式连接并订阅。
-#[tauri::command]
-async fn unlock(
-    app: AppHandle,
-    state: State<'_, HostState>,
-    password: String,
-) -> Result<Value, String> {
-    let pre = RpcClient::connect_no_hello(&state.addr).await;
-    let started = pre
-        .call(
-            "auth.session.start",
-            serde_json::json!({ "password": password }),
-        )
-        .await
-        .map_err(err_str)?;
-    pre.close().await;
-    let session_token = started
-        .get("sessionToken")
-        .and_then(|v| v.as_str())
-        .ok_or_else(|| err_str("auth.session.start: missing sessionToken"))?
-        .to_string();
-
-    let operator = Arc::new(RpcClient::connect(&state.addr, &session_token).await);
-    // 订阅并把推送转发到窗口（K8-③：数据经 event 进 UI，秘密不落 JS 全局）。
-    // T-17.5d：pending/settled 同步托盘未决数+原生 toast（验收 1/2）。
+/// 推送订阅 + 通知/托盘/未决数接线（单令牌模型：连接建立即订阅，无需解锁步骤）。
+async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
     let emitter = app.clone();
-    let operator_for_push = operator.clone();
-    operator
+    let operator_for_push = client.clone();
+    client
         .set_notification_handler(Arc::new(move |frame: Value| {
             if let Some(method) = frame.get("method").and_then(|v| v.as_str()) {
-                // Tauri 事件名不允许点号（listen 会被拒）——映射为连字符形态。
+                // Tauri 事件名不允许点号——映射为连字符形态。
                 let is_pending = method == "approval.pending";
                 let event_name = match method {
                     "approval.pending" => "approval-pending",
@@ -120,7 +90,6 @@ async fn unlock(
                     _ => return,
                 };
                 let payload = frame.get("params").cloned().unwrap_or(Value::Null);
-                // 未决数与托盘/通知：pending +1 + toast；settled −1。
                 let app2 = emitter.clone();
                 tauri::async_runtime::spawn(async move {
                     {
@@ -140,16 +109,17 @@ async fn unlock(
             }
         }))
         .await;
-    operator.subscribe_approvals().await.map_err(err_str)?;
-    *state.operator_client.lock().await = Some(operator.clone());
-
-    Ok(json_ok(true))
+    operator_for_push.subscribe_approvals().await;
 }
 
-fn json_ok(v: bool) -> Value {
-    serde_json::json!({ "ok": v })
+#[tauri::command]
+async fn ping(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.agent_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not connected"))?;
+    client.ping().await.map_err(err_str)
 }
 
+/// 口令→会话（operator 引导）：skipHello 连接 start → 会话令牌建正式连接并订阅。
 #[tauri::command]
 async fn decide(
     app: AppHandle,
@@ -563,17 +533,19 @@ fn main() {
         });
     }
     tauri::async_runtime::spawn(async move {
-        // agent 只读连接：断线 3s 重试（常驻语义）。Host 未就绪时 connect
-        // 失败由循环自然重试——日志噪音可接受（诊断面即托盘状态）。
+        // 单令牌模型：一条连接承担 agent+operator 两面（本机令牌=全权）。
+        // 断线 3s 重试（常驻语义）；连接建立即挂推送订阅。
         loop {
-            let c = RpcClient::connect(&addr, &rpc_token).await;
-            *handle.state::<HostState>().agent_client.lock().await = Some(Arc::new(c));
+            let c = Arc::new(RpcClient::connect(&addr, &rpc_token).await);
+            attach_push(handle.clone(), c.clone()).await;
+            *handle.state::<HostState>().agent_client.lock().await = Some(c.clone());
+            *handle.state::<HostState>().operator_client.lock().await = Some(c);
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove])
+    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

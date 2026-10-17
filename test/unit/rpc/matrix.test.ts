@@ -20,27 +20,24 @@ const SPEC_ROWS: Record<string, { agent: boolean; operator: boolean; im: boolean
   'tool.call': { agent: true, operator: true, im: false },
   'resource.list': { agent: true, operator: true, im: false },
   'resource.read': { agent: true, operator: true, im: false },
-  'auth.session.start': { agent: false, operator: false, im: false },
-  'auth.session.renew': { agent: false, operator: true, im: false },
-  'approval.subscribe': { agent: false, operator: true, im: false },
-  'approval.list': { agent: false, operator: true, im: false },
-  'approval.history': { agent: false, operator: true, im: false },
-  'audit.query': { agent: false, operator: true, im: false },
-  'audit.stats': { agent: false, operator: true, im: false },
-  'host.connections': { agent: false, operator: true, im: false },
-  'quota.snapshot': { agent: false, operator: true, im: false },
-  'approval.decide': { agent: false, operator: true, im: true },
-  'cli.run': { agent: false, operator: true, im: false },
-  'cli.info': { agent: false, operator: true, im: false },
-  'host.admin.rotateToken': { agent: false, operator: true, im: false },
-  'host.admin.changePassword': { agent: false, operator: true, im: false },
-  'host.status': { agent: false, operator: true, im: false },
-  'agents.scan': { agent: false, operator: true, im: false },
-  'agents.configure': { agent: false, operator: true, im: false },
-  'agents.remove': { agent: false, operator: true, im: false },
-  'host.profiles.list': { agent: false, operator: true, im: false },
-  'host.profiles.upsert': { agent: false, operator: true, im: false },
-  'host.profiles.remove': { agent: false, operator: true, im: false },
+  'approval.subscribe': { agent: true, operator: true, im: false },
+  'approval.list': { agent: true, operator: true, im: false },
+  'approval.history': { agent: true, operator: true, im: false },
+  'audit.query': { agent: true, operator: true, im: false },
+  'audit.stats': { agent: true, operator: true, im: false },
+  'host.connections': { agent: true, operator: true, im: false },
+  'quota.snapshot': { agent: true, operator: true, im: false },
+  'approval.decide': { agent: true, operator: true, im: true },
+  'cli.run': { agent: true, operator: true, im: false },
+  'cli.info': { agent: true, operator: true, im: false },
+  'host.admin.rotateToken': { agent: true, operator: true, im: false },
+  'host.status': { agent: true, operator: true, im: false },
+  'agents.scan': { agent: true, operator: true, im: false },
+  'agents.configure': { agent: true, operator: true, im: false },
+  'agents.remove': { agent: true, operator: true, im: false },
+  'host.profiles.list': { agent: true, operator: true, im: false },
+  'host.profiles.upsert': { agent: true, operator: true, im: false },
+  'host.profiles.remove': { agent: true, operator: true, im: false },
 };
 
 interface Harness {
@@ -117,7 +114,8 @@ describe('方法×凭据矩阵（红线执行点，方案 §3.3）', () => {
   it('isKnownMethod / methodAllowedFor 直查', () => {
     expect(isKnownMethod('tool.call')).toBe(true);
     expect(isKnownMethod('nope')).toBe(false);
-    expect(methodAllowedFor('approval.list', 'agent')).toBe(false);
+    // 单令牌信任模型（主人 2026-10-17 裁决）：本机令牌=全权，approval.list 对 agent 开放。
+    expect(methodAllowedFor('approval.list', 'agent')).toBe(true);
     expect(methodAllowedFor('tool.call', 'agent')).toBe(true);
     expect(methodAllowedFor('nope', 'agent')).toBeUndefined();
   });
@@ -195,26 +193,21 @@ describe('7 凭据态 × 全方法枚举（K9-①：5 态扩 7 态）', () => {
 });
 
 describe('红线专项', () => {
-  it('K8-⑥ JIT 暗门断言：反射枚举全方法 × agent 令牌，无 grant/approve 语义可达', () => {
+  it('单令牌信任模型（主人 2026-10-17 裁决）：agent 令牌对本机全方法开放', () => {
+    // 裁决背景：主人对 Agent 的约束=SSH 凭证隔离（凭证永不进 Agent 信任域）；
+    // operator 口令约束的是主人自己的日常使用——知情接受「Agent 可自批」残余风险后
+    // 取消双类凭据。本断言忠实钉住新模型，防将来半途改回造成行为漂移。
     const h = makeHarness();
     for (const method of METHODS) {
       const auth = authorize(method, h.agentToken, h.tables);
-      if (auth.ok) {
-        expect(method).not.toMatch(/approv|grant|authoriz|escrow/i);
-      }
-    }
-    // approval.* 对 agent 全部 FORBIDDEN
-    for (const method of METHODS) {
-      if (method.startsWith('approval.')) {
-        const auth = authorize(method, h.agentToken, h.tables);
-        expect(auth.ok).toBe(false);
-      }
+      expect(auth.ok, `${method} should be allowed for the single local token`).toBe(true);
     }
   });
 
   it('FORBIDDEN 携带审计标记（-32002 + audit:true）', () => {
     const h = makeHarness();
-    const auth = authorize('approval.list', h.agentToken, h.tables);
+    // im 类令牌除 decide 外一律 FORBIDDEN。
+    const auth = authorize('audit.query', h.imToken, h.tables);
     expect(auth).toEqual({ ok: false, code: -32002, message: expect.any(String), audit: true });
   });
 

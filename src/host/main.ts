@@ -16,7 +16,6 @@
  * 未实现应答（-32601）。
  */
 import { randomBytes } from 'node:crypto';
-import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -49,8 +48,6 @@ export interface StartHostOpts {
   config: AppConfig;
   /** agent 静态令牌（host init 生成）。 */
   agentToken: string;
-  /** operator 口令哈希（host init 落配置）；缺省 = operator 会话面禁用。 */
-  operatorPasswordHash?: string;
   auditPath: string;
   /** Host 配置文件路径（T-21e 口令轮换写回目标）。 */
   configFilePath: string;
@@ -232,7 +229,7 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
 
   // operator 会话表：口令哈希缺省 = 不可知随机口令（等价禁用 operator 面）。
   const sessions = new OperatorSessionStore({
-    storedHash: opts.operatorPasswordHash ?? hashPassword(randomBytes(32).toString('base64url')),
+    storedHash: hashPassword(randomBytes(32).toString('base64url')),
   });
   const agentDigests = new Set<string>([tokenDigest(opts.agentToken)]);
   const tables: RpcTables & { agentTokens: Set<string> } = {
@@ -335,56 +332,6 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
         face: typeof p.face === 'string' ? p.face : '',
         ...(typeof p.challenge === 'string' ? { challenge: p.challenge } : {}),
       });
-    },
-    'auth.session.start': async (params) => {
-      const p = params as { password?: unknown };
-      if (typeof p?.password !== 'string') throw new Error('auth.session.start requires params.password');
-      // 结构化错误直传客户端（BadPasswordError/AuthFailureLimitExceededError
-      // 经 server 通用 catch 以 -32603+原文可辨因——评审 T-15 jc3）。
-      const started = sessions.start(p.password, 'rpc');
-      return { sessionToken: started.token };
-    },
-    'auth.session.renew': async (_params, ctx: RpcHandlerContext) => {
-      // renew 的凭据即信封 auth 成员（会话令牌）——server 在 ctx 携带原文。
-      const token = ctx.presentedToken;
-      if (token === undefined) throw new Error('auth.session.renew requires the session credential');
-      return { renewed: sessions.renew(token) };
-    },
-    'host.admin.changePassword': async (params) => {
-      // T-21e：口令轮换（旧口令验证 → 全会话失效 → scrypt 新哈希原子写回 config）。
-      // 高危动作：审计专项 ruleId=host-password-rotated（评审建议采纳）。
-      const p = (params ?? {}) as { oldPassword?: unknown; newPassword?: unknown };
-      if (typeof p.oldPassword !== 'string' || typeof p.newPassword !== 'string') {
-        throw new Error('host.admin.changePassword requires {oldPassword, newPassword}');
-      }
-      if (p.newPassword.length < 8) throw new Error('new password must be >= 8 chars');
-      const rotated = sessions.rotatePassword(p.oldPassword, p.newPassword);
-      if (!rotated) throw new Error('old password incorrect');
-      // 原子写回：读 config 文本 → 替换哈希行 → tmp + rename（ACL 由 rename 继承目标语义，tmp 同目录建）。
-      const configText = readFileSync(configFilePath, 'utf8');
-      const newHash = hashPassword(p.newPassword);
-      if (!/^operatorPasswordHash\s*=\s*"([^"]+)"$/m.test(configText)) {
-        throw new Error('config has no operatorPasswordHash line to replace');
-      }
-      const updated = configText.replace(/^operatorPasswordHash\s*=\s*"[^"]+"$/m, `operatorPasswordHash = "${newHash}"`);
-      const tmpPath = `${configFilePath}.tmp-rotate`;
-      writeFileSync(tmpPath, updated, 'utf8');
-      renameSync(tmpPath, configFilePath);
-      await audit
-        .record({
-          mcpRequestId: 0,
-          profile: '(host-admin)',
-          user: '(operator)',
-          command: redactText('host.admin.changePassword'),
-          commandClass: 'safe',
-          binary: 'host.admin',
-          decision: 'allow',
-          ruleId: 'host-password-rotated',
-          approver: 'cli-direct',
-        })
-        .catch(() => {});
-      log('operator password rotated: all operator sessions invalidated');
-      return { ok: true, sessionsInvalidated: true };
     },
     'host.status': async () => {
       // T-21e：审批面在线态 + 版本聚合（只读）。

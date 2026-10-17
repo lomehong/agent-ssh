@@ -7,7 +7,7 @@
  * 交互与 IO 不进纯核心，测试直接钉产物形态）。
  * 五步对应：①骨架 ②agent 令牌 ③口令哈希 ④⑤证书/pin=CLI 层可选步骤。
  */
-import { generateAgentToken, hashPassword } from '../rpc/auth.js';
+import { generateAgentToken } from '../rpc/auth.js';
 
 export interface HostInitArtifacts {
   /** 写入 Host 机 config.toml 的骨架（含指引注释）。 */
@@ -19,11 +19,11 @@ export interface HostInitArtifacts {
 }
 
 export function buildHostInitArtifacts(
-  operatorPassword: string,
   opts: { agentToken?: string } = {},
 ): HostInitArtifacts {
   const agentToken = opts.agentToken ?? generateAgentToken();
-  const operatorHash = hashPassword(operatorPassword);
+  // 口令已取消（主人 2026-10-17 裁决：单令牌本机信任，凭证隔离为 Agent 主约束）。
+  const operatorHash = '';
   // 安全纪律（评审 T-15 jc2）：agent 令牌明文不进 config.toml——令牌经 init
   // 输出（stdout，一次）交运维注入 stub 的 env（D6 禁 argv）；配置里只留
   // 指引注释。落盘最小化：哈希是配置里唯一的秘密衍生材料。
@@ -41,10 +41,6 @@ approvalSurfaces = ["desktop", "queue"]
 
 # agent 令牌由 init 打印一次，经 env AGENT_SSH_TOKEN 注入 stub
 #（禁走 argv，D6；明文不入本文件——丢失时重跑 init 轮换）。
-
-# operator 口令哈希（scrypt，salt:hash）。由 init 交互输入生成；
-# 校验在 auth.session.start，明文口令不落任何盘。
-operatorPasswordHash = "${operatorHash}"
 
 # transferRoot 未设置：流式文件工具持续拒绝，直到显式指名目录（缺省即拒绝）。
 

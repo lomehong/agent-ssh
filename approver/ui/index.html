@@ -17,14 +17,6 @@
       <button id="win-close" title="隐藏到托盘">&#x2715;</button>
     </div>
   </header>
-  <div id="lock-overlay" class="hidden">
-    <section class="card" id="lock-form">
-      <h2 id="lock-title">输入 operator 口令解锁控制台</h2>
-      <div class="challenge-row"><input type="password" id="lock-password" autocomplete="off" /></div>
-      <div class="row"><button id="lock-btn" class="approve">解锁</button></div>
-      <p id="lock-msg" class="meta"></p>
-    </section>
-  </div>
   <div id="app">
     <nav id="nav" aria-label="主导航">
       <div id="nav-brand">agent-ssh</div>
@@ -117,14 +109,6 @@
             <button id="host-openlog" class="ghost">打开 Host 日志</button>
           </div>
           <p id="set-host-info" class="meta"></p>
-        </section>
-        <section class="card">
-          <h2>更换 operator 口令</h2>
-          <p class="meta">更换后所有已解锁会话即刻失效（含本窗口，需重新解锁）。审计记录 host-password-rotated。</p>
-          <div class="challenge-row"><input type="password" id="pw-old" placeholder="当前口令" autocomplete="off" /></div>
-          <div class="challenge-row"><input type="password" id="pw-new" placeholder="新口令（≥8 字符）" autocomplete="off" /></div>
-          <div class="row"><button id="pw-change" class="approve">更换口令</button></div>
-          <p id="pw-result" class="meta"></p>
         </section>
         <section class="card">
           <h2>审批面状态</h2>

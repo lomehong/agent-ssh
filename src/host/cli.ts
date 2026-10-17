@@ -30,12 +30,7 @@ export async function runHostCli(args: string[]): Promise<number> {
       console.error(`[host-init] 配置已存在（${configPath}）——拒绝覆盖。手工迁移或删除后重试。`);
       return 1;
     }
-    const password = process.env.AGENT_SSH_OPERATOR_PASSWORD;
-    if (!password || password.length < 8) {
-      console.error('[host-init] 需 env AGENT_SSH_OPERATOR_PASSWORD（≥8 字符）——交互式输入随 UI 壳（T-17.5c 余项）。');
-      return 1;
-    }
-    const artifacts = buildHostInitArtifacts(password);
+    const artifacts = buildHostInitArtifacts();
     writeFileSync(configPath, artifacts.configToml, { flag: 'wx' });
     console.error(`[host-init] 配置骨架已写入 ${configPath}`);
     console.error(`[host-init] AGENT_SSH_TOKEN=${artifacts.agentToken}`);
@@ -68,11 +63,6 @@ export async function runHostCli(args: string[]): Promise<number> {
     const host = await startHost({
       config,
       agentToken: process.env.AGENT_SSH_TOKEN ?? '',
-      // init 写入 [defaults].operatorPasswordHash（T-17.6 顺手修复：原三元
-      // 两分支皆 undefined——operator 口令哈希永远到不了 startHost，桌面端/
-      // CLI 解锁在真实 init→serve 链上从未生效；schema 同步补键，否则
-      // init 产物会被 strict 校验拒载）。
-      operatorPasswordHash: config.defaults.operatorPasswordHash,
       auditPath: `${configPath}.audit.log`,
       configFilePath: configPath,
       port: portArg,
