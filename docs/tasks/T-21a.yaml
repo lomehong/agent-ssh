@@ -1,0 +1,19 @@
+id: T-21a
+title: 控制台 v2 多视图骨架（导航/路由/窗口/样式系统/桥断言）
+level: L1
+status: 待确认
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-17 14:40:00
+claimedBy: digital-architect
+reportedAt: 2026-10-17 15:10:00
+accept:
+  - 五视图导航骨架（审批/历史/审计/连接/设置，未实施视图占位"随 T-21x 落地"）；窗口 880×620 可调
+  - 审批视图迁移：现 unlock/decide/推送渲染功能零回归
+  - 样式系统：导航栏/卡片/状态色/等宽命令渲染（深色钛金延续）
+  - 桥可用性断言进构建：tauri.conf.json withGlobalTauri 检查（防回归）
+  - cargo test + tsc 0 + 构建产物部署验证
+source: 桌面控制台 v2 设计 §2/§5（主人 2026-10-17 落定）
+events:
+  - 2026-10-17 15:10:00 | report | by=digital-architect | 自报待主人 confirm。五视图骨架部署运行：左导航（审批/历史/审计/连接/设置）+880×620 可调窗口+Host 状态常显+审批视图迁移（逻辑零回归：卡片/校验码/倒计时/推送/锁屏全保留）+新请求自动切审批视图+导航红点。桥可用性断言进构建（test/approver-config.test.ts 4 断言：withGlobalTauri/ui 三件套/红线禁词剥注释扫描/五视图骨架）4/4 绿。cargo release 构建+部署验证（7788 在线）。未实施视图显示占位说明（随 T-21b~e）。请主人看窗口确认视觉后 confirm。
+  - 2026-10-17 14:40:00 | create | by=lome | level=L1 | 主人 confirm v2 设计落定
+  - 2026-10-17 14:40:00 | create | by=lome | level=L1 | 主人 confirm v2 设计落定

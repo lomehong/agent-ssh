@@ -15,8 +15,11 @@
     "windows": [
       {
         "title": "agent-ssh 审批",
-        "width": 420,
-        "height": 560,
+        "width": 880,
+        "height": 620,
+        "minWidth": 720,
+        "minHeight": 480,
+        "resizable": true,
         "visible": true
       }
     ]

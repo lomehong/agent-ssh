@@ -1,0 +1,12 @@
+id: T-21e
+title: 设置页
+level: L1
+status: 待执行
+blockedBy: [T-21a]
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-17 14:40:00
+accept:
+  - 自启开关/口令轮换（原子写回+会话失效+host-password-rotated 审计）/面状态/Host 管理 UI 化
+source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
+events:
+  - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a

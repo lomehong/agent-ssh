@@ -1,12 +1,55 @@
-// 审批窗渲染（K8-③）：全部 DOM 经 createElement/createTextNode 构建，
+// agent-ssh 控制台（v2 骨架，T-21a）：多视图导航 + 审批视图迁移。
+//
+// K8-③ 红线延续：全部 DOM 经 createElement/createTextNode 构建，
 // 零 innerHTML/insertAdjacentHTML/eval——命令全文永不进入 HTML 解析器。
-// 数据来源：Tauri event `approval.pending`；决定经 invoke('decide', …)。
+// 视图路由：nav 按钮 ↔ section 切换（hash 不用——CSP/文件协议下无收益）。
+// 未实施视图（history/audit/connections/settings）显示占位说明，随 T-21b~e 落地。
 
 const invoke = window.__TAURI__?.core?.invoke;
 const listen = window.__TAURI__?.event?.listen;
 
+// ─── 视图路由 ────────────────────────────────────────────────────────────────
+
+const navItems = Array.from(document.querySelectorAll('.nav-item'));
+
+function showView(name) {
+  for (const section of document.querySelectorAll('.view')) {
+    section.classList.toggle('hidden', section.id !== `view-${name}`);
+  }
+  for (const btn of navItems) {
+    btn.classList.toggle('active', btn.dataset.view === name);
+  }
+}
+
+for (const btn of navItems) {
+  btn.addEventListener('click', () => showView(btn.dataset.view));
+}
+
+// ─── Host 状态（T-20：ping 探测，导航底部常显） ─────────────────────────────
+
+const hostStatusEl = document.getElementById('host-status');
+async function refreshHostStatus() {
+  let text;
+  if (!invoke) {
+    text = 'Host 状态：桥不可用';
+  } else {
+    try {
+      await invoke('ping');
+      text = 'Host 状态：在线';
+    } catch {
+      text = 'Host 状态：离线/未连接';
+    }
+  }
+  hostStatusEl.textContent = '';
+  hostStatusEl.appendChild(document.createTextNode(text));
+}
+setInterval(refreshHostStatus, 10_000);
+
+// ─── 审批视图（自 v1 迁移，逻辑零回归） ─────────────────────────────────────
+
 const queue = document.getElementById('queue');
 const cards = new Map(); // id → { card, countdownTimer }
+const approvalsDot = document.getElementById('nav-approvals-dot');
 
 function textNode(tag, className, text) {
   const el = document.createElement(tag);
@@ -105,6 +148,7 @@ function removeCard(id) {
     cards.delete(id);
   }
   if (cards.size === 0) showEmptyHint();
+  refreshApprovalsDot();
 }
 
 function showEmptyHint() {
@@ -118,6 +162,10 @@ function hideEmptyHint() {
   document.getElementById('empty-hint')?.remove();
 }
 
+function refreshApprovalsDot() {
+  approvalsDot.classList.toggle('hidden', cards.size === 0);
+}
+
 function onPending(payload) {
   hideEmptyHint();
   if (cards.has(payload.id)) return; // 多请求堆叠去重
@@ -125,6 +173,9 @@ function onPending(payload) {
   queue.appendChild(card);
   cards.set(payload.id, { card });
   startCountdown(card, payload);
+  refreshApprovalsDot();
+  // 新请求到达：即使不在审批视图也可见（导航红点 + toast 由 Rust 侧发）。
+  showView('approvals');
 }
 
 function onSettled(payload) {
@@ -165,6 +216,8 @@ function showLockForm(reason) {
 }
 
 async function main() {
+  showView('approvals');
+  refreshHostStatus();
   if (!invoke || !listen) {
     queue.appendChild(textNode('p', 'meta', 'Tauri 桥不可用（纯浏览模式，无审批功能）'));
     return;

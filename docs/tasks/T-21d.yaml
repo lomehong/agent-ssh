@@ -1,0 +1,12 @@
+id: T-21d
+title: 连接会话+配额
+level: L1
+status: 待执行
+blockedBy: [T-21a]
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-17 14:40:00
+accept:
+  - 深化视图 + quota.snapshot + PTY 强关（走 tool.call 留审计）
+source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
+events:
+  - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a

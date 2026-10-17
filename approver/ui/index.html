@@ -5,14 +5,47 @@
   <!-- K8-③：锁 CSP——零远程内容、无内联脚本/样式；渲染全部 textNode。 -->
   <meta http-equiv="Content-Security-Policy"
         content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" />
-  <title>agent-ssh 审批</title>
+  <title>agent-ssh 控制台</title>
   <link rel="stylesheet" href="./ui.css" />
 </head>
 <body>
-  <h1 id="title">agent-ssh 审批</h1>
-  <section id="queue" aria-live="polite">
-    <p id="empty-hint">等待审批请求…（未连接或队列为空）</p>
-  </section>
+  <div id="app">
+    <nav id="nav" aria-label="主导航">
+      <div id="nav-brand">agent-ssh</div>
+      <button class="nav-item" data-view="approvals">审批<span id="nav-approvals-dot" class="dot hidden"></span></button>
+      <button class="nav-item" data-view="history">历史</button>
+      <button class="nav-item" data-view="audit">审计</button>
+      <button class="nav-item" data-view="connections">连接</button>
+      <button class="nav-item" data-view="settings">设置</button>
+      <div id="nav-footer">
+        <p id="host-status" class="meta">Host 状态：检测中…</p>
+      </div>
+    </nav>
+    <main id="content">
+      <section id="view-approvals" class="view">
+        <h1>审批</h1>
+        <div id="queue" aria-live="polite">
+          <p id="empty-hint">等待审批请求…（未连接或队列为空）</p>
+        </div>
+      </section>
+      <section id="view-history" class="view hidden">
+        <h1>历史审批</h1>
+        <p class="meta">随 T-21b 落地：已决定/过期审批流水（时间、决定人、命令、结果，可过滤）。</p>
+      </section>
+      <section id="view-audit" class="view hidden">
+        <h1>审计日志</h1>
+        <p class="meta">随 T-21c 落地：审计 JSONL 查看器（过滤/搜索/尾随/聚合统计）。</p>
+      </section>
+      <section id="view-connections" class="view hidden">
+        <h1>连接与会话</h1>
+        <p class="meta">随 T-21d 落地：每 profile 连接状态、活动会话、配额用量、PTY 强关。</p>
+      </section>
+      <section id="view-settings" class="view hidden">
+        <h1>设置</h1>
+        <p class="meta">随 T-21e 落地：开机自启、口令轮换、审批面状态、宿主接入、Host 管理。</p>
+      </section>
+    </main>
+  </div>
   <!-- 纯静态脚本：渲染只用 createTextNode，无 innerHTML/eval（K8-③）。 -->
   <script type="module" src="./ui.js"></script>
 </body>
