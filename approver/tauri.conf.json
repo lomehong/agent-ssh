@@ -8,13 +8,12 @@
   },
   "app": {
     "withGlobalTauri": true,
-    "withGlobalTauri": true,
     "security": {
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     },
     "windows": [
       {
-        "title": "agent-ssh 审批",
+        "title": "agent-ssh 控制台",
         "width": 880,
         "height": 620,
         "minWidth": 720,
@@ -27,7 +26,9 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis"],
+    "targets": [
+      "nsis"
+    ],
     "icon": []
   }
 }

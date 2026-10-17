@@ -1,7 +1,9 @@
 // 独立审批卡窗（T-23，主人 2026-10-17 定稿）：窗口内容=一张审批卡本身，
 // 组织形式学 coucou 审批卡（主人指定参考）：
-//   who 行（色点+粗体主体+状态短语）→ 命令块（视觉中心）→ 破坏性警示+校验码
+//   who 行（色点+粗体主体+状态短语）→ 命令块（视觉中心）
 //   → 操作行（拒绝=次要 / 批准=主要，N/Y 键盘快捷键）→ 底边 2px 倒计时条。
+// 无校验码（主人裁决：弹窗就在操作者自己屏幕上，码=「验证我是我」伪需求；
+// Host 侧验码仅对 im 面生效——码在手机上，那才是它的价值）。
 // 交互纪律同 coucou：600ms 防误击（弹窗落在光标下，穿透点击不得落在批准上）、
 // 按钮只建一次（mousedown/mouseup 之间重建会吞点击）、× =暂不处理（请求留队列）。
 // 每条审批请求一个窗口（URL query 携请求 id），决定/过期后自动关窗。
@@ -83,7 +85,7 @@ function startCountdown(expiresAtMs) {
 function renderCard(entry) {
   cardRoot.textContent = '';
   const cls = entry.commandClass ?? '';
-  const needsChallenge = cls === 'destructive' || cls === 'privileged';
+  const isDanger = cls === 'destructive' || cls === 'privileged';
 
   // who 行：色点（按类别取三态色）+ 粗体主体 + 状态短语。
   const who = document.createElement('p');
@@ -91,7 +93,7 @@ function renderCard(entry) {
   const dot = textNode('i', `who-dot${cls ? ` ${cls}` : ''}`, '');
   who.appendChild(dot);
   who.appendChild(textNode('span', 'n', entry.profile ?? ''));
-  who.appendChild(document.createTextNode(needsChallenge ? ' 请求执行高危命令，需要你的批准' : ' 请求执行命令，需要你的批准'));
+  who.appendChild(document.createTextNode(isDanger ? ' 请求执行高危命令，需要你的批准' : ' 请求执行命令，需要你的批准'));
   cardRoot.appendChild(who);
 
   // 单行弱化元信息：类别 + 过期时间（信息不丢，但不与命令块争夺视觉）。
@@ -102,22 +104,6 @@ function renderCard(entry) {
   cmd.className = 'command';
   cmd.appendChild(document.createTextNode(entry.command ?? ''));
   cardRoot.appendChild(cmd);
-
-  let challengeInput;
-  if (needsChallenge) {
-    cardRoot.appendChild(textNode('p', 'detail', '破坏性/提权命令：输入推送中的 4 位校验码（单次有效）'));
-    const row = document.createElement('div');
-    row.className = 'challenge-row';
-    const input = document.createElement('input');
-    input.className = 'challenge-input';
-    input.inputMode = 'numeric';
-    input.maxLength = 4;
-    input.autocomplete = 'off';
-    input.placeholder = '····';
-    row.appendChild(input);
-    cardRoot.appendChild(row);
-    challengeInput = input;
-  }
 
   // 操作行：拒绝（次要）+ 批准（主要），kbd 提示 N/Y；按钮只建一次。
   const row = document.createElement('div');
@@ -143,7 +129,6 @@ function renderCard(entry) {
       id: entry.id ?? requestId,
       decision: approved ? 'approved' : 'rejected',
       face: 'desktop',
-      challenge: challengeInput?.value || undefined,
     })
       .then((res) => {
         const ok = res?.decided !== false;
@@ -162,14 +147,11 @@ function renderCard(entry) {
   approve.addEventListener('click', guarded(() => decide(true)));
   reject.addEventListener('click', guarded(() => decide(false)));
 
-  // 键盘：N=拒绝，Y=批准（校验码未填则先聚焦输入框），Esc=暂不处理。
+  // 键盘：N=拒绝，Y=批准，Esc=暂不处理。
   window.addEventListener('keydown', (e) => {
-    if (e.target === challengeInput && e.key !== 'Escape') return;
     if (e.key === 'n' || e.key === 'N') reject.click();
-    else if (e.key === 'y' || e.key === 'Y') {
-      if (needsChallenge && challengeInput && !challengeInput.value) challengeInput.focus();
-      else approve.click();
-    } else if (e.key === 'Escape') closeSoon(0);
+    else if (e.key === 'y' || e.key === 'Y') approve.click();
+    else if (e.key === 'Escape') closeSoon(0);
   });
 
   startCountdown(Date.parse(entry.expiresAt ?? ''));

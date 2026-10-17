@@ -120,12 +120,13 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     challenge?: string;
   }): Promise<{ decided: boolean; message: string }> => {
     const { id, decision } = input;
-    // 校验码只拦批准（防误批/自批）；拒绝是安全方向操作必须永远可达——
-    // 否则卡上没码的人连「拒绝」都点不动（真机实测发现，2026-10-17）。
-    if (decision === 'approved' && challenges.hasPendingChallenge(id)) {
-      const face = input.face ?? '';
+    // 校验码只属于 IM 面（码在手机上，agent 够不着——那是它唯一的价值）。
+    // 桌面/CLI 免码（主人 2026-10-17 裁决：弹窗就在操作者自己屏幕上，
+    // 码=「验证我是我」伪需求；且 D15 下码对本地 agent 本就不保密——
+    // approval.pending 推送载荷明文带码）。拒绝永远免验（安全方向操作）。
+    if (decision === 'approved' && input.face === 'im' && challenges.hasPendingChallenge(id)) {
       const code = input.challenge ?? '';
-      if (face !== 'cli') {
+      {
         const verified = challenges.verify(id, code);
         if (!verified.ok) {
           // reason 细类进审计不入客户端消息（可探测码状态，评审 jc7）。

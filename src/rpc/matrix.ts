@@ -26,9 +26,9 @@ export const METHOD_MATRIX: Record<string, MethodRow> = {
   'resource.read': { agent: true, operator: true, im: false, none: false },
   'approval.subscribe': { agent: true, operator: true, im: false, none: false },
   'approval.list': { agent: true, operator: true, im: false, none: false },
-  // T-23 弹窗补拉（未决清单，破坏性/特权附存活校验码）。D15 单令牌下码对
-  // 本地 agent 本就不保密（approval.pending 推送载荷明文带码，订阅即得）——
-  // 码的定位是「人面摩擦」（必须手输），唯一 agent 不可及的通道是 IM 卡片；
+  // T-23 弹窗补拉（未决清单，破坏性/特权附存活校验码）。校验码只属于 IM 面
+  // （码在手机上，agent 够不着）；桌面/CLI 决定免码（主人 2026-10-17 裁决），
+  // D15 下码对本地 agent 本就不保密（approval.pending 推送载荷明文带码）。
   // 行权与 approval.list 同类。主控台 list_pending 命令即调此方法。
   'list_pending': { agent: true, operator: true, im: false, none: false },
   'approval.history': { agent: true, operator: true, im: false, none: false },
