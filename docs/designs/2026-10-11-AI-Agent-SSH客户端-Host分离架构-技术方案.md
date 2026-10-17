@@ -307,6 +307,7 @@ stub 先完成 MCP `initialize`（零工具），后台退避重试 `hello`+mani
 | T-18a | 入口切换+传输废止 | 默认入口切 stub；**bin 改名 ssh-mcp→agent-ssh（D14，随破坏性变更一并做）**；stdio 直连路径删除；删测数登记；forward-open 结果文本标注"Host 机"；http 旗标清理与 --dumpToolHashes 存废处置 | T-15/16/17 |
 | T-18b | 测试迁移+红线改写（**K4 解绑：仅挂 T-18a**） | e2e/边界 integration 双进程化（隔离粒度=**per-file 复用 Host + per-test mkdtemp**，K9-④）；红线四项全绿（④含**重放+过期+单次消费三断言**与并发双决定用例；审批面自身验收下放 T-17.5b/17.6）；基线冻结对照；时钟回拨不延长窗口用例；import type 豁免与传递依赖口径定义（T-16a 可判前提，K9-⑨） | T-18a |
 | T-19 | 收口+主人迁移 | localhost E2E + 真实 Linux 复跑（**前提清单：目标机/账号**，K9-⑧）；吞吐基线；README/SECURITY/DEVICE-ONBOARDING/init runbook（含零审批面配置的静默行为明示、宿主 tools/list_changed 支持差异说明）；**主人宿主 env 切换+真实验收** | T-18b |
+| T-20 / T-21a-g | Host 桌面化（控制台托管，已实施）与桌面控制台 v2（五视图+宿主接入） | **规格源=docs/designs/2026-10-17-桌面控制台-v2-设计.md**（本表不复制票面，避免双源）；T-20 已实施（a4c971a） | — |
 
 ---
 
