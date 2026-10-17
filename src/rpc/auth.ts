@@ -92,7 +92,7 @@ export interface OperatorSessionStoreOpts {
 export class OperatorSessionStore {
   private readonly sessions = new Map<string, { expiresAt: number }>();
   private readonly limiter: AuthFailureLimiter | null;
-  private readonly storedHash: string;
+  private storedHash: string;
   private readonly clock: () => number;
   private readonly ttlMs: number;
 
@@ -140,5 +140,16 @@ export class OperatorSessionStore {
   /** 吊销（K8-⑦：会话须有吊销手段；轮换/登出由调用方语义决定）。 */
   revoke(token: string): void {
     this.sessions.delete(tokenDigest(token));
+  }
+
+  /**
+   * 口令轮换（T-21e）：旧口令验证 → 更新哈希 → **全部在途会话即刻失效**
+   * （安全默认：口令泄露窗口随轮换闭合）。返回 false=旧口令错（不动哈希）。
+   */
+  rotatePassword(oldPassword: string, newPassword: string): boolean {
+    if (!verifyPassword(oldPassword, this.storedHash)) return false;
+    this.storedHash = hashPassword(newPassword);
+    this.sessions.clear();
+    return true;
   }
 }

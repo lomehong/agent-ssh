@@ -33,6 +33,11 @@ const SPEC_ROWS: Record<string, { agent: boolean; operator: boolean; im: boolean
   'cli.run': { agent: false, operator: true, im: false },
   'cli.info': { agent: false, operator: true, im: false },
   'host.admin.rotateToken': { agent: false, operator: true, im: false },
+  'host.admin.changePassword': { agent: false, operator: true, im: false },
+  'host.status': { agent: false, operator: true, im: false },
+  'agents.scan': { agent: false, operator: true, im: false },
+  'agents.configure': { agent: false, operator: true, im: false },
+  'agents.remove': { agent: false, operator: true, im: false },
 };
 
 interface Harness {

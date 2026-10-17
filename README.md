@@ -6,6 +6,11 @@
 > 首次部署走 [HOST-RUNBOOK](docs/HOST-RUNBOOK.md)（host init 五步→serve→宿主接 env）；
 > 从 v1（ssh-mcp）升级见同文档「升级顺序」节（先 Host 后 stub，切换窗口会话全灭预告）。
 > 健康检查：宿主侧 `host.ping`；stub 启动需要 env `AGENT_SSH_HOST_ADDR` + `AGENT_SSH_TOKEN`。
+>
+> **🖥 桌面控制台（T-21）**：Windows 桌面应用（托盘常驻）托管 Host 全生命周期——启动即拉起
+> Host、崩溃自愈、随退而停；五视图=审批（队列流+校验码）/历史审批/审计日志/连接与配额/设置
+> （开机自启、口令轮换、审批面状态、**宿主接入**：一键识别本机 Agent 宿主并写入 MCP 条目，
+> 结构化改写+自动备份+回滚）。审批三面=桌面端/飞书 bot/CLI 队列，共用同一队列状态机。
 
 [![NPM Version](https://img.shields.io/npm/v/ssh-mcp)](https://www.npmjs.com/package/ssh-mcp)
 [![Downloads](https://img.shields.io/npm/dm/ssh-mcp)](https://www.npmjs.com/package/ssh-mcp)

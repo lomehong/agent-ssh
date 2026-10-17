@@ -74,6 +74,7 @@ export async function runHostCli(args: string[]): Promise<number> {
       // init 产物会被 strict 校验拒载）。
       operatorPasswordHash: config.defaults.operatorPasswordHash,
       auditPath: `${configPath}.audit.log`,
+      configFilePath: configPath,
       port: portArg,
       ...(process.env.AGENT_SSH_QUEUE_DIR ? { approvalQueueDir: process.env.AGENT_SSH_QUEUE_DIR } : {}),
     });

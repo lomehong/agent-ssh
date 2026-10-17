@@ -16,6 +16,7 @@
  * 未实现应答（-32601）。
  */
 import { randomBytes } from 'node:crypto';
+import { readFileSync, writeFileSync, renameSync } from 'node:fs';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -36,6 +37,7 @@ import { classifyCommand, findForbiddenMatch } from '../policy/classifier.js';
 import { redactText } from '../guard/redactor.js';
 import { ConnectionRegistry } from '../ssh/connection-registry.js';
 import { initKeychain } from '../config/credential-resolver.js';
+import { scanHosts, configureHost, removeHost, loadDeployment } from '../agents/index.js';
 import type { HostKeyMode } from '../ssh/host-key.js';
 import type { AppConfig } from '../types.js';
 import { ImBot } from '../im/bot.js';
@@ -49,6 +51,8 @@ export interface StartHostOpts {
   /** operator 口令哈希（host init 落配置）；缺省 = operator 会话面禁用。 */
   operatorPasswordHash?: string;
   auditPath: string;
+  /** Host 配置文件路径（T-21e 口令轮换写回目标）。 */
+  configFilePath: string;
   host?: string;
   port?: number;
   hostKeyMode?: HostKeyMode;
@@ -91,6 +95,7 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
   await initKeychain();
   const registry = new ConnectionRegistry(opts.config, opts.hostKeyMode ?? 'tofu');
   const policy = new PolicyEngine();
+  const configFilePath = opts.configFilePath;
   const audit = new AuditStore(opts.auditPath);
 
   const mcpServer = new McpServer(
@@ -343,6 +348,70 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       const token = ctx.presentedToken;
       if (token === undefined) throw new Error('auth.session.renew requires the session credential');
       return { renewed: sessions.renew(token) };
+    },
+    'host.admin.changePassword': async (params) => {
+      // T-21e：口令轮换（旧口令验证 → 全会话失效 → scrypt 新哈希原子写回 config）。
+      // 高危动作：审计专项 ruleId=host-password-rotated（评审建议采纳）。
+      const p = (params ?? {}) as { oldPassword?: unknown; newPassword?: unknown };
+      if (typeof p.oldPassword !== 'string' || typeof p.newPassword !== 'string') {
+        throw new Error('host.admin.changePassword requires {oldPassword, newPassword}');
+      }
+      if (p.newPassword.length < 8) throw new Error('new password must be >= 8 chars');
+      const rotated = sessions.rotatePassword(p.oldPassword, p.newPassword);
+      if (!rotated) throw new Error('old password incorrect');
+      // 原子写回：读 config 文本 → 替换哈希行 → tmp + rename（ACL 由 rename 继承目标语义，tmp 同目录建）。
+      const configText = readFileSync(configFilePath, 'utf8');
+      const newHash = hashPassword(p.newPassword);
+      if (!/^operatorPasswordHash\s*=\s*"([^"]+)"$/m.test(configText)) {
+        throw new Error('config has no operatorPasswordHash line to replace');
+      }
+      const updated = configText.replace(/^operatorPasswordHash\s*=\s*"[^"]+"$/m, `operatorPasswordHash = "${newHash}"`);
+      const tmpPath = `${configFilePath}.tmp-rotate`;
+      writeFileSync(tmpPath, updated, 'utf8');
+      renameSync(tmpPath, configFilePath);
+      await audit
+        .record({
+          mcpRequestId: 0,
+          profile: '(host-admin)',
+          user: '(operator)',
+          command: redactText('host.admin.changePassword'),
+          commandClass: 'safe',
+          binary: 'host.admin',
+          decision: 'allow',
+          ruleId: 'host-password-rotated',
+          approver: 'cli-direct',
+        })
+        .catch(() => {});
+      log('operator password rotated: all operator sessions invalidated');
+      return { ok: true, sessionsInvalidated: true };
+    },
+    'host.status': async () => {
+      // T-21e：审批面在线态 + 版本聚合（只读）。
+      return {
+        version: SERVER_VERSION,
+        surfaces: (opts.config.defaults.approvalSurfaces as ApprovalSurface[]).map((s) => ({
+          surface: s,
+          online: s === 'im' ? (imBot?.connected ?? false) : s === 'desktop' ? server.connectionCount > 0 : true,
+        })),
+        queueDir: queueDir ?? '(platform default)',
+        port,
+      };
+    },
+    'agents.scan': async () => {
+      // T-21g：本机宿主识别（安装指纹扫描，只读）。
+      return { hosts: scanHosts() };
+    },
+    'agents.configure': async (params) => {
+      // T-21g：一键接入（结构化改写+备份+回读校验+回滚，纪律 §2.6）。
+      const p = (params ?? {}) as { id?: unknown };
+      if (typeof p.id !== 'string') throw new Error('agents.configure requires params.id');
+      const dep = loadDeployment();
+      return configureHost(p.id as Parameters<typeof configureHost>[0], dep);
+    },
+    'agents.remove': async (params) => {
+      const p = (params ?? {}) as { id?: unknown };
+      if (typeof p.id !== 'string') throw new Error('agents.remove requires params.id');
+      return removeHost(p.id as Parameters<typeof removeHost>[0]);
     },
     'host.admin.rotateToken': async () => {
       // M9：operator 触发在线轮换。新令牌 Host 生成并加入表（双活宽限——

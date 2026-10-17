@@ -36,7 +36,8 @@ async function start(profileEndpoint?: { host: string; port: number }): Promise<
     config,
     agentToken: token,
     operatorPasswordHash: hashPassword(PASSWORD),
-    auditPath: join(dir, 'audit.log'),
+    configFilePath: join(dir ?? tmpdir(), "config.toml"),
+        auditPath: join(dir, 'audit.log'),
     approvalQueueDir: join(dir, 'approvals'),
     reaperIntervalMs: 60_000,
   });

@@ -387,3 +387,127 @@ async function loadConnections() {
     }
   } catch {}
 }
+
+
+// ─── 设置页（T-21e/g） ───────────────────────────────────────────────────────
+
+const pwResult = document.getElementById('pw-result');
+
+document.getElementById('set-autostart')?.addEventListener('change', async (e) => {
+  const box = e.target;
+  try {
+    const res = await invoke('autostart_set', { enable: box.checked });
+    box.checked = res.enabled === true;
+  } catch (err) {
+    box.checked = !box.checked;
+    pwResult.textContent = '';
+    pwResult.appendChild(document.createTextNode(`自启设置失败: ${typeof err === 'string' ? err : err?.message}`));
+  }
+});
+
+document.getElementById('pw-change')?.addEventListener('click', async () => {
+  const oldPw = document.getElementById('pw-old').value;
+  const newPw = document.getElementById('pw-new').value;
+  pwResult.textContent = '';
+  if (newPw.length < 8) { pwResult.appendChild(document.createTextNode('新口令至少 8 字符')); return; }
+  try {
+    await invoke('change_password', { oldPassword: oldPw, newPassword: newPw });
+    pwResult.appendChild(document.createTextNode('口令已更换——所有会话已失效，请用新口令重新解锁。'));
+    // 本窗口会话已失效：回锁。
+    showLockForm('口令已更换，请用新口令解锁');
+  } catch (err) {
+    pwResult.appendChild(document.createTextNode(`更换失败: ${typeof err === 'string' ? err : err?.message}`));
+  }
+});
+
+async function loadSurfaces() {
+  const el = document.getElementById('surfaces-list');
+  try {
+    const st = await invoke('host_status');
+    el.textContent = '';
+    for (const s of st?.surfaces ?? []) {
+      const row = document.createElement('p');
+      row.className = 'meta';
+      row.appendChild(document.createTextNode(`${s.surface}: ${s.online ? '在线' : '离线/未用'}`));
+      el.appendChild(row);
+    }
+    el.appendChild(textNode('p', 'meta', `版本: ${st.version ?? '?'} · 端口: ${st.port ?? '?'} · 队列: ${st.queueDir ?? ''}`));
+  } catch (err) {
+    el.textContent = '';
+    el.appendChild(textNode('p', 'meta', `加载失败（需解锁）: ${typeof err === 'string' ? err : err?.message}`));
+  }
+}
+
+async function loadSettings() {
+  try {
+    const res = await invoke('autostart_status');
+    document.getElementById('set-autostart').checked = res.enabled === true;
+  } catch {}
+  loadSurfaces();
+}
+
+async function renderAgents() {
+  const list = document.getElementById('agents-list');
+  list.textContent = '';
+  let hosts;
+  try {
+    hosts = (await invoke('agents_scan'))?.hosts ?? [];
+  } catch (err) {
+    list.appendChild(textNode('p', 'meta', `扫描失败（需解锁）: ${typeof err === 'string' ? err : err?.message}`));
+    return;
+  }
+  for (const h of hosts) {
+    const card = document.createElement('section');
+    card.className = 'card';
+    card.appendChild(textNode('p', 'meta', `${h.detected ? h.name : `${h.name}（未检测到安装）`} · ${h.configPath}`));
+    if (h.note) card.appendChild(textNode('p', 'meta', h.note));
+    const row = document.createElement('div');
+    row.className = 'row';
+    if (!h.supported) {
+      row.appendChild(textNode('span', 'meta', '不支持自动接入——按上述路径手工配置'));
+    } else if (h.configured) {
+      card.appendChild(textNode('p', 'meta', '✓ 已接入'));
+      const remove = document.createElement('button');
+      remove.className = 'reject';
+      remove.appendChild(document.createTextNode('移除条目'));
+      remove.addEventListener('click', async () => {
+        try {
+          await invoke('agents_remove', { id: h.id });
+          remove.replaceWith(textNode('span', 'meta', '已移除'));
+        } catch (err) {
+          card.appendChild(textNode('p', 'meta', `移除失败: ${typeof err === 'string' ? err : err?.message}`));
+        }
+      });
+      row.appendChild(remove);
+    } else {
+      const btn = document.createElement('button');
+      btn.className = 'approve';
+      btn.appendChild(document.createTextNode(h.detected ? '一键接入' : '仍要写入'));
+      btn.addEventListener('click', async () => {
+        try {
+          const res = await invoke('agents_configure', { id: h.id });
+          btn.replaceWith(textNode('span', 'meta', `✓ 已写入（备份: ${res.backupPath ?? '无（新建文件）'}）——重启该宿主后生效`));
+        } catch (err) {
+          card.appendChild(textNode('p', 'meta', `写入失败: ${typeof err === 'string' ? err : err?.message}`));
+        }
+      });
+      row.appendChild(btn);
+    }
+    card.appendChild(row);
+    list.appendChild(card);
+  }
+}
+
+document.getElementById('host-restart')?.addEventListener('click', async () => {
+  await invoke('restart_host');
+  setTimeout(refreshHostStatus, 4000);
+});
+document.getElementById('host-openlog')?.addEventListener('click', () => invoke('open_host_log'));
+
+// 设置视图首切：拉取自启/面状态/宿主清单。
+const origShow = showView;
+showView = function wrapped(name) {
+  origShow(name);
+  if (name === 'settings') loadSettings();
+  if (name === 'settings') renderAgents();
+};

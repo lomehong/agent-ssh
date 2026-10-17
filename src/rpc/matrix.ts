@@ -37,6 +37,11 @@ export const METHOD_MATRIX: Record<string, MethodRow> = {
   'cli.run': { agent: false, operator: true, im: false, none: false },
   'cli.info': { agent: false, operator: true, im: false, none: false },
   'host.admin.rotateToken': { agent: false, operator: true, im: false, none: false },
+  'host.admin.changePassword': { agent: false, operator: true, im: false, none: false },
+  'host.status': { agent: false, operator: true, im: false, none: false },
+  'agents.scan': { agent: false, operator: true, im: false, none: false },
+  'agents.configure': { agent: false, operator: true, im: false, none: false },
+  'agents.remove': { agent: false, operator: true, im: false, none: false },
 };
 
 export function isKnownMethod(method: string): boolean {

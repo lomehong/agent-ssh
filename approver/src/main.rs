@@ -250,6 +250,68 @@ async fn quota_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
     client.call("quota.snapshot", Value::Null).await.map_err(err_str)
 }
 
+/// 开机自启状态（T-21e 设置页）。
+#[tauri::command]
+async fn autostart_status(app: AppHandle) -> Result<Value, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let enabled = app.autolaunch().is_enabled().map_err(err_str)?;
+    Ok(serde_json::json!({ "enabled": enabled }))
+}
+
+/// 开关开机自启（T-21e 设置页 toggle）。
+#[tauri::command]
+async fn autostart_set(app: AppHandle, enable: bool) -> Result<Value, String> {
+    use tauri_plugin_autostart::ManagerExt;
+    let launcher = app.autolaunch();
+    if enable {
+        launcher.enable().map_err(err_str)?;
+    } else {
+        launcher.disable().map_err(err_str)?;
+    }
+    let enabled = launcher.is_enabled().map_err(err_str)?;
+    Ok(serde_json::json!({ "enabled": enabled }))
+}
+
+/// Host 重启（设置页按钮）：杀托管子进程，supervisor 退避链自动拉新。
+#[tauri::command]
+async fn restart_host(app: AppHandle) -> Result<Value, String> {
+    let pid = *app.state::<HostProc>().0.lock().await;
+    if let Some(pid) = pid {
+        let _ = std::process::Command::new("taskkill")
+            .args(["/PID", &pid.to_string(), "/T", "/F"])
+            .creation_flags(0x0800_0000)
+            .output();
+        return Ok(serde_json::json!({ "restarting": true, "pid": pid }));
+    }
+    Ok(serde_json::json!({ "restarting": false, "reason": "not managed by this app" }))
+}
+
+/// 打开 Host 日志（设置页按钮）。
+#[tauri::command]
+async fn open_host_log() -> Result<Value, String> {
+    std::process::Command::new("notepad.exe")
+        .arg(host_log_path())
+        .creation_flags(0x0800_0000)
+        .spawn()
+        .map_err(err_str)?;
+    Ok(serde_json::json!({ "ok": true }))
+}
+
+/// 更换 operator 口令（T-21e）：转发 Host host.admin.changePassword。
+#[tauri::command]
+async fn change_password(
+    state: State<'_, HostState>,
+    old_password: String,
+    new_password: String,
+) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client
+        .call("host.admin.changePassword", serde_json::json!({ "oldPassword": old_password, "newPassword": new_password }))
+        .await
+        .map_err(err_str)
+}
+
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
@@ -441,7 +503,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot])
+    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

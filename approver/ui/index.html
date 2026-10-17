@@ -72,7 +72,33 @@
       </section>
       <section id="view-settings" class="view hidden">
         <h1>设置</h1>
-        <p class="meta">随 T-21e 落地：开机自启、口令轮换、审批面状态、宿主接入、Host 管理。</p>
+        <section class="card">
+          <h2>通用</h2>
+          <label class="toggle-row"><input type="checkbox" id="set-autostart" /> 开机自启（随登录启动控制台，Host 由控制台托管拉起）</label>
+          <div class="row">
+            <button id="host-restart" class="ghost">重启 Host</button>
+            <button id="host-openlog" class="ghost">打开 Host 日志</button>
+          </div>
+          <p id="set-host-info" class="meta"></p>
+        </section>
+        <section class="card">
+          <h2>更换 operator 口令</h2>
+          <p class="meta">更换后所有已解锁会话即刻失效（含本窗口，需重新解锁）。审计记录 host-password-rotated。</p>
+          <div class="challenge-row"><input type="password" id="pw-old" placeholder="当前口令" autocomplete="off" /></div>
+          <div class="challenge-row"><input type="password" id="pw-new" placeholder="新口令（≥8 字符）" autocomplete="off" /></div>
+          <div class="row"><button id="pw-change" class="approve">更换口令</button></div>
+          <p id="pw-result" class="meta"></p>
+        </section>
+        <section class="card">
+          <h2>审批面状态</h2>
+          <div id="surfaces-list" class="meta"></div>
+        </section>
+        <section class="card">
+          <h2>宿主接入（Agent MCP 配置）</h2>
+          <p class="meta">识别本机 Agent 宿主并一键写入 agent-ssh 的 MCP 条目（写入前自动备份，可回滚）。写入后需重启对应宿主生效。</p>
+          <div class="row"><button id="agents-scan" class="approve small">扫描本机</button></div>
+          <div id="agents-list"></div>
+        </section>
       </section>
     </main>
   </div>

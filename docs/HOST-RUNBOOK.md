@@ -84,7 +84,18 @@ allowedUsers = ["ou_xxx"]        # open_id 绑定表：卡片点击者必须在�
 
 **失效语义（K5）**：WS 断开/token 失效 → 审计 `im-unreachable` + Host 日志 `im.unreachable`；审批不丢失（队列+CLI 兜底仍在）；Host 重启后自动补发存量未决卡片。**审计落点提示**：Host 审计写在**配置文件旁**（`<config>.audit.log`），平台目录旧 `audit.log` 是单体时代遗留。
 
-## 六、故障速查
+## 六、桌面控制台（T-20/T-21）
+
+`agent-ssh 控制台`（Tauri 桌面应用）是 Host 的推荐运行形态：**启动即托管拉起 Host**（supervisor
+探活/崩溃自愈/随退而停），开机自启即 Host 在——「忘启 Host=全灭」结构性消除。五视图：审批（队列流）、
+历史审批（`approval.history`）、审计日志（`audit.query`，含轮转序列归并）、连接与配额、设置（自启开关/
+口令轮换/审批面状态/**宿主接入**）。部署描述 `%APPDATA%\ssh-mcp\desktop.json`（nodePath/hostEntry/
+configPath/port/token，0600）是控制台与 start-host.cmd 的单一事实源。宿主接入=一键向本机 Agent 宿主
+（omp/Claude Code/Cursor/opencode/Codex/Gemini）写入 agent-ssh MCP 条目（结构化改写+自动备份+回读
+校验+回滚；写入后重启对应宿主生效）。历史审批流水在桌面控制台/`approval.history`（`approvals list`
+CLI 仅看 pending）。
+
+## 七、故障速查
 
 | 症状 | 原因 | 处置 |
 |---|---|---|

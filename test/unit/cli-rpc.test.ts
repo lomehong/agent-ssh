@@ -56,7 +56,8 @@ async function startWithSession(
     })(),
     agentToken: token,
     operatorPasswordHash: hashPassword(OPERATOR_PASSWORD),
-    auditPath: join(dir!, 'audit.log'),
+    configFilePath: join(dir ?? tmpdir(), "config.toml"),
+        auditPath: join(dir!, 'audit.log'),
     approvalQueueDir: queueDir,
     reaperIntervalMs: 60_000,
   });
