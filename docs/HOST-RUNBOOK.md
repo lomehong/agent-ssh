@@ -62,12 +62,35 @@ MCP 宿主对 `notifications/tools/list_changed` 的支持不一：
 - 不支持该通知的宿主：工具列表停留在连接时刻——Host 宕机后工具仍在列表但调用必拒（fail-closed 错误，非假成功）；
 - 验证方法：断 Host → tools/list 应为空集（支持 list_changed 的宿主）或调用报 Host unreachable（不支持者）——两者都是诚实语义。
 
-## 五、故障速查
+## 五、飞书 bot 审批面（[im]，T-17.6）
+
+离开电脑时的审批通道：Host 经官方 SDK（`@larksuiteoapi/node-sdk`）**长连接纯出站**推送交互卡片（NAT 免疫、零入站暴露），点卡片按钮即决定；破坏性类需输入卡片下发的校验码。**运维前提：飞书账号开启两步验证**（IM 账号即审批身份）。
+
+**配置（Host 配置文件内，0600 纪律随 config 全局检查）**：
+
+```toml
+[defaults]
+approvalSurfaces = ["desktop", "im", "queue"]   # im 要求 queue 同在（队列是唯一等待机制）
+
+[im]
+appId = "cli_xxx"
+appSecret = "…"                  # 仅存 Host 配置，不出 Host 机
+allowedUsers = ["ou_xxx"]        # open_id 绑定表：卡片点击者必须在内
+# chatId = "oc_xxx"              # 可选：推送到群；缺省私聊 allowedUsers[0]
+# commandDetail = "truncated"    # 缺省 full=命令全文（经飞书服务器）；truncated=截断+脱敏
+```
+
+**开放平台侧四步**（一次）：① 权限管理开启 `im:message` 系（含 `以应用身份发消息`）；② 事件与回调 → 订阅方式 = **长连接**（已验证可用）；③ 事件与回调 → 添加事件 `im.message.receive_v1` 与卡片交互回调；④ 可用范围加入自己并发布版本。**获取自己的 open_id**：给 bot 发一条消息，Host 日志打印 `im.message from open_id=ou_…`，填入 allowedUsers 即完成闭环。
+
+**失效语义（K5）**：WS 断开/token 失效 → 审计 `im-unreachable` + Host 日志 `im.unreachable`；审批不丢失（队列+CLI 兜底仍在）；Host 重启后自动补发存量未决卡片。**审计落点提示**：Host 审计写在**配置文件旁**（`<config>.audit.log`），平台目录旧 `audit.log` 是单体时代遗留。
+
+## 六、故障速查
 
 | 症状 | 原因 | 处置 |
 |---|---|---|
 | stub 启动即退：`AGENT_SSH_HOST_ADDR is required` | 宿主 env 缺地址 | 补 env（③） |
 | stub 循环 `connect failed (retrying)` | Host 未启动/端口错 | 起 `host serve`，对准就绪行端口 |
 | `CHALLENGE_REJECTED` | 破坏性 decide 码错/过期（60s TTL/3 败作废） | 重新拉 pending 取新码 |
+| `im.unreachable`（日志/审计） | 飞书 WS 断开、token 失效或出站被挡 | 审批未丢（队列兜底）；查网络/凭证后重启 Host 自动补发 |
 | `pidfile` 占用 | 活守护在跑（正常单实例）或陈旧 pidfile | **陈旧 pidfile 自动接管，勿手清**——活进程下手清会绕过单实例→双守护风险；先确认无 `host serve` 进程再动 |
 | config ACL 拒绝 | 配置目录权限过宽 | 按提示 icacls 两条命令收紧 |

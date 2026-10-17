@@ -477,7 +477,7 @@ OPA sidecar 不是通往同一授权的后门。OPA 只对本地策略已经放�
 Elicitation 需要客户端支持。分离架构下审批面由 Host 配置 `approvalSurfaces`（默认 `["desktop", "queue"]`）决定，与 MCP 宿主解耦：
 
 - `desktop` —— 桌面审批端（Tauri 壳）收 `approval.pending` 推送，人工携校验码决定（破坏性类）。
-- `im` —— 飞书面（T-17.6，需飞书开放平台前置）。
+- `im` —— 飞书 bot（T-17.6）：Host 经官方 SDK 长连接纯出站推送交互卡片（命令全文/类别/过期时间 + 批准/拒绝按钮；破坏性类需输入卡片下发的校验码）。卡片点击者必须是 `[im].allowedUsers`（open_id 绑定表）内的人；按钮携**单次消费决策令牌**（截图转发/复制消息不能批别的请求）。审批人审计为 `approver: "im:<open_id>"`。**运维要求：飞书账号必须开启两步验证**——IM 账号即审批身份（A8 信任锚）。命令全文经飞书服务器（明示代价）；`[im].commandDetail = "truncated"` 可换截断+脱敏档。要求 `queue` 同在面集合（队列是唯一等待机制）。
 - `queue` —— 绝不询问客户端；每条破坏性命令都在文件队列中等待人工处理（`agent-ssh approvals` CLI 或桌面端决定）。
 
 队列位于平台数据目录下（`…/agent-ssh/approvals/`，每条待审命令一个 JSON 文件，`0700` 目录内 `0600` 权限）。服务器会把精确的命令打印到 stderr：

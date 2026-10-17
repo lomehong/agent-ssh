@@ -35,6 +35,8 @@ import { redactText } from '../guard/redactor.js';
 import { ConnectionRegistry } from '../ssh/connection-registry.js';
 import type { HostKeyMode } from '../ssh/host-key.js';
 import type { AppConfig } from '../types.js';
+import { ImBot } from '../im/bot.js';
+import { SdkLarkPort } from '../im/port.js';
 import { RotatingLogger } from './log.js';
 
 export interface StartHostOpts {
@@ -96,8 +98,93 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
   // server 句柄提升：推送回调运行时 hub 已就绪（listen 后才会触发）。
   let serverRef: RpcHostServer | undefined;
 
+  // 审批 decide 核心（RPC handler 与飞书 bot 共用，T-17.6 抽取）：
+  // 校验码面分流（desktop/im 携码；cli 兜底免码）→ decideApproval（K7
+  // 队列内串行化）→ 码吊销 + settled 推送 + bot 卡片收尾。face 由调用点
+  // 固定：RPC 客户端声明（不可全信但 callerClass 留痕）、bot 进程内恒 'im'。
+  const decideApprovalRequest = async (input: {
+    id: string;
+    decision: 'approved' | 'rejected';
+    by?: string;
+    face?: string;
+    challenge?: string;
+  }): Promise<{ decided: boolean; message: string }> => {
+    const { id, decision } = input;
+    if (challenges.hasPendingChallenge(id)) {
+      const face = input.face ?? '';
+      const code = input.challenge ?? '';
+      if (face !== 'cli') {
+        const verified = challenges.verify(id, code);
+        if (!verified.ok) {
+          // reason 细类进审计不入客户端消息（可探测码状态，评审 jc7）。
+          await audit
+            .record({
+              mcpRequestId: 0,
+              profile: '(approval-decide)',
+              user: '(operator)',
+              command: redactText(`approval.decide ${id}`),
+              commandClass: 'safe',
+              binary: 'approval.decide',
+              decision: 'deny',
+              ruleId: 'challenge-rejected',
+              error: `challenge ${verified.reason ?? 'invalid'}`,
+              approver: 'cli-direct',
+            })
+            .catch(() => {});
+          throw new Error('CHALLENGE_REJECTED: challenge invalid');
+        }
+      }
+    }
+    const by = input.by && input.by !== '' ? input.by : 'unknown';
+    const outcome = await decideApproval(id, decision, {
+      ...(queueDir ? { dir: queueDir } : {}),
+      by,
+    });
+    // settled 推送 + 未消费码吊销（他面已决定时码即作废）+ bot 卡片收尾。
+    challenges.revoke(id);
+    serverRef?.hub.publish('approval.settled', { id, decision, approved: outcome.decided });
+    void imBot?.settled(id, decision, by);
+    return outcome;
+  };
+
+  // 飞书 bot 面（T-17.6）：surfaces 含 'im' 且 [im] 配置在场即装配；
+  // 缺席由 loader 启动期拒绝，此处防御性兜底。独立 error domain 在 bot
+  // 内部（K5）：WS/发送异常审计 im.unreachable，绝不拖垮 Host。
+  let imBot: ImBot | undefined;
+  if ((opts.config.defaults.approvalSurfaces as ApprovalSurface[]).includes('im')) {
+    const imCfg = opts.config.im;
+    if (imCfg === undefined) {
+      throw new Error('approvalSurfaces includes "im" but config has no [im] section (appId/appSecret/allowedUsers)');
+    }
+    imBot = new ImBot(imCfg, {
+      port: new SdkLarkPort(imCfg.appId, imCfg.appSecret),
+      decide: decideApprovalRequest,
+      listPending: () => listPending(queueDir ? { dir: queueDir } : {}),
+      auditUnreachable: (context, err) => {
+        const message = err instanceof Error ? err.message : String(err);
+        log(`im.unreachable ${context}: ${message}`);
+        void audit
+          .record({
+            mcpRequestId: 0,
+            profile: '(im)',
+            user: '(operator)',
+            command: redactText(`im ${context}`),
+            commandClass: 'safe',
+            binary: 'im:bot',
+            decision: 'deny',
+            ruleId: 'im-unreachable',
+            error: message,
+            approver: 'im-surface',
+          })
+          .catch(() => {});
+      },
+      log: (line) => log(`im ${line}`),
+    });
+  }
+
   // 审批推送桥（T-17.5b）：pipeline 入队 → hub.publish（approval.pending）。
-  // 破坏性/特权类生成 4 位校验码随推送下发（仅窗口可见，D10/K8-②）。
+  // 破坏性/特权类生成 4 位校验码随推送下发（仅窗口可见，D10/K8-②）；
+  // T-17.6：同一 payload 直发飞书 bot（IM 面的码即卡片，§4.2）。
   const onApprovalQueued = (payload: {
     id: string;
     profile: string;
@@ -110,7 +197,8 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
         ? challenges.generate(payload.id)
         : undefined;
     serverRef?.hub.publish('approval.pending', { ...payload, ...(challenge ? { challenge } : {}) });
-    log(`approval.push id=${payload.id} class=${payload.commandClass}${challenge ? ' challenge=****' : ''}`);
+    void imBot?.notifyPending(payload, challenge);
+    log(`approval.push id=${payload.id} class=${payload.commandClass}${challenge ? ' challenge=****' : ''}${imBot ? ' surfaces=hub+im' : ''}`);
   };
 
   registerTools(mcpServer, registry, policy, audit, {
@@ -171,46 +259,16 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       if (typeof p?.id !== 'string' || (p.decision !== 'approved' && p.decision !== 'rejected')) {
         throw new Error('approval.decide requires params {id, decision: approved|rejected}');
       }
-      // 校验码（D10/K8-②）：该 id 存在未消费码时，desktop/im 面的 decide
-      // 必须携对码（单次有效、3 次失败作废、60s TTL、过期即拒——码过期
-      // 免码会掏空 D10 窗口）；cli 面免码（兜底语义：人已在 shell 现场，
-      // 且 CLI 看不到窗口码）。face 由客户端显式声明，缺省按最严处理。
-      if (challenges.hasPendingChallenge(p.id)) {
-        const face = typeof p.face === 'string' ? p.face : '';
-        const code = typeof p.challenge === 'string' ? p.challenge : '';
-        if (face !== 'cli') {
-          const verified = challenges.verify(p.id, code);
-          if (!verified.ok) {
-            // reason 细类进审计不入 CLI 消息（可探测码状态，评审 jc7）。
-            await audit
-              .record({
-                mcpRequestId: 0,
-                profile: '(approval-decide)',
-                user: '(operator)',
-                command: redactText(`approval.decide ${p.id}`),
-                commandClass: 'safe',
-                binary: 'approval.decide',
-                decision: 'deny',
-                ruleId: 'challenge-rejected',
-                error: `challenge ${verified.reason ?? 'invalid'}`,
-                approver: 'cli-direct',
-              })
-              .catch(() => {});
-            throw new Error('CHALLENGE_REJECTED: challenge invalid');
-          }
-        }
-      }
       // approver 语义（§4.4）：面来源 + 操作者。operator 会话的面身份在
       // T-17.5b/T-17.6 登记绑定表；过渡期以 callerClass 标注。
       const by = typeof p.by === 'string' && p.by !== '' ? p.by : ctx.callerClass;
-      const outcome = await decideApproval(p.id, p.decision, {
-        ...(queueDir ? { dir: queueDir } : {}),
+      return decideApprovalRequest({
+        id: p.id,
+        decision: p.decision,
         by,
+        face: typeof p.face === 'string' ? p.face : '',
+        ...(typeof p.challenge === 'string' ? { challenge: p.challenge } : {}),
       });
-      // settled 推送 + 未消费码吊销（他面已决定时码即作废）。
-      challenges.revoke(p.id);
-      serverRef?.hub.publish('approval.settled', { id: p.id, decision: p.decision, approved: outcome.decided });
-      return outcome;
     },
     'auth.session.start': async (params) => {
       const p = params as { password?: unknown };
@@ -349,6 +407,9 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
   const port = await server.listen({ host: opts.host ?? '127.0.0.1', port: opts.port ?? 0, tls: opts.tls });
   serverRef = server;
   log(`agent-ssh host ready port=${port} tools=23 resources=3`);
+  // IM 面异步非阻塞启动（K5）：WS 连接与补偿推送不挡 ready 行；
+  // 失败仅审计降级，Host 其余面照常。
+  if (imBot !== undefined) void imBot.start();
 
   // ── 资产继承（M6）：60s 回收器（index.ts 原注释随迁，回收顺序承重）──
   const reaperInterval = setInterval(() => {

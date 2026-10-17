@@ -68,7 +68,11 @@ export async function runHostCli(args: string[]): Promise<number> {
     const host = await startHost({
       config,
       agentToken: process.env.AGENT_SSH_TOKEN ?? '',
-      operatorPasswordHash: config.defaults.approvalSurfaces.includes('queue') ? undefined : undefined,
+      // init 写入 [defaults].operatorPasswordHash（T-17.6 顺手修复：原三元
+      // 两分支皆 undefined——operator 口令哈希永远到不了 startHost，桌面端/
+      // CLI 解锁在真实 init→serve 链上从未生效；schema 同步补键，否则
+      // init 产物会被 strict 校验拒载）。
+      operatorPasswordHash: config.defaults.operatorPasswordHash,
       auditPath: `${configPath}.audit.log`,
       port: portArg,
       ...(process.env.AGENT_SSH_QUEUE_DIR ? { approvalQueueDir: process.env.AGENT_SSH_QUEUE_DIR } : {}),

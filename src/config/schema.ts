@@ -174,9 +174,13 @@ export const defaultsSchema = z.object({
     .refine((v) => v === undefined, { message: K1_APPROVAL_CHANNEL_REMOVED })
     .optional(),
   // dynamic（SOCKS）端口转发。默认关：开放的 SOCKS 监听
-  // 是通用出网通道——其他隧道都指名目标、可被拒绝清单拦下，
+  // 是通用出网通道——所有其他隧道都指名目标、可被拒绝清单拦下，
   // 这个不能。opt-in，按部署开启。
   allowDynamicForwarding: z.boolean().default(false),
+  // operator 口令的 scrypt 哈希（salt:hash hex）——host init 写入、
+  // auth.session.start 校验。缺省 = operator 会话面禁用（不可知随机口令
+  // 语义）。与 transferRoot 同为「本部署的选择」而非引擎参数，故无默认。
+  operatorPasswordHash: z.string().optional(),
   /**
     * 流式 SFTP 文件工具在本机上可以读写的位置。 machine.
    *
@@ -318,10 +322,27 @@ export const policySchema = z.object({
 // 根上也 .strict()：否则未知节（拼写错误，或更新版本的键）
 // 会干净解析后被无声丢弃，运维得到干净启动，
 // 却没有他们配置的任何行为。
+// 飞书 bot 面（T-17.6，§4.2/D13）：官方 SDK 长连接纯出站。凭证落本配置
+// （0600 纪律由 config loader 强制）；allowedUsers 为 open_id 绑定表——
+// 卡片点击者必须在内（群聊转发场景的硬门，K8-⑤）。缺省整个 [im] 节缺席
+// = IM 面未部署；approvalSurfaces 含 'im' 而本节缺席 → loader 启动期拒绝。
+const imSchema = z
+  .object({
+    appId: z.string().trim().min(1),
+    appSecret: z.string().trim().min(1),
+    allowedUsers: z.array(z.string().trim().min(1)).min(1),
+    chatId: z.string().trim().min(1).optional(),
+    // full=命令全文（默认，裁决依据完整性优先；明示代价：全文经飞书服务器）；
+    // truncated=截断+redactor 脱敏（截断≠脱敏，两道都做）。
+    commandDetail: z.enum(['full', 'truncated']).optional(),
+  })
+  .strict();
+
 export const configSchema = z.object({
   defaults: defaultsSchema.prefault({}),
   profiles: z.array(profileSchema).min(1),
   policy: policySchema.optional(),
+  im: imSchema.optional(),
 }).strict();
 
 export type RawDefaults = z.infer<typeof defaultsSchema>;

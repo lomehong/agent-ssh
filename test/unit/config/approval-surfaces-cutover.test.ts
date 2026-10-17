@@ -41,9 +41,11 @@ host = "localhost"
 user = "test"
 
 [defaults]
-approvalSurfaces = ["im"]
+approvalSurfaces = ["desktop", "queue"]
 `);
-    expect(config.defaults.approvalSurfaces).toEqual(['im']);
+    expect(config.defaults.approvalSurfaces).toEqual(['desktop', 'queue']);
+    // 'im' 值本身合法，但要求 [im] 节与 queue 在场（T-17.6 面一致性，
+    // 详见 im-section.test.ts）——此处只验值域，不含 im。
   });
 
   it('缺省 → ["desktop","queue"]（桌面推送 + CLI 队列兜底）', async () => {

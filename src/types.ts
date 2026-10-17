@@ -72,6 +72,8 @@ export interface Defaults {
   approvalMode: ApprovalMode;
   /** 人工审批的征求面集合（desktop / im / queue）。 */
   approvalSurfaces: ApprovalSurface[];
+  /** operator 口令哈希（scrypt salt:hash）；缺省 = operator 面禁用。 */
+  operatorPasswordHash?: string;
   /** dynamic 转发的通用 SOCKS 出网；默认关闭。 */
   allowDynamicForwarding: boolean;
   /**
@@ -113,6 +115,20 @@ export interface AppConfig {
   defaults: Defaults;
   profiles: Profile[];
   policy?: PolicyConfig;
+  /** 飞书 bot 审批面（T-17.6）；缺席 = IM 面未部署。 */
+  im?: ImConfig;
+}
+
+/** 飞书 bot 配置（[im] 节，§4.2/D13/K8-⑤）。 */
+export interface ImConfig {
+  appId: string;
+  appSecret: string;
+  /** open_id 绑定表：卡片点击者必须在内。 */
+  allowedUsers: string[];
+  /** 推送目标 chat_id；缺省私聊 allowedUsers[0]。 */
+  chatId?: string;
+  /** full=命令全文（默认）；truncated=截断+脱敏。 */
+  commandDetail?: 'full' | 'truncated';
 }
 
 // ─── SSH Connection Types ───────────────────────────────────────────────────

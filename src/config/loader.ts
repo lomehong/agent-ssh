@@ -195,7 +195,20 @@ function normalizeConfig(raw: RawConfig): AppConfig {
   // wrong.
   const overrideWarning = algorithmsOverrideWarning(profiles);
   if (overrideWarning) console.error(overrideWarning);
-  return { defaults, profiles, policy: raw.policy };
+  // 审批面一致性（T-17.6）：'im' 面要求 [im] 节与 'queue' 兜底在场——
+  // 队列是唯一等待机制（bot 的决定也写队列文件），无 queue 的 im 是
+  // 「schema 接受但永远等待超时」的形态；含 im 而无凭证同理。启动期
+  // 拒绝，不静默降级。
+  const surfaces = defaults.approvalSurfaces;
+  if (surfaces.includes('im')) {
+    if (raw.im === undefined) {
+      throw new Error('Config error: approvalSurfaces includes "im" but no [im] section (appId/appSecret/allowedUsers) is configured.');
+    }
+    if (!surfaces.includes('queue')) {
+      throw new Error('Config error: approvalSurfaces includes "im" without "queue" — the queue is the only wait mechanism (im decides write queue files); add "queue".');
+    }
+  }
+  return { defaults, profiles, policy: raw.policy, ...(raw.im !== undefined ? { im: raw.im } : {}) };
 }
 
 /**
