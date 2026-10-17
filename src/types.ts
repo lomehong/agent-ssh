@@ -117,6 +117,16 @@ export interface AppConfig {
   policy?: PolicyConfig;
   /** 飞书 bot 审批面（T-17.6）；缺席 = IM 面未部署。 */
   im?: ImConfig;
+  /** MCP Streamable HTTP 面（T-24）；缺席 = 缺省开启 127.0.0.1:7789。 */
+  http?: HttpConfig;
+}
+
+/** MCP Streamable HTTP 面（[http] 节，T-24）。 */
+export interface HttpConfig {
+  /** 缺省 true。关掉即不监听 HTTP 面（stub/RPC 面不受影响）。 */
+  enabled?: boolean;
+  /** 缺省 7789。恒绑定 127.0.0.1。 */
+  port?: number;
 }
 
 /** 飞书 bot 配置（[im] 节，§4.2/D13/K8-⑤）。 */

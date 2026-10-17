@@ -38,6 +38,7 @@ import { redactText } from '../guard/redactor.js';
 import { ConnectionRegistry } from '../ssh/connection-registry.js';
 import { initKeychain } from '../config/credential-resolver.js';
 import { scanHosts, configureHost, removeHost, loadDeployment } from '../agents/index.js';
+import { startMcpHttp, type McpHttpHandle } from './mcp-http.js';
 import type { HostKeyMode } from '../ssh/host-key.js';
 import type { AppConfig } from '../types.js';
 import { ImBot } from '../im/bot.js';
@@ -221,15 +222,21 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
 
   // 配额实例 Host 级持有（T-21d）：同实例入管线（计数）+ 快照面（读取）。
   const quota = new CommandQuota();
-  registerTools(mcpServer, registry, policy, audit, {
-    approvalGrantTtlMs: opts.approvalGrantTtlMs ?? opts.config.defaults.approvalGrantTtlMs,
-    approvalSurfaces: opts.config.defaults.approvalSurfaces as ApprovalSurface[],
-    approvalQueueDir: opts.approvalQueueDir,
-    approvalQueuePollMs: opts.approvalQueuePollMs,
-    onApprovalQueued,
-    quota,
-  });
-  registerResources(mcpServer, registry);
+  // 工具注册体（T-24 抽取）：InMemory 主实例与 per-request HTTP 工厂共用——
+  // 状态对象（registry/policy/audit/quota/onApprovalQueued）跨请求共享，只造壳。
+  const registerInto = (target: McpServer): McpServer => {
+    registerTools(target, registry, policy, audit, {
+      approvalGrantTtlMs: opts.approvalGrantTtlMs ?? opts.config.defaults.approvalGrantTtlMs,
+      approvalSurfaces: opts.config.defaults.approvalSurfaces as ApprovalSurface[],
+      approvalQueueDir: opts.approvalQueueDir,
+      approvalQueuePollMs: opts.approvalQueuePollMs,
+      onApprovalQueued,
+      quota,
+    });
+    registerResources(target, registry);
+    return target;
+  };
+  registerInto(mcpServer);
 
   const mcpClient = new Client({ name: 'agent-ssh host bridge', version: SERVER_VERSION });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -540,7 +547,30 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
   });
   const port = await server.listen({ host: opts.host ?? '127.0.0.1', port: opts.port ?? 0, tls: opts.tls });
   serverRef = server;
-  log(`agent-ssh host ready port=${port} tools=23 resources=3`);
+
+  // MCP Streamable HTTP 面（T-24）：远程宿主一条 URL 直连，免 stub 进程链。
+  // 缺省开启 127.0.0.1:7789；[http].enabled=false 关闭。失败不挡 Host（K5）。
+  let mcpHttp: McpHttpHandle | undefined;
+  if ((opts.config.http?.enabled ?? true) === true) {
+    try {
+      mcpHttp = await startMcpHttp({
+        serverFactory: async () =>
+          registerInto(
+            new McpServer(
+              { name: 'agent-ssh host', version: SERVER_VERSION },
+              { capabilities: { tools: {}, resources: {} } },
+            ),
+          ),
+        expectedTokenDigest: tokenDigest(opts.agentToken),
+        digest: tokenDigest,
+        port: opts.config.http?.port ?? 7789,
+        log,
+      });
+    } catch (e) {
+      log(`mcp-http start failed (HTTP face disabled, stub/RPC unaffected): ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+  log(`agent-ssh host ready port=${port}${mcpHttp ? ` mcp-http=${mcpHttp.port}` : ''} tools=23 resources=3`);
   // IM 面异步非阻塞启动（K5）：WS 连接与补偿推送不挡 ready 行；
   // 失败仅审计降级，Host 其余面照常。
   if (imBot !== undefined) void imBot.start();
@@ -567,6 +597,11 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       stopping = true;
       clearInterval(reaperInterval);
       pidHandle?.release();
+      try {
+        await mcpHttp?.close();
+      } catch (e) {
+        log(`mcpHttp.close failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
       // 停机梯（index.ts 继承）：审计先行冲刷 → closeAll 有界（kill 阶梯+余量）。
       try {
         await audit.close();

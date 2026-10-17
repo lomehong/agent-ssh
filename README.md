@@ -108,6 +108,33 @@ export SSH_AUTH_SOCK="$SSH_AUTH_SOCK"           # agent 已在运行时该变量
 
 ### 4. 从 MCP 客户端连接
 
+**方式 A（T-24，推荐）：远程 MCP 直连 Host——一条 URL，免 stub 进程**
+
+Host 守护缺省在 `http://127.0.0.1:7789/mcp` 挂出 MCP Streamable HTTP 端点（仅回环，Bearer 令牌鉴权；`[http] enabled = false` 可关）。任何支持远程 MCP 的宿主一条配置即接入：
+
+**opencode（`~/.config/opencode/opencode.json`）：**
+```json
+{
+  "mcp": {
+    "agent-ssh": {
+      "type": "remote",
+      "url": "http://127.0.0.1:7789/mcp",
+      "headers": { "Authorization": "Bearer <agent-ssh 令牌>" },
+      "enabled": true
+    }
+  }
+}
+```
+
+**Claude Code：**
+```bash
+claude mcp add --transport http agent-ssh http://127.0.0.1:7789/mcp --header "Authorization: Bearer <agent-ssh 令牌>"
+```
+
+令牌来源：Host init 生成的 agent 令牌（`host init` 输出 / `%APPDATA%\ssh-mcp\` 下部署描述）。工具面与 stdio stub 完全一致（23 工具+资源）；审批长轮询走 HTTP 长请求，语义不变。
+
+**方式 B（stdio stub）：**
+
 **Claude Code：**
 ```bash
 claude mcp add --transport stdio ssh-mcp -- ssh-mcp

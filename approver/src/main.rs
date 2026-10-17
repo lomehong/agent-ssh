@@ -63,10 +63,9 @@ async fn set_host_status(app: &AppHandle, status: &str) {
 
 struct HostState {
     addr: String,
-    /// agent 只读连接（ping/manifest）。
-    agent_client: Mutex<Option<Arc<RpcClient>>>,
-    /// operator 会话连接（解锁后建立，订阅+decide）。
-    operator_client: Mutex<Option<Arc<RpcClient>>>,
+    /// 单连接双面（D15 单令牌：agent 令牌连接即全权；推送订阅同挂此连接）。
+    /// None = 连接尚未建立/已断线（连接循环断线重建时短暂为 None）。
+    client: Mutex<Option<Arc<RpcClient>>>,
     token: Arc<String>,
 }
 
@@ -141,8 +140,8 @@ async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
 
 #[tauri::command]
 async fn ping(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.agent_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not connected"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.ping().await.map_err(err_str)
 }
 
@@ -156,8 +155,8 @@ async fn decide(
     face: String,
     challenge: Option<String>,
 ) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     let by = format!("desktop:{}", std::env::var("USERNAME").unwrap_or_default());
     match client
         .decide_approval(&id, &decision, &by, challenge.as_deref())
@@ -179,7 +178,7 @@ async fn decide(
             // → 窗口回解锁态（locked 事件，UI 显示口令表单）。
             if msg.contains("-32001") || msg.to_lowercase().contains("session") {
                 drop(guard);
-                *state.operator_client.lock().await = None;
+                *state.client.lock().await = None;
                 let _ = app.emit("locked", serde_json::json!({ "reason": "session expired" }));
                 return Err("locked: session expired — unlock again".to_string());
             }
@@ -195,8 +194,8 @@ async fn history(
     offset: Option<i64>,
     limit: Option<i64>,
 ) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     let params = serde_json::json!({
         "offset": offset.unwrap_or(0),
         "limit": limit.unwrap_or(50),
@@ -216,8 +215,8 @@ async fn audit_query(
     rule_id: Option<String>,
     keyword: Option<String>,
 ) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     let filter = serde_json::json!({
         "profile": profile, "commandClass": command_class,
         "decision": decision, "ruleId": rule_id, "keyword": keyword,
@@ -230,22 +229,22 @@ async fn audit_query(
 
 #[tauri::command]
 async fn audit_stats(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("audit.stats", Value::Null).await.map_err(err_str)
 }
 
 #[tauri::command]
 async fn connections(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("host.connections", Value::Null).await.map_err(err_str)
 }
 
 #[tauri::command]
 async fn quota_snapshot(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("quota.snapshot", Value::Null).await.map_err(err_str)
 }
 
@@ -299,24 +298,24 @@ async fn open_host_log() -> Result<Value, String> {
 /// 审批面状态/版本聚合（T-21e 设置页）：operator 会话转发 host.status。
 #[tauri::command]
 async fn host_status(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("host.status", Value::Null).await.map_err(err_str)
 }
 
 /// 本机宿主识别（T-21g 设置页）：operator 会话转发 agents.scan。
 #[tauri::command]
 async fn agents_scan(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("agents.scan", Value::Null).await.map_err(err_str)
 }
 
 /// 宿主接入写入（T-21g）：operator 会话转发 agents.configure。
 #[tauri::command]
 async fn agents_configure(state: State<'_, HostState>, id: String) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client
         .call("agents.configure", serde_json::json!({ "id": id }))
         .await
@@ -326,8 +325,8 @@ async fn agents_configure(state: State<'_, HostState>, id: String) -> Result<Val
 /// 宿主条目移除（T-21g）：operator 会话转发 agents.remove。
 #[tauri::command]
 async fn agents_remove(state: State<'_, HostState>, id: String) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client
         .call("agents.remove", serde_json::json!({ "id": id }))
         .await
@@ -337,8 +336,8 @@ async fn agents_remove(state: State<'_, HostState>, id: String) -> Result<Value,
 /// 主机清单（T-22 主机管理）：operator 会话转发 host.profiles.list。
 #[tauri::command]
 async fn profiles_list(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("host.profiles.list", Value::Null).await.map_err(err_str)
 }
 
@@ -348,16 +347,16 @@ async fn profiles_upsert(
     state: State<'_, HostState>,
     profile: Value,
 ) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client.call("host.profiles.upsert", profile).await.map_err(err_str)
 }
 
 /// 主机删除（T-22）：转发 host.profiles.remove。
 #[tauri::command]
 async fn profiles_remove(state: State<'_, HostState>, name: String) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     client
         .call("host.profiles.remove", serde_json::json!({ "name": name }))
         .await
@@ -391,8 +390,8 @@ async fn open_approval_window(app: AppHandle, id: String) -> Result<Value, Strin
 
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    let guard = state.client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("Host 未连接，请稍候重试"))?;
     // T-23 弹窗补拉必须走 Host 的 list_pending（破坏性/特权附存活校验码）；
     // approval.list 是无码清单（主窗列表用）——此前误调致弹窗永远拿不到码。
     client.call("list_pending", Value::Null).await.map_err(err_str)
@@ -495,8 +494,7 @@ fn main() {
         .manage(HostStatusText(Mutex::new("未托管".to_string())))
         .manage(HostState {
             addr: host_addr.clone(),
-            agent_client: Mutex::new(None),
-            operator_client: Mutex::new(None),
+                        client: Mutex::new(None),
             token: Arc::new(token.clone()),
         })
 .setup(move |app| {
@@ -571,13 +569,17 @@ fn main() {
     }
     tauri::async_runtime::spawn(async move {
         // 单令牌模型：一条连接承担 agent+operator 两面（本机令牌=全权）。
-        // 断线 3s 重试（常驻语义）；连接建立即挂推送订阅。
+        // connect 阻塞至成功（Host 由 supervisor 拉起，就绪前各面报「未连接」）；
+        // 断线才重建（is_closed 轮询）——旧版每 3s 盲重建是连接泄漏+订阅堆积。
         loop {
             let c = Arc::new(RpcClient::connect(&addr, &rpc_token).await);
             attach_push(handle.clone(), c.clone()).await;
-            *handle.state::<HostState>().agent_client.lock().await = Some(c.clone());
-            *handle.state::<HostState>().operator_client.lock().await = Some(c);
-            tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+            *handle.state::<HostState>().client.lock().await = Some(c.clone());
+            while !c.is_closed() {
+                tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+            }
+            *handle.state::<HostState>().client.lock().await = None;
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
         }
     });
     Ok(())

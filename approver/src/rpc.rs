@@ -380,6 +380,12 @@ impl RpcClient {
         rx.await.map_err(|_| RpcError::ConnectionClosed)?
     }
 
+    /// 断线检测：读循环任务结束即连接已死（T-24 连接循环用——断线才重建，
+    /// 修复旧循环每 3s 盲重建的连接泄漏）。
+    pub fn is_closed(&self) -> bool {
+        self.read_task.is_finished()
+    }
+
     pub async fn call(&self, method: &str, params: Value) -> Result<Value, RpcError> {
         self.raw_call(method, params).await
     }

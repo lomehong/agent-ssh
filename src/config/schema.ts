@@ -338,11 +338,21 @@ const imSchema = z
   })
   .strict();
 
+// MCP Streamable HTTP 面（T-24）：缺席=开启 127.0.0.1:7789。enabled:false
+// 即不监听（stub/RPC 面不受影响）。恒绑定回环，令牌经 Bearer 头。
+const httpSchema = z
+  .object({
+    enabled: z.boolean().optional(),
+    port: z.number().int().min(1).max(65_535).optional(),
+  })
+  .strict();
+
 export const configSchema = z.object({
   defaults: defaultsSchema.prefault({}),
   profiles: z.array(profileSchema).min(1),
   policy: policySchema.optional(),
   im: imSchema.optional(),
+  http: httpSchema.optional(),
 }).strict();
 
 export type RawDefaults = z.infer<typeof defaultsSchema>;

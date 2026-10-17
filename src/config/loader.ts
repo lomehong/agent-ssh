@@ -208,7 +208,13 @@ function normalizeConfig(raw: RawConfig): AppConfig {
       throw new Error('Config error: approvalSurfaces includes "im" without "queue" — the queue is the only wait mechanism (im decides write queue files); add "queue".');
     }
   }
-  return { defaults, profiles, policy: raw.policy, ...(raw.im !== undefined ? { im: raw.im } : {}) };
+  return {
+    defaults,
+    profiles,
+    policy: raw.policy,
+    ...(raw.im !== undefined ? { im: raw.im } : {}),
+    ...(raw.http !== undefined ? { http: raw.http } : {}),
+  };
 }
 
 /**
