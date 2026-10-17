@@ -1,11 +1,12 @@
 id: T-17.6
 title: 飞书 bot（官方 SDK 长连接审批面）
 level: L1
-status: 进行中
+status: 待确认
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-11 20:56:00
 claimedBy: digital-architect
 claimedAt: 2026-10-17 11:30:00
+reportedAt: 2026-10-17 12:25:00
 blockedBy: [T-15]
 accept:
   - 官方 SDK @larksuiteoapi/node-sdk 长连接纯出站；内联按钮走 SDK 卡片回调（D13）
@@ -18,6 +19,7 @@ accept:
   - 前置：主人申请飞书开放平台应用——未齐不开工
 source: 方案 §4.2/§10/§11 T-17.6 行、§12 D11/D13；评审 K5/K8-⑤
 events:
+  - 2026-10-17 12:25:00 | report | by=digital-architect | 自报待主人 confirm。真实端到端 5/5（scripts/t176-im-e2e.mjs，主人亲自在飞书操作两轮卡片）：①Host+WS 长连接 ②read-only 卡片一键批准→真机执行（12s）③destructive 卡片校验码（2.0 form input）→真机执行（12s）④审计 approver=im:ou_<open_id> ×2 ⑤rpcCallerClass/命令留痕。过程中实证修复四项产品缺陷：a)stub tool.call 硬编码 10s 超时掐断人工审批窗（RpcClient.call 增 per-call timeoutMs 覆盖+660s 窗口量级，回归测试入 server-client）b)破坏性卡片 legacy 架构 400 拒收 form/input→改卡片 JSON 2.0（placeholder 需 plain_text 对象、按钮 behaviors=callback+form_action_type=submit——官方文档两处纠偏）c)审批 approver 双前缀失真（waitForDecision 硬包 cli: 而 desktop:/im: 决定已自带面身份→前缀职责归写入方，cli-rpc 补 cli: 前缀，IM 决定审计如实 im:ou_x）d)round-2 死卡重放三连被单次令牌全部正确拒绝（红线顺带实证）。卡片探针卡（过期请求）点击亦被正确拒绝。单测：im 27+guard/queue/cli-rpc/approval-channel/host/rpc 全绿（131），tsc 0。RUNBOOK §五/README 审批面已含真实联调结论。请主人 confirm 落定。
   - 2026-10-17 11:35:00 | progress | by=digital-architect | 实现+单测+凭证/链路冒烟完成，余主人侧控制台四步+open_id 捕获+真实卡片 E2E。落地：src/im/{cards,decision-tokens,port,bot}.ts（SDK 适配隔离 LarkPort，单测零网络）；main.ts 抽 decide 核心（RPC 与 bot 共用，bot 进程内 face 恒 'im' 不可谎报）；[im] 配置节+面一致性（im 必须携 [im]+queue，loader 启动期拒）；顺手修两枚连环 bug——host init 产物被 schema 拒载（operatorPasswordHash 缺键）+host/cli.ts 三元恒 undefined（operator 口令哈希从未到达 startHost，桌面端/CLI 解锁在真实 init 链上未生效过）。单测 27/27（cards/decision-tokens/bot/im-section）；真实冒烟：凭证换 token OK（7200s）+WS 长连接建立存活（订阅方式已配）。K5 失效=审计 im-unreachable+队列兜底；补偿推送；README 审批面+两步验证+RUNBOOK §五 已写。遗留：卡片表单回调的字段合并形态待真实联调校准（form input challenge 的回传结构按文档实现）。
   - 2026-10-17 11:30:00 | claim | by=digital-architect | 外部前置已解除（主人提供 AppID/Secret，2026-10-17）。接缝：SDK 已装（显式运行时依赖，K2 供应链口径——Cargo.lock 之外首个 npm 新面）；decide 复用 main 抽取核心；imDecisionTokens 表保持预留（卡片回调走进程内路径，避免 im 令牌持有人经 RPC 谎报 face='cli' 绕码）。
   - 2026-10-11 20:56:00 | create | by=lome | level=L1 | blocked_by=T-15 + 外部前置（主人裁决立项挂起）

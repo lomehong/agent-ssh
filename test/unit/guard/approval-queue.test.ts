@@ -42,14 +42,16 @@ describe('approval queue lifecycle', () => {
     expect(stored.command).toBe(REQUEST.command);
   });
 
-  it('an approved decision reaches the waiter with a cli: approver', async () => {
+  it('an approved decision reaches the waiter with decidedBy passed through verbatim', async () => {
     const req = await createApprovalRequest({ ...REQUEST, timeoutMs: 60_000 }, { dir });
     const waiter = waitForDecision(req.id, { dir, fingerprint: req.fingerprint, expiresAt: req.expiresAt, pollMs: 5 });
-    const outcome = await decideApproval(req.id, 'approved', { dir, by: 'the-operator' });
+    // decidedBy 由写入方携带面身份（cli:/desktop:/im:）；回读透传不加工
+    // （T-17.6：硬包 cli: 前缀曾把 IM/桌面决定在审计里冒充成 CLI 面）。
+    const outcome = await decideApproval(req.id, 'approved', { dir, by: 'im:ou_operator' });
     expect(outcome.decided).toBe(true);
     const result = await waiter;
     expect(result.approved).toBe(true);
-    expect(result.approver).toBe('cli:the-operator');
+    expect(result.approver).toBe('im:ou_operator');
   });
 
   it('a rejected decision denies without an unavailable cause (it was a human no)', async () => {

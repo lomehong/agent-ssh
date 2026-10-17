@@ -146,4 +146,35 @@ describe('垂直切片：stub 客户端 ↔ Host 服务端 真链路（T-14.5）
     await vi.waitFor(() => expect(stack.server.connectionCount).toBe(0));
     await expect(client.call('tool.call')).rejects.toThrow();
   });
+
+    // T-17.6 E2E 首次踩中的产品缺陷回归：审批门内的 tool.call 合法阻塞至
+    // 人工决定（最长 10min），客户端级 10s 默认会掐断任何真实人工延迟——
+    // 此前所有测试都有裁决泵秒批（2-4s 完成），从未暴露。
+    it('per-call timeoutMs 覆盖：慢 handler 在客户端级超时下经覆盖成功返回', async () => {
+      const token = generateAgentToken();
+      const password = 'slow-pass-9';
+      const sessions = new OperatorSessionStore({ storedHash: hashPassword(password) });
+      let slowServer: RpcHostServer | undefined;
+      const server = new RpcHostServer({
+        tables: { agentTokens: new Set([tokenDigest(token)]), sessions, imDecisionTokens: new Set() },
+        handlers: {
+          'tool.call': async () => {
+            // 300ms「人工延迟」：客户端级 150s? 不——用 150ms 客户端超时档
+            await new Promise((r) => setTimeout(r, 300));
+            return { decided: true };
+          },
+        },
+      });
+      slowServer = server;
+      const port = await server.listen({ host: '127.0.0.1' });
+      const client = new RpcClient({ host: '127.0.0.1', port, token, requestTimeoutMs: 150 });
+      cleanup.push(() => client.close());
+      cleanup.push(() => slowServer!.close());
+      await client.connect();
+      // 默认（150ms 客户端级）：300ms handler 必超时
+      await expect(client.call('tool.call', { x: 1 })).rejects.toThrow(/timeout after 150ms/);
+      // 覆盖（5s）：同一慢 handler 成功返回
+      const result = await client.call<{ decided: boolean }>('tool.call', { x: 1 }, { timeoutMs: 5_000 });
+      expect(result.decided).toBe(true);
+    });
 });

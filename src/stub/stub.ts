@@ -62,6 +62,14 @@ function unreachable(): McpError {
   );
 }
 
+/**
+ * tool.call 的转发超时：审批门内的调用合法阻塞至审批窗口走完（U3：
+ * APPROVAL_TIMEOUT_MS = 10min；Host 侧队列轮询 2s）。660s = 窗口 + 余量；
+ * T-17.6 真实人工 E2E 首次踩中默认 10s 掐断（此前裁决泵秒批从未暴露）。
+ * 其余方法（hello/manifest/resource）维持客户端级 10s——快失败快重连。
+ */
+const TOOL_CALL_TIMEOUT_MS = 660_000;
+
 export async function startStub(opts: StubOpts): Promise<StubHandle> {
   const { server } = opts;
   let manifest: HostToolManifest | undefined;
@@ -93,7 +101,7 @@ export async function startStub(opts: StubOpts): Promise<StubHandle> {
     return (await currentClient.call('tool.call', {
       name: req.params.name,
       arguments: req.params.arguments ?? {},
-    })) as never;
+    }, { timeoutMs: TOOL_CALL_TIMEOUT_MS })) as never;
   });
   server.server.setRequestHandler(ListResourcesRequestSchema, () => {
     if (!ready || manifest === undefined) return { resources: [] };

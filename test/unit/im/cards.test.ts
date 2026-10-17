@@ -24,12 +24,16 @@ describe('im 卡片构建', () => {
     expect(JSON.stringify(actions)).toContain('批准');
   });
 
-  it('破坏性类：form+校验码输入框，码随卡片下发（IM 面即窗口，§4.2）', () => {
+  it('破坏性类：2.0 架构 form+校验码输入框，form_action_type=submit（官方文法，400 修复回归）', () => {
     const card = buildPendingCard({ ...base, commandClass: 'destructive', challenge: '4321' });
     const json = JSON.stringify(card);
     expect(json).toContain('"input"');
     expect(json).toContain('challenge');
     expect(json).toContain('4321');
+    expect(json).toContain('"schema":"2.0"');
+    expect(json).toContain('form_action_type');
+    // placeholder 必须是对象形态（字符串形态被飞书 400 拒收——实测）
+    expect(json).toContain('\"placeholder\":{');
     expect(json).toContain('"form"');
   });
 

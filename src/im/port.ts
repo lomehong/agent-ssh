@@ -49,9 +49,16 @@ export class SdkLarkPort implements LarkPort {
       'card.action.trigger': (data: unknown) => {
         const d = data as {
           operator?: { open_id?: string };
-          action?: { value?: Record<string, unknown> };
+          action?: {
+            value?: Record<string, unknown>;
+            /** 2.0 form_submit：表单输入值（challenge 等）在 form_value 回传。 */
+            form_value?: Record<string, unknown>;
+          };
         };
-        onCardAction({ operatorOpenId: d?.operator?.open_id, value: d?.action?.value });
+        onCardAction({
+          operatorOpenId: d?.operator?.open_id,
+          value: { ...(d?.action?.value ?? {}), ...(d?.action?.form_value ?? {}) },
+        });
       },
     });
     if (onMessage !== undefined) {

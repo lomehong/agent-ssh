@@ -210,8 +210,12 @@ export async function waitForDecision(
       };
     }
     if (stored.status === 'approved' || stored.status === 'rejected') {
+      // decidedBy 原样透传（T-17.6 修正：此前此处硬包 `cli:` 前缀，而决定
+      // 写入方已自带面身份——cli:<user>（CLI）/ desktop:<user>（桌面端
+      // main.rs）/ im:<open_id>（飞书 bot）——硬前缀造成 cli:desktop:…
+      // 双前缀，IM/桌面决定在审计里被冒充成 CLI 面）。前缀职责归写入方。
       return stored.status === 'approved'
-        ? { approved: true, approver: `cli:${stored.decidedBy ?? currentOSUser()}` }
+        ? { approved: true, approver: stored.decidedBy ?? currentOSUser() }
         : { approved: false };
     }
     if (now().getTime() >= Date.parse(stored.expiresAt)) {

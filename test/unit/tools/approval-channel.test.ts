@@ -40,13 +40,14 @@ describe('approval queue surface (pipeline)', () => {
     expect(pending[0].command).toBe('rm -rf /tmp/build');
     expect(pending[0].commandClass).toBe('destructive');
 
-    const outcome = await decideApproval(pending[0].id, 'approved', { dir });
+    // 面身份在写入方携带（T-17.6 前缀职责归位）：CLI 泵模拟 cli:<user>。
+    const outcome = await decideApproval(pending[0].id, 'approved', { dir, by: 'cli:tester' });
     expect(outcome.decided).toBe(true);
 
     const res = await callPromise;
     expect(res.isError).toBeFalsy();
     expect(h.execCalls.map((c) => c.command)).toContain('rm -rf /tmp/build');
-    expect(h.auditRecords.at(-1)?.approver).toMatch(/^cli:/);
+    expect(h.auditRecords.at(-1)?.approver).toBe('cli:tester');
   });
 
   it('a CLI rejection denies the command without running it', async () => {
@@ -54,7 +55,7 @@ describe('approval queue surface (pipeline)', () => {
     const callPromise = h.client.callTool({ name: 'run-command', arguments: { command: 'rm -rf /tmp/build' } }) as Promise<any>;
     await new Promise((r) => setTimeout(r, 60));
     const pending = await listPending({ dir });
-    await decideApproval(pending[0].id, 'rejected', { dir });
+    await decideApproval(pending[0].id, 'rejected', { dir, by: 'cli:tester' });
 
     const res = await callPromise;
     expect(res.isError).toBe(true);
@@ -66,7 +67,7 @@ describe('approval queue surface (pipeline)', () => {
     const callPromise = h.client.callTool({ name: 'run-command', arguments: { command: 'rm -rf /tmp/build' } }) as Promise<any>;
     await new Promise((r) => setTimeout(r, 60));
     const pending = await listPending({ dir });
-    await decideApproval(pending[0].id, 'approved', { dir });
+    await decideApproval(pending[0].id, 'approved', { dir, by: 'cli:tester' });
     await callPromise;
     // H2 闭合手段：MCP 反向弹窗不再是审批载体——不是被跳过，是不存在。
     expect(h.approvalPrompts()).toBe(0);

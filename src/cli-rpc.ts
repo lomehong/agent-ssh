@@ -252,7 +252,8 @@ export async function runApprovalsCli(args: string[]): Promise<number> {
       const outcome = (await client.call('approval.decide', {
         id,
         decision: verb === 'approve' ? 'approved' : 'rejected',
-        by: cliUser(),
+        // 面身份在写入方携带（T-17.6 前缀职责归位：回读不再补 cli: 前缀）。
+        by: `cli:${cliUser()}`,
       })) as { decided: boolean; message: string };
       console.log(outcome.message);
       return outcome.decided ? 0 : 1;

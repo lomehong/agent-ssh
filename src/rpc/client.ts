@@ -94,12 +94,16 @@ export class RpcClient {
     }
   }
 
-  /** 未连接（含 close 后）直接抛错——fail-fast，绝不排队等待重连。 */
-  async call<T = unknown>(method: string, params?: unknown): Promise<T> {
+  /** 未连接（含 close 后）直接抛错——fail-fast，绝不排队等待重连。
+   *
+   * perCall.timeoutMs 覆盖客户端级 requestTimeoutMs：审批门内的
+   * tool.call 合法阻塞至审批窗口（U3 = 10min），默认 10s 会把任何
+   * 真实人工延迟掐死（T-17.6 E2E 首次踩中——此前裁决泵秒批从未暴露）。 */
+  async call<T = unknown>(method: string, params?: unknown, perCall?: { timeoutMs?: number }): Promise<T> {
     if (!this.ready || this.socket === undefined) {
       throw new Error(`RPC client is not connected: ${method}`);
     }
-    return (await this.rawCall(method, params)) as T;
+    return (await this.rawCall(method, params, perCall?.timeoutMs)) as T;
   }
 
   /** 订阅审批推送（operator 通道）。重连后自动重放。 */
@@ -153,7 +157,7 @@ export class RpcClient {
     });
   }
 
-  private rawCall(method: string, params?: unknown): Promise<unknown> {
+  private rawCall(method: string, params?: unknown, perCallTimeoutMs?: number): Promise<unknown> {
     const socket = this.socket;
     if (socket === undefined || socket.destroyed) {
       return Promise.reject(new Error(`RPC connection is not open: ${method}`));
@@ -162,7 +166,7 @@ export class RpcClient {
     const envelope: Record<string, unknown> = { jsonrpc: '2.0', id, method };
     if (params !== undefined) envelope.params = params;
     if (this.opts.token !== '') envelope.auth = this.opts.token;
-    const timeoutMs = this.opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+    const timeoutMs = perCallTimeoutMs ?? this.opts.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.pending.delete(id);

@@ -43,6 +43,16 @@ function commandBlock(command: string, mode: 'full' | 'truncated'): object {
   return { tag: 'div', text: { tag: 'lark_md', content: `**命令（全文）**\n\`\`\`\n${command}\n\`\`\`` } };
 }
 
+/** 2.0 架构的命令块（markdown 组件）。 */
+function commandBlockV2(command: string, mode: 'full' | 'truncated'): object {
+  if (mode === 'truncated') {
+    const redacted = redactText(command);
+    const cut = redacted.length > TRUNCATE_AT ? `${redacted.slice(0, TRUNCATE_AT)}…（已截断，全文见 Host 队列/桌面端）` : redacted;
+    return { tag: 'markdown', content: `**命令（截断+脱敏档）**\n\`\`\`\n${cut}\n\`\`\`` };
+  }
+  return { tag: 'markdown', content: `**命令（全文）**\n\`\`\`\n${command}\n\`\`\`` };
+}
+
 function button(label: string, style: 'primary' | 'danger', value: CardButtonValue): object {
   return {
     tag: 'button',
@@ -65,33 +75,76 @@ export function buildPendingCard(input: PendingCardInput): Record<string, unknow
   const needsChallenge = input.commandClass === 'destructive' || input.commandClass === 'privileged';
 
   if (needsChallenge) {
+    // 破坏性/特权类走卡片 JSON 2.0：input/form 组件是 2.0 独有（legacy 架构
+    // 混入 form/input 会被 400 拒收——T-17.6 真实 E2E 实测）。提交按钮
+    // behaviors=form_submit，表单值经回调 action.form_value 回传（port 合并进
+    // value）。settled patch 必须同架构（见 buildSettledCard）。
     return {
-      config: { wide_screen_mode: true },
+      schema: '2.0',
+      config: { update_multi: true },
       header: { title: { tag: 'plain_text', content: `⚠️ agent-ssh 审批（${input.commandClass}）` }, template: 'red' },
-      elements: [
-        { tag: 'div', fields },
-        commandBlock(input.command, detail),
-        {
-          tag: 'form',
-          name: `f-${input.id}`,
-          elements: [
-            {
-              tag: 'input',
-              name: 'challenge',
-              placeholder: { tag: 'plain_text', content: `输入卡片校验码（破坏性类必需，单次有效）` },
-              max_length: 8,
-            },
-            {
-              tag: 'action',
-              actions: [
-                button('批准', 'primary', value('approved')),
-                button('拒绝', 'danger', value('rejected')),
-              ],
-            },
-          ],
-        },
-        { tag: 'note', elements: [{ tag: 'plain_text', content: `校验码：${input.challenge ?? '（Host 未随推送下发——经桌面端/CLI 决定）'}` }] },
-      ],
+      body: {
+        direction: 'vertical',
+        padding: '12px 12px 12px 12px',
+        elements: [
+          {
+            tag: 'markdown',
+            content:
+              `**Profile**：${input.profile}\n**类别**：${input.commandClass}\n` +
+              `**过期**：${input.expiresAt}\n**请求**：\`${input.id}\``,
+          },
+          commandBlockV2(input.command, detail),
+          {
+            tag: 'form',
+            name: `f-${input.id}`,
+            elements: [
+              {
+                tag: 'input',
+                name: 'challenge',
+                placeholder: { tag: 'plain_text', content: `输入校验码：${input.challenge ?? '（Host 未下发——经桌面端/CLI 决定）'}` },
+                max_length: 8,
+              },
+              {
+                tag: 'column_set',
+                flex_mode: 'bisect',
+                background_style: 'default',
+                columns: [
+                  {
+                    tag: 'column',
+                    width: 'weighted',
+                    weight: 1,
+                    vertical_align: 'top',
+                    elements: [{
+                      tag: 'button',
+                      text: { tag: 'plain_text', content: '拒绝' },
+                      type: 'danger',
+                      size: 'medium',
+                      behaviors: [{ type: 'callback', value: value('rejected') as unknown as Record<string, unknown> }],
+                      form_action_type: 'submit',
+                      name: `reject-${input.id}`,
+                    }],
+                  },
+                  {
+                    tag: 'column',
+                    width: 'weighted',
+                    weight: 1,
+                    vertical_align: 'top',
+                    elements: [{
+                      tag: 'button',
+                      text: { tag: 'plain_text', content: '批准（需校验码）' },
+                      type: 'primary',
+                      size: 'medium',
+                      behaviors: [{ type: 'callback', value: value('approved') as unknown as Record<string, unknown> }],
+                      form_action_type: 'submit',
+                      name: `approve-${input.id}`,
+                    }],
+                  },
+                ],
+              },
+            ],
+          },
+        ],
+      },
     };
   }
 
@@ -113,12 +166,37 @@ export function buildPendingCard(input: PendingCardInput): Record<string, unknow
   };
 }
 
-/** 已决卡片（patch 原消息——D11「已在桌面端批准」跨面仲裁可见）。 */
+/** 已决卡片（patch 原消息——D11「已在桌面端批准」跨面仲裁可见）。
+ * patch 内容必须与原卡片同架构（legacy ↔ 2.0 混 patch 会被拒），按待决
+ * 输入是否挑战类分流。 */
 export function buildSettledCard(
   pending: PendingCardInput,
   settledBy: { decision: 'approved' | 'rejected'; by: string },
 ): Record<string, unknown> {
   const approved = settledBy.decision === 'approved';
+  const needsChallenge = pending.commandClass === 'destructive' || pending.commandClass === 'privileged';
+  if (needsChallenge) {
+    return {
+      schema: '2.0',
+      config: { update_multi: true },
+      header: {
+        title: { tag: 'plain_text', content: `${approved ? '✅ 已批准' : '⛔ 已拒绝'}（${settledBy.by}）` },
+        template: approved ? 'green' : 'grey',
+      },
+      body: {
+        direction: 'vertical',
+        padding: '12px 12px 12px 12px',
+        elements: [
+          {
+            tag: 'markdown',
+            content: `**Profile**：${pending.profile}\n**类别**：${pending.commandClass}`,
+          },
+          commandBlockV2(pending.command, pending.commandDetail ?? 'full'),
+          { tag: 'markdown', content: `决定人：${settledBy.by} · 本卡片按钮已失效。` },
+        ],
+      },
+    };
+  }
   return {
     config: { wide_screen_mode: true },
     header: {
