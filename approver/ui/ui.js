@@ -508,6 +508,8 @@ async function renderAgents() {
       btn.className = 'approve';
       btn.appendChild(document.createTextNode(h.detected ? '一键接入' : '仍要写入'));
       btn.addEventListener('click', async () => {
+        // 评审建议①：写第三方宿主配置为高危动作——二次确认（备份路径随结果展示）。
+        if (!confirm(`将在 ${h.configPath} 写入/覆盖 agent-ssh 条目（自动备份，可还原）。继续？`)) return;
         try {
           const res = await invoke('agents_configure', { id: h.id });
           btn.replaceWith(textNode('span', 'meta', `✓ 已写入（备份: ${res.backupPath ?? '无（新建文件）'}）——重启该宿主后生效`));

@@ -68,7 +68,6 @@ struct HostState {
     /// operator 会话连接（解锁后建立，订阅+decide）。
     operator_client: Mutex<Option<Arc<RpcClient>>>,
     token: Arc<String>,
-    pin: Option<String>,
 }
 
 fn err_str(e: impl std::fmt::Display) -> String {
@@ -269,21 +268,6 @@ async fn open_host_log() -> Result<Value, String> {
     Ok(serde_json::json!({ "ok": true }))
 }
 
-/// 更换 operator 口令（T-21e）：转发 Host host.admin.changePassword。
-#[tauri::command]
-async fn change_password(
-    state: State<'_, HostState>,
-    old_password: String,
-    new_password: String,
-) -> Result<Value, String> {
-    let guard = state.operator_client.lock().await;
-    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
-    client
-        .call("host.admin.changePassword", serde_json::json!({ "oldPassword": old_password, "newPassword": new_password }))
-        .await
-        .map_err(err_str)
-}
-
 /// 审批面状态/版本聚合（T-21e 设置页）：operator 会话转发 host.status。
 #[tauri::command]
 async fn host_status(state: State<'_, HostState>) -> Result<Value, String> {
@@ -443,7 +427,6 @@ fn main() {
             std::env::var("AGENT_SSH_TOKEN").unwrap_or_default(),
         ),
     };
-    let pin = std::env::var("AGENT_SSH_HOST_PIN").ok().filter(|s| !s.is_empty());
     let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     tauri::Builder::default()
@@ -460,7 +443,6 @@ fn main() {
             agent_client: Mutex::new(None),
             operator_client: Mutex::new(None),
             token: Arc::new(token.clone()),
-            pin: pin.clone(),
         })
 .setup(move |app| {
     use tauri::menu::{Menu, MenuItem};
@@ -545,7 +527,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove])
+    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

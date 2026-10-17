@@ -9,14 +9,6 @@
   <link rel="stylesheet" href="./ui.css" />
 </head>
 <body>
-  <header id="titlebar" data-tauri-drag-region>
-    <span id="titlebar-title" data-tauri-drag-region>agent-ssh 控制台</span>
-    <div id="win-controls">
-      <button id="win-min" title="最小化">&#x2500;</button>
-      <button id="win-max" title="最大化/还原">&#x25A1;</button>
-      <button id="win-close" title="隐藏到托盘">&#x2715;</button>
-    </div>
-  </header>
   <div id="app">
     <nav id="nav" aria-label="主导航">
       <div id="nav-brand">agent-ssh</div>
@@ -29,7 +21,16 @@
         <p id="host-status" class="meta">Host 状态：检测中…</p>
       </div>
     </nav>
-    <main id="content">
+    <div id="shell">
+      <header id="titlebar" data-tauri-drag-region>
+        <span id="titlebar-title" data-tauri-drag-region>agent-ssh 控制台</span>
+        <div id="win-controls">
+          <button id="win-min" title="最小化">&#x2500;</button>
+          <button id="win-max" title="最大化/还原">&#x25A1;</button>
+          <button id="win-close" title="隐藏到托盘">&#x2715;</button>
+        </div>
+      </header>
+      <main id="content">
       <section id="view-approvals" class="view">
         <h1>审批</h1>
         <div id="queue" aria-live="polite">
@@ -121,7 +122,8 @@
           <div id="agents-list"></div>
         </section>
       </section>
-    </main>
+      </main>
+    </div>
   </div>
   <!-- 纯静态脚本：渲染只用 createTextNode，无 innerHTML/eval（K8-③）。 -->
   <script type="module" src="./ui.js"></script>

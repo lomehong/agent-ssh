@@ -67,13 +67,19 @@ function verifyWritten(configPath: string, name: string): void {
 /** upsert：同名替换、异名追加；写前备份、写后校验失败回滚。 */
 export function upsertProfile(configPath: string, input: HostProfileInput): { backupPath: string; reloaded: true } {
   if (!/^[A-Za-z0-9_-]+$/.test(input.name)) throw new Error('profile 名只允许字母/数字/-/_');
-  if (input.auth === 'password' && (input.password === undefined || input.password === '')) {
+  const original = readFileSync(configPath, 'utf8');
+  // 编辑态判断（评审 B4）：编辑既有 keychain profile 且密码留空 = 沿用
+  // 凭据管理器既有条目（「密码留空=不变」契约）；新建/非 keychain 仍须给密码。
+  const existing = (parseToml(original) as { profiles?: Array<Record<string, unknown>> }).profiles?.find(
+    (p) => p.name === input.name,
+  );
+  const editExistingKeychain = existing !== undefined && existing.auth === 'keychain';
+  if (input.auth === 'password' && (input.password === undefined || input.password === '') && !editExistingKeychain) {
     throw new Error('auth=password 需要提供密码');
   }
   if (input.auth === 'key' && (input.keyRef === undefined || input.keyRef === '')) {
     throw new Error('auth=key 需要提供私钥路径（Host 机路径）');
   }
-  const original = readFileSync(configPath, 'utf8');
   const backupPath = backupOf(configPath);
   try {
     const parsed = parseToml(original) as Record<string, unknown>;
