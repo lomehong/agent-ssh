@@ -363,6 +363,13 @@ async fn profiles_remove(state: State<'_, HostState>, name: String) -> Result<Va
         .map_err(err_str)
 }
 
+/// 远程 MCP 接入的令牌（T-24 设置页一键复制）。令牌进剪贴板是主人主动点击，
+/// 与凭据管理器的暴露面同级。
+#[tauri::command]
+async fn mcp_http_token(state: State<'_, HostState>) -> Result<Value, String> {
+    Ok(serde_json::json!({ "token": state.token.to_string() }))
+}
+
 /// 打开指定请求的独立审批窗（审批列表点击未决单；主人 2026-10-17 澄清的交互形态）。
 #[tauri::command]
 async fn open_approval_window(app: AppHandle, id: String) -> Result<Value, String> {
@@ -584,7 +591,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove, open_approval_window])
+    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove, open_approval_window, mcp_http_token])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

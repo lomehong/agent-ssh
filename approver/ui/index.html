@@ -114,6 +114,15 @@
           <div id="surfaces-list" class="meta"></div>
         </section>
         <section class="card">
+          <h2>远程 MCP 接入（一条 URL）</h2>
+          <p class="meta">Host 在本机挂出 MCP 服务（http://127.0.0.1:<span id="mcp-http-port">…</span>/mcp）——支持远程 MCP 的宿主一条配置即接入，免 stub 进程。令牌经剪贴板传递，粘贴后即用。</p>
+          <div class="row">
+            <button id="copy-mcp-json" class="approve small">复制 JSON 配置（opencode / Cursor）</button>
+            <button id="copy-mcp-cli" class="ghost small">复制 Claude Code 命令</button>
+          </div>
+          <p id="mcp-copy-result" class="meta"></p>
+        </section>
+        <section class="card">
           <h2>宿主接入（Agent MCP 配置）</h2>
           <p class="meta">识别本机 Agent 宿主并一键写入 agent-ssh 的 MCP 条目（写入前自动备份，可回滚）。写入后需重启对应宿主生效。</p>
           <div class="row"><button id="agents-scan" class="approve small">扫描本机</button></div>

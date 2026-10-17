@@ -369,6 +369,8 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
       // T-21e：审批面在线态 + 版本聚合（只读）。
       return {
         version: SERVER_VERSION,
+        // T-24：HTTP 面端口（null=未启用）——控制台一键复制 MCP 配置用。
+        mcpHttpPort: mcpHttp?.port ?? null,
         surfaces: (opts.config.defaults.approvalSurfaces as ApprovalSurface[]).map((s) => ({
           surface: s,
           online: s === 'im' ? (imBot?.connected ?? false) : s === 'desktop' ? server.connectionCount > 0 : true,

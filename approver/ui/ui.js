@@ -414,6 +414,8 @@ async function loadSettingsView() {
     info.appendChild(document.createTextNode(
       `Host v${st?.version ?? '?'} @ 127.0.0.1:${st?.port ?? '?'} · 队列 ${st?.queueDir ?? '?'}`,
     ));
+    const portEl = document.getElementById('mcp-http-port');
+    if (portEl !== null) portEl.textContent = String(st?.mcpHttpPort ?? '未启用');
     for (const s of st?.surfaces ?? []) {
       const row = document.createElement('p');
       row.className = 'meta';
@@ -513,6 +515,47 @@ async function renderAgents() {
 }
 
 document.getElementById('agents-scan')?.addEventListener('click', () => renderAgents());
+
+// ─── 远程 MCP 接入：一键复制配置（T-24） ────────────────────────────────────
+
+const copyResultEl = document.getElementById('mcp-copy-result');
+
+function noteCopyResult(text) {
+  copyResultEl.textContent = '';
+  copyResultEl.appendChild(document.createTextNode(text));
+}
+
+async function copyMcpConfig(kind, btn) {
+  const original = btn.textContent;
+  try {
+    // 端口以 Host 实际上报为准（[http] 节可改；离线/未启用则无值）。
+    const st = await invoke('host_status');
+    const port = st?.mcpHttpPort;
+    if (!port) {
+      noteCopyResult('HTTP 面未启用或 Host 未连接——无法生成配置。');
+      return;
+    }
+    const cfg = await invoke('mcp_http_token');
+    const token = cfg?.token ?? '';
+    const url = `http://127.0.0.1:${port}/mcp`;
+    const text = kind === 'claude'
+      ? `claude mcp add --transport http agent-ssh ${url} --header "Authorization: Bearer ${token}"`
+      : JSON.stringify(
+          { mcp: { 'agent-ssh': { type: 'remote', url, headers: { Authorization: `Bearer ${token}` }, enabled: true } } },
+          null,
+          2,
+        );
+    await navigator.clipboard.writeText(text);
+    noteCopyResult(`已复制——粘贴到宿主配置后重启该宿主生效（URL: ${url}）。`);
+    btn.textContent = '已复制 ✓';
+    setTimeout(() => { btn.textContent = original; }, 2000);
+  } catch (err) {
+    noteCopyResult(`复制失败: ${errText(err)}`);
+  }
+}
+
+document.getElementById('copy-mcp-json')?.addEventListener('click', (e) => copyMcpConfig('json', e.currentTarget));
+document.getElementById('copy-mcp-cli')?.addEventListener('click', (e) => copyMcpConfig('claude', e.currentTarget));
 
 // ─── 启动 ───────────────────────────────────────────────────────────────────
 
