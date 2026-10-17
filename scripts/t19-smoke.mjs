@@ -88,26 +88,28 @@ const dcText = (dc.content ?? []).map((s) => s.text ?? '').join('');
 ok('破坏性命令经队列批准后执行', dcText.includes('destructive-ok'), dcText);
 
 // ⑦ PTY 吞吐基线（§8：交互首字节 +1 RTT 量级）
-const po = await client.callTool({ name: 'pty-open', arguments: { profile: 'admin', command: 'sh' } });
-const poText = (po.content ?? []).map((s) => s.text ?? '').join('');
-const sessionId = /(?:session|id)[=: ]+([A-Za-z0-9_-]+)/.exec(poText)?.[1];
-if (sessionId) {
+// v2 修正（2026-10-17 真机复跑发现）：pty 系入参为 name（非 session/command）——
+// 旧版传错参数，基线实为校验错误文本的假测量（T-19 原报"4-5ms/2.2s"作废）。
+// 真机重测基线见 docs/reports/2026-10-17-T19-真机复跑与PTY基线重测.md。
+const po = await client.callTool({ name: 'pty-open', arguments: { profile: 'admin', name: 'smokepty' } });
+if (!po.isError) {
   const t0 = Date.now();
-  await client.callTool({ name: 'pty-write', arguments: { session: sessionId, input: 'seq 1 2000\n' } });
-  let bytes = 0, firstMs = -1;
-  for (let i = 0; i < 20; i++) {
-    const pr = await client.callTool({ name: 'pty-read', arguments: { session: sessionId } });
+  await client.callTool({ name: 'pty-write', arguments: { profile: 'admin', name: 'smokepty', input: 'seq 1 2000\n' } });
+  let bytes = 0, firstMs = -1, cursor = 0, done = false;
+  for (let i = 0; i < 200 && !done; i++) {
+    const pr = await client.callTool({ name: 'pty-read', arguments: { profile: 'admin', name: 'smokepty', cursor } });
     const t = (pr.content ?? []).map((s) => s.text ?? '').join('');
-    if (firstMs < 0 && t.length > 0) firstMs = Date.now() - t0;
-    bytes += t.length;
-    if (t.includes('2000')) break;
-    await new Promise((r) => setTimeout(r, 100));
+    let out = t, next = cursor;
+    try { const j = JSON.parse(t); out = String(j.output ?? ''); next = Number(j.cursor ?? cursor); } catch {}
+    if (firstMs < 0 && out.length > 0) firstMs = Date.now() - t0;
+    bytes += out.length; cursor = next;
+    if (out.includes('2000')) done = true;
   }
   const wall = Date.now() - t0;
-  ok('PTY 交互基线（首字节时延）', firstMs >= 0, `firstByte=${firstMs}ms total=${wall}ms bytes≈${bytes}`);
-  await client.callTool({ name: 'pty-close', arguments: { session: sessionId } });
+  ok('PTY 交互基线（首字节时延）', firstMs >= 0 && done, `firstByte=${firstMs}ms total=${wall}ms chars=${bytes}`);
+  await client.callTool({ name: 'pty-close', arguments: { profile: 'admin', name: 'smokepty' } });
 } else {
-  ok('PTY 交互基线', false, `pty-open 未解析会话 id: ${poText.slice(0, 120)}`);
+  ok('PTY 交互基线', false, `pty-open 失败: ${((po.content ?? []).map((s) => s.text ?? '').join('')).slice(0, 120)}`);
 }
 
 // ⑧ 会话收尾
