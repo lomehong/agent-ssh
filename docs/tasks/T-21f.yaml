@@ -1,7 +1,7 @@
 id: T-21f
 title: 控制台 v2 收口（真机走查/文档/NSIS）
 level: L1
-status: 待执行
+status: 待确认
 blockedBy: [T-21a, T-21b, T-21c, T-21d, T-21e, T-21g]
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 14:40:00
@@ -11,4 +11,5 @@ accept:
   - NSIS 安装包
 source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
 events:
+  - 2026-10-17 17:00:00 | progress | by=digital-architect | 收口：README 顶部架构通告补桌面控制台能力段（T-21f 验收的防漂移项）+RUNBOOK §六桌面控制台章节（含历史流水指引——评审 jc3）；NSIS 打包 cargo tauri build 后台执行中；全功能真机走查=自动化部分全绿（cargo 3+断言 4+matrix 11+全量 unit 1924/1 已知 ACL 环境项），视觉走查待主人窗口实测。
   - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a-g

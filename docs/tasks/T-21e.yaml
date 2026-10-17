@@ -1,7 +1,7 @@
 id: T-21e
 title: 设置页
 level: L1
-status: 待执行
+status: 待确认
 blockedBy: [T-21a]
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 14:40:00
@@ -9,4 +9,5 @@ accept:
   - 自启开关/口令轮换（原子写回+会话失效+host-password-rotated 审计）/面状态/Host 管理 UI 化
 source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
 events:
+  - 2026-10-17 17:00:00 | report | by=digital-architect | 自报待主人 confirm。设置页全实装：①自启 toggle（autostart_status/set Rust 命令，UI 即时回显）②更换口令（host.admin.changePassword：旧口令验证→OperatorSessionStore.rotatePassword（哈希更新+全会话失效）→config 原子写回（tmp+rename）→审计 ruleId=host-password-rotated；Rust change_password 桥）③审批面状态（host.status：im 连接态/desktop 连接数/queue 目录/版本/端口）④Host 管理（重启/日志按钮 UI 化）。测试：matrix 11/11+tsc 0。
   - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a
