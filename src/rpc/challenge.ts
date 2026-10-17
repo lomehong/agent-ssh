@@ -45,6 +45,17 @@ export class ChallengeStore {
     this.clock = opts.clock ?? (() => performance.now());
   }
 
+  /**
+   * 读取存活码（T-23 弹窗补拉：审批窗错过推送、经 list_pending 回放时需要
+   * 码渲染校验码输入框）。不存活（不存在/过期/已消费/已作废）返回 undefined。
+   */
+  get(approvalId: string): string | undefined {
+    const e = this.entries.get(approvalId);
+    if (e === undefined || e.invalidated || e.consumed) return undefined;
+    if (this.clock() >= e.expiresAt) return undefined;
+    return e.code;
+  }
+
   /** 生成（或返回既有）4 位码。幂等：同 id 重发推送不给新码。 */
   generate(approvalId: string): string {
     const existing = this.entries.get(approvalId);

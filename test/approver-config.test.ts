@@ -33,10 +33,11 @@ describe('桌面控制台构建配置（T-21a）', () => {
     }
   });
 
-  it('五视图骨架在场（审批实装，其余占位）', () => {
+  it('四视图骨架在场（审批列表实装；历史并入审批——主人 2026-10-17 交互重构）', () => {
     const html = readFileSync(join(uiDir, 'index.html'), 'utf8');
-    for (const view of ['approvals', 'history', 'audit', 'connections', 'settings']) {
+    for (const view of ['approvals', 'audit', 'connections', 'settings']) {
       expect(html).toContain(`view-${view}`);
     }
+    expect(html).not.toContain('view-history');
   });
 });

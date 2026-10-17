@@ -63,9 +63,13 @@ export class ImBot {
       this.deps.auditUnreachable('ws-start', err);
       this.deps.log(`im.unreachable ws-start: ${err instanceof Error ? err.message : String(err)}`);
     }
-    // 补偿（K5）：重启窗口期的未决请求补发卡片（发送失败逐条降级，不中断）。
+    // 补偿（K5）：重启窗口期的**未决**请求补发卡片（发送失败逐条降级，不中断）。
+    // 只推 status=pending——已决/过期的历史记录留在队列里（历史视图数据源），
+    // 补偿若不过滤，每次 Host 重启都会把历史决定再轰炸一遍（2026-10-17 主人
+    // 飞书截图定性）。
     try {
       for (const p of await this.deps.listPending()) {
+        if (p.status !== 'pending') continue;
         await this.notifyPending(p, undefined);
       }
     } catch (err) {

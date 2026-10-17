@@ -90,6 +90,7 @@ async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
                 };
                 let payload = frame.get("params").cloned().unwrap_or(Value::Null);
                 let app2 = emitter.clone();
+                let app3 = emitter.clone();
                 tauri::async_runtime::spawn(async move {
                     {
                         let counter = app2.state::<PendingCounter>();
@@ -105,6 +106,33 @@ async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
                     }
                 });
                 let _ = emitter.emit(event_name, payload);
+                // 主人指令（2026-10-17 澄清）：每条审批请求弹**一个独立窗口**（飞书单卡体验），
+                // label=approval-<请求id>；决定/过期后由前端自行关窗。
+                if is_pending {
+                    if let Some(id) = frame.get("params").and_then(|p| p.get("id")).and_then(|v| v.as_str()) {
+                        let app3 = emitter.clone();
+                        let win_label = format!("approval-{}", id);
+                        tauri::async_runtime::spawn(async move {
+                            if let Some(existing) = app3.get_webview_window(&win_label) {
+                                let _ = existing.show();
+                                let _ = existing.set_focus();
+                            } else {
+                                let _ = tauri::WebviewWindowBuilder::new(
+                                    &app3,
+                                    &win_label,
+                                    tauri::WebviewUrl::App("index.html".into()),
+                                )
+                                .title("agent-ssh 审批")
+                                .inner_size(380.0, 520.0)
+                                .min_inner_size(320.0, 420.0)
+                                .always_on_top(true)
+                                .decorations(false)
+                                .resizable(true)
+                                .build();
+                            }
+                        });
+                    }
+                }
             }
         }))
         .await;
@@ -336,6 +364,31 @@ async fn profiles_remove(state: State<'_, HostState>, name: String) -> Result<Va
         .map_err(err_str)
 }
 
+/// 打开指定请求的独立审批窗（审批列表点击未决单；主人 2026-10-17 澄清的交互形态）。
+#[tauri::command]
+async fn open_approval_window(app: AppHandle, id: String) -> Result<Value, String> {
+    let win_label = format!("approval-{}", id);
+    if let Some(existing) = app.get_webview_window(&win_label) {
+        let _ = existing.show();
+        let _ = existing.set_focus();
+        return Ok(serde_json::json!({ "opened": true, "existing": true }));
+    }
+    let _ = tauri::WebviewWindowBuilder::new(
+        &app,
+        &win_label,
+        tauri::WebviewUrl::App("index.html".into()),
+    )
+    .title("agent-ssh 审批")
+    .inner_size(380.0, 520.0)
+    .min_inner_size(320.0, 420.0)
+    .always_on_top(true)
+    .decorations(false)
+    .resizable(true)
+    .build()
+    .map_err(err_str)?;
+    Ok(serde_json::json!({ "opened": true }))
+}
+
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
@@ -527,7 +580,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove])
+    .invoke_handler(tauri::generate_handler![ping, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, host_status, agents_scan, agents_configure, agents_remove, profiles_list, profiles_upsert, profiles_remove, open_approval_window])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }

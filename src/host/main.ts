@@ -311,11 +311,26 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     'approval.history': async (params) => {
       // T-21b：已决/过期审批流水（operator 面便利视图；法律级留痕仍在审计）。
       const p = (params ?? {}) as { limit?: unknown; offset?: unknown };
-      return listDecided({
+      const page = listDecided({
         ...(queueDir ? { dir: queueDir } : {}),
         ...(typeof p.limit === 'number' ? { limit: p.limit } : {}),
         ...(typeof p.offset === 'number' ? { offset: p.offset } : {}),
       });
+      return page;
+    },
+    'list_pending': async () => {
+      // T-23 弹窗补拉：未决请求清单（破坏性/特权类附存活校验码——弹窗错过
+      // 推送时仍可完成校验码批准；码单次有效性不受影响）。
+      const pending = await listPending(queueDir ? { dir: queueDir } : {});
+      return {
+        pending: pending
+          .filter((p) => p.status === 'pending')
+          .map((p) => {
+            const needsChallenge = p.commandClass === 'destructive' || p.commandClass === 'privileged';
+            const code = needsChallenge ? challenges.get(p.id) : undefined;
+            return code !== undefined ? { ...p, challenge: code } : p;
+          }),
+      };
     },
     'approval.decide': async (params, ctx: RpcHandlerContext) => {
       const p = params as {
