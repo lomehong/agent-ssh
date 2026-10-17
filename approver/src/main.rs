@@ -112,9 +112,11 @@ async fn unlock(
     operator
         .set_notification_handler(Arc::new(move |frame: Value| {
             if let Some(method) = frame.get("method").and_then(|v| v.as_str()) {
+                // Tauri 事件名不允许点号（listen 会被拒）——映射为连字符形态。
+                let is_pending = method == "approval.pending";
                 let event_name = match method {
-                    "approval.pending" => "approval.pending",
-                    "approval.settled" => "approval.settled",
+                    "approval.pending" => "approval-pending",
+                    "approval.settled" => "approval-settled",
                     _ => return,
                 };
                 let payload = frame.get("params").cloned().unwrap_or(Value::Null);
@@ -124,10 +126,10 @@ async fn unlock(
                     {
                         let counter = app2.state::<PendingCounter>();
                         let mut n = counter.0.lock().await;
-                        if event_name == "approval.pending" { *n += 1; } else { *n = n.saturating_sub(1); }
+                        if is_pending { *n += 1; } else { *n = n.saturating_sub(1); }
                     }
                     refresh_tray(&app2).await;
-                    if event_name == "approval.pending" {
+                    if is_pending {
                         let _ = app2.notification().builder()
                             .title("agent-ssh 审批请求")
                             .body("有新的命令等待人工审批，请打开审批窗。")

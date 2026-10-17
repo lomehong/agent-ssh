@@ -8,6 +8,21 @@
 const invoke = window.__TAURI__?.core?.invoke;
 const listen = window.__TAURI__?.event?.listen;
 
+// 全局错误可见化：Webview console 不可见，未捕获错误必须让用户/运维看到。
+window.addEventListener('error', (e) => showFatal(`脚本错误: ${e.message}`));
+window.addEventListener('unhandledrejection', (e) => showFatal(`未处理的异步错误: ${e.reason?.message ?? e.reason}`));
+function showFatal(text) {
+  let bar = document.getElementById('fatal-bar');
+  if (bar === null) {
+    bar = document.createElement('div');
+    bar.id = 'fatal-bar';
+    bar.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:999;background:#6e2f27;color:#fbeae7;font:12px monospace;padding:6px 12px;';
+    (document.body ?? document.documentElement).appendChild(bar);
+  }
+  bar.textContent = '';
+  bar.appendChild(document.createTextNode(text));
+}
+
 // ─── 视图路由 ────────────────────────────────────────────────────────────────
 
 const navItems = Array.from(document.querySelectorAll('.nav-item'));
@@ -283,9 +298,13 @@ async function main() {
     queue.appendChild(textNode('p', 'meta', 'Tauri 桥不可用（纯浏览模式，无审批功能）'));
     return;
   }
-  await listen('approval.pending', (event) => onPending(event.payload));
-  await listen('approval.settled', (event) => onSettled(event.payload));
-  await listen('locked', (event) => showLockForm(`会话已回锁：${event.payload?.reason ?? ''}`));
+  try {
+    await listen('approval-pending', (event) => onPending(event.payload));
+    await listen('approval-settled', (event) => onSettled(event.payload));
+    await listen('locked', (event) => showLockForm(`会话已回锁：${event.payload?.reason ?? ''}`));
+  } catch (err) {
+    showFatal(`事件订阅失败: ${err?.message ?? err}`);
+  }
   wireLockForm();
   showLockForm('输入 operator 口令解锁控制台');
 }
