@@ -13,16 +13,29 @@ const listen = window.__TAURI__?.event?.listen;
 const navItems = Array.from(document.querySelectorAll('.nav-item'));
 
 function showView(name) {
+  currentView = name;
   for (const section of document.querySelectorAll('.view')) {
     section.classList.toggle('hidden', section.id !== `view-${name}`);
   }
   for (const btn of navItems) {
     btn.classList.toggle('active', btn.dataset.view === name);
   }
-  // 首次进入视图拉取（T-21b/c/d；load* 声明在文件后部，调用时已定义）。
+  // 视图数据拉取（T-21b/c/d）：operator 面数据须解锁后拉取——未解锁时
+  // 显示引导而非报错（截图事故：四页齐刷 not unlocked）。
+  if (!unlocked) return;
   if (name === 'history' && typeof loadHistory === 'function' && !historyState.loaded) loadHistory();
-  if (name === 'audit' && !auditState.loaded) { auditState.loaded = true; loadAudit(true); }
+  if (name === 'audit') { auditState.loaded = true; loadAudit(true); }
   if (name === 'connections') loadConnections();
+  if (name === 'settings') { loadSettings(); renderAgents(); }
+}
+
+let currentView = 'approvals';
+function refreshCurrentView(force = false) {
+  if (force) {
+    historyState.loaded = false;
+    auditState.loaded = false;
+  }
+  showView(currentView);
 }
 
 for (const btn of navItems) {
@@ -186,37 +199,45 @@ function onSettled(payload) {
   removeCard(payload.id);
 }
 
-// ─── 锁屏/解锁（T-17.5d 验收 3）：locked 事件或初始态显示口令表单 ───
+// ─── 锁屏/解锁（T-17.5d 验收 3 + T-21 截图修正）：解锁是**控制台级门**——
+// 全屏覆盖层（历史/审计/连接/设置都是 operator 面，未解锁时整窗只有锁屏），
+// 而非审批视图的局部表单（截图事故：其余四页齐刷 "not unlocked"）。
+let unlocked = false;
+
 function showLockForm(reason) {
-  const old = document.getElementById('lock-form');
-  if (old) old.remove();
-  const form = document.createElement('section');
-  form.className = 'card';
-  form.id = 'lock-form';
-  form.appendChild(textNode('p', 'meta', reason || '输入 operator 口令解锁审批面'));
-  const row = document.createElement('div');
-  row.className = 'challenge-row';
-  const input = document.createElement('input');
-  input.type = 'password';
-  input.autocomplete = 'off';
-  row.appendChild(input);
-  const btn = document.createElement('button');
-  btn.className = 'approve';
-  btn.appendChild(document.createTextNode('解锁'));
-  btn.addEventListener('click', async () => {
+  unlocked = false;
+  const overlay = document.getElementById('lock-overlay');
+  overlay.classList.remove('hidden');
+  document.getElementById('lock-title').textContent = '';
+  document.getElementById('lock-title').appendChild(
+    document.createTextNode(reason || '输入 operator 口令解锁控制台'),
+  );
+  const input = document.getElementById('lock-password');
+  const msg = document.getElementById('lock-msg');
+  msg.textContent = '';
+  input.value = '';
+  input.focus();
+}
+
+function wireLockForm() {
+  const input = document.getElementById('lock-password');
+  const btn = document.getElementById('lock-btn');
+  const msg = document.getElementById('lock-msg');
+  const submit = async () => {
     try {
       await invoke('unlock', { password: input.value });
-      form.remove();
+      unlocked = true;
+      document.getElementById('lock-overlay').classList.add('hidden');
+      // 解锁后刷新当前视图数据（各视图首拉在解锁前被跳过）。
+      refreshCurrentView(true);
     } catch (err) {
-      const msg = typeof err === 'string' ? err : (err?.message ?? String(err));
-      form.appendChild(textNode('p', 'meta', `解锁失败: ${msg}`));
+      msg.textContent = '';
+      const m = typeof err === 'string' ? err : (err?.message ?? String(err));
+      msg.appendChild(document.createTextNode(`解锁失败: ${m}`));
     }
-  });
-  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') btn.click(); });
-  row.appendChild(btn);
-  form.appendChild(row);
-  queue.insertBefore(form, queue.firstChild);
-  input.focus();
+  };
+  btn.addEventListener('click', submit);
+  input.addEventListener('keydown', (e) => { if (e.key === 'Enter') submit(); });
 }
 
 async function main() {
@@ -229,7 +250,8 @@ async function main() {
   await listen('approval.pending', (event) => onPending(event.payload));
   await listen('approval.settled', (event) => onSettled(event.payload));
   await listen('locked', (event) => showLockForm(`会话已回锁：${event.payload?.reason ?? ''}`));
-  showLockForm('输入 operator 口令解锁审批面');
+  wireLockForm();
+  showLockForm('输入 operator 口令解锁控制台');
 }
 
 main();
@@ -504,10 +526,3 @@ document.getElementById('host-restart')?.addEventListener('click', async () => {
 });
 document.getElementById('host-openlog')?.addEventListener('click', () => invoke('open_host_log'));
 
-// 设置视图首切：拉取自启/面状态/宿主清单。
-const origShow = showView;
-showView = function wrapped(name) {
-  origShow(name);
-  if (name === 'settings') loadSettings();
-  if (name === 'settings') renderAgents();
-};

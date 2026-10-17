@@ -17,6 +17,14 @@
       <button id="win-close" title="隐藏到托盘">&#x2715;</button>
     </div>
   </header>
+  <div id="lock-overlay" class="hidden">
+    <section class="card" id="lock-form">
+      <h2 id="lock-title">输入 operator 口令解锁控制台</h2>
+      <div class="challenge-row"><input type="password" id="lock-password" autocomplete="off" /></div>
+      <div class="row"><button id="lock-btn" class="approve">解锁</button></div>
+      <p id="lock-msg" class="meta"></p>
+    </section>
+  </div>
   <div id="app">
     <nav id="nav" aria-label="主导航">
       <div id="nav-brand">agent-ssh</div>

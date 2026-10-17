@@ -312,6 +312,44 @@ async fn change_password(
         .map_err(err_str)
 }
 
+/// 审批面状态/版本聚合（T-21e 设置页）：operator 会话转发 host.status。
+#[tauri::command]
+async fn host_status(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("host.status", Value::Null).await.map_err(err_str)
+}
+
+/// 本机宿主识别（T-21g 设置页）：operator 会话转发 agents.scan。
+#[tauri::command]
+async fn agents_scan(state: State<'_, HostState>) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client.call("agents.scan", Value::Null).await.map_err(err_str)
+}
+
+/// 宿主接入写入（T-21g）：operator 会话转发 agents.configure。
+#[tauri::command]
+async fn agents_configure(state: State<'_, HostState>, id: String) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client
+        .call("agents.configure", serde_json::json!({ "id": id }))
+        .await
+        .map_err(err_str)
+}
+
+/// 宿主条目移除（T-21g）：operator 会话转发 agents.remove。
+#[tauri::command]
+async fn agents_remove(state: State<'_, HostState>, id: String) -> Result<Value, String> {
+    let guard = state.operator_client.lock().await;
+    let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
+    client
+        .call("agents.remove", serde_json::json!({ "id": id }))
+        .await
+        .map_err(err_str)
+}
+
 #[tauri::command]
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
@@ -503,7 +541,7 @@ fn main() {
     });
     Ok(())
     })
-    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password])
+    .invoke_handler(tauri::generate_handler![ping, unlock, decide, list_pending, history, audit_query, audit_stats, connections, quota_snapshot, autostart_status, autostart_set, restart_host, open_host_log, change_password, host_status, agents_scan, agents_configure, agents_remove])
     .run(tauri::generate_context!())
     .expect("error while running tauri application");
 }
