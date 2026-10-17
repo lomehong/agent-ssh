@@ -169,10 +169,14 @@ function removeCard(id) {
 }
 
 function showEmptyHint() {
-  const hint = document.createElement('p');
-  hint.id = 'empty-hint';
-  hint.appendChild(document.createTextNode('等待审批请求…（未连接或队列为空）'));
-  queue.appendChild(hint);
+  const box = document.createElement('div');
+  box.className = 'empty-state';
+  box.id = 'empty-hint';
+  const glyph = textNode('div', 'glyph', '~');
+  const headline = textNode('p', 'headline', '队列干净');
+  const sub = textNode('p', 'sub', '新的审批请求到达时会推送到这里，并在托盘提示。');
+  box.append(glyph, headline, sub);
+  queue.appendChild(box);
 }
 
 function hideEmptyHint() {
@@ -281,7 +285,12 @@ function renderHistory() {
   list.textContent = '';
   const shown = historyState.items.filter((p) => historyState.filter === 'all' || p.status === historyState.filter);
   if (shown.length === 0) {
-    list.appendChild(textNode('p', 'meta', '暂无记录（operator 解锁后自动拉取）'));
+    const box = document.createElement('div');
+    box.className = 'empty-state';
+    box.appendChild(textNode('div', 'glyph', '≈'));
+    box.appendChild(textNode('p', 'headline', '暂无审批记录'));
+    box.appendChild(textNode('p', 'sub', '批准、拒绝或过期的请求会留在这里备查。'));
+    list.appendChild(box);
     return;
   }
   for (const p of shown) list.appendChild(historyRow(p));
@@ -335,6 +344,8 @@ const auditStatsEl = document.getElementById('audit-stats');
 function auditRow(rec) {
   const row = document.createElement('div');
   row.className = 'audit-row';
+  const edge = rec.decision === 'deny' ? 'denied' : rec.decision === 'allow' ? 'allowed' : 'pending-c';
+  row.classList.add(edge);
   const cls = rec.decision === 'deny' ? 'denied' : rec.decision === 'allow' ? 'allowed' : 'pending-c';
   row.appendChild(textNode('p', 't', `${rec.timestamp ?? ''} · ${rec.profile ?? ''} · ${rec.decision ?? ''} · ${rec.ruleId ?? ''}`));
   const cmd = document.createElement('div');
@@ -393,7 +404,14 @@ async function loadConnections() {
       card.appendChild(textNode('p', 'meta', `状态: ${c.status ?? '?'} · 会话 ${c.sessions ?? 0} · PTY ${c.ptySessions ?? 0}`));
       connList.appendChild(card);
     }
-    if ((conns?.connections ?? []).length === 0) connList.appendChild(textNode('p', 'meta', '无连接记录'));
+    if ((conns?.connections ?? []).length === 0) {
+      const box = document.createElement('div');
+      box.className = 'empty-state';
+      box.appendChild(textNode('div', 'glyph', '→'));
+      box.appendChild(textNode('p', 'headline', '还没有 SSH 连接'));
+      box.appendChild(textNode('p', 'sub', 'Agent 第一次对某台主机执行命令时会在这里建立连接。'));
+      connList.appendChild(box);
+    }
   } catch (err) {
     connList.textContent = '';
     connList.appendChild(textNode('p', 'meta', `加载失败: ${typeof err === 'string' ? err : err?.message}`));
