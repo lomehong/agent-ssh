@@ -55,6 +55,10 @@ function refreshCurrentView(force = false) {
 for (const btn of navItems) {
   btn.addEventListener('click', () => showView(btn.dataset.view));
 }
+// 左侧菜单收起/展开：折叠=窄条只显图标。
+document.getElementById('nav-toggle')?.addEventListener('click', () => {
+  document.body.classList.toggle('nav-collapsed');
+});
 
 // ─── Host 状态（T-20：ping 探测，导航底部常显） ─────────────────────────────
 

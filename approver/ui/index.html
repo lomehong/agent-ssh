@@ -10,6 +10,11 @@
 </head>
 <body>
   <header id="titlebar" data-tauri-drag-region>
+    <button id="nav-toggle" title="收起/展开菜单" aria-label="收起或展开左侧菜单">
+      <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7">
+        <rect x="3" y="5" width="18" height="14" rx="2"/><path d="M9.5 5v14"/>
+      </svg>
+    </button>
     <span id="titlebar-title" data-tauri-drag-region>agent-ssh 控制台</span>
     <div id="win-controls">
       <button id="win-min" title="最小化">&#x2500;</button>
@@ -19,12 +24,11 @@
   </header>
   <div id="app">
     <nav id="nav" aria-label="主导航">
-      <div id="nav-brand">agent-ssh</div>
-      <button class="nav-item" data-view="approvals">审批<span id="nav-approvals-dot" class="dot hidden"></span></button>
-      <button class="nav-item" data-view="history">历史</button>
-      <button class="nav-item" data-view="audit">审计</button>
-      <button class="nav-item" data-view="connections">连接</button>
-      <button class="nav-item" data-view="settings">设置</button>
+      <button class="nav-item" data-view="approvals"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 3l7 3v5c0 4.4-2.9 7.8-7 9-4.1-1.2-7-4.6-7-9V6l7-3z"/><path d="M9 12l2 2 4-4.5"/></svg><span class="label">审批</span><span id="nav-approvals-dot" class="dot hidden"></span></button>
+      <button class="nav-item" data-view="history"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span class="label">历史</span></button>
+      <button class="nav-item" data-view="audit"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="5" y="4" width="14" height="16" rx="2"/><path d="M9 9h6M9 13h6M9 17h4"/></svg><span class="label">审计</span></button>
+      <button class="nav-item" data-view="connections"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><rect x="4" y="5" width="16" height="6" rx="1.5"/><rect x="4" y="13" width="16" height="6" rx="1.5"/><path d="M7.5 8h.01M7.5 16h.01"/></svg><span class="label">连接</span></button>
+      <button class="nav-item" data-view="settings"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="3.2"/><path d="M12 3v2.6M12 18.4V21M3 12h2.6M18.4 12H21M5.6 5.6l1.9 1.9M16.5 16.5l1.9 1.9M18.4 5.6l-1.9 1.9M7.5 16.5l-1.9 1.9"/></svg><span class="label">设置</span></button>
       <div id="nav-footer">
         <p id="host-status" class="meta">Host 状态：检测中…</p>
       </div>
