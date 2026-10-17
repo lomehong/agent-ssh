@@ -1,7 +1,8 @@
 id: T-20
 title: Host 桌面化：Tauri 控制台托管 Host 子进程（托盘/探活/崩溃重启/随退而停）
 level: L1
-status: 待确认
+status: 待确认（修复批后复验待主人）
+fixRound: 系统性修复批一 1ae36d7（D15 测试同步/audit 时间过滤/by 白名单）+批二 e785966（D15 回写/configure 确认/keychain 留空/死代码）——审查报告 A 全清、B1/B3/B4/B5 落、B2 PTY 强关降范围登记
 reportedAt: 2026-10-17 12:45:00
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 13:45:00
@@ -16,6 +17,7 @@ accept:
   - H6 结构性关闭：Host 忘启=不可能（桌面应用自启即 Host 在）
 source: 主人指令 2026-10-17「我希望 host 的形态是一个桌面应用」；方案 §8 可用性（H6/D5'）
 events:
+  - 2026-10-17 15:55:00 | fix | by=digital-architect | 系统性修复：审查报告（docs/reports/T-21-implementation-review.md）A1-A4 全清+B1/B3/B4/B5 落地+B2 降范围登记；C 级登记。
   - 2026-10-17 14:10:00 | report | by=digital-architect | 自报待主人 confirm。桌面控制台（approver 升级）托管 Host 全部落地并真机验证：V1 启动即自动拉起 Host（7788 在线+飞书面连上）；V2 强杀 Host 后 supervisor 退避重启自愈；V3 退出应用 Host 随停。部署形态：%APPDATA%/ssh-mcp/desktop.json 单文件部署描述（nodePath/hostEntry/configPath/port/token，0600）；start-host.cmd 同源读 json；托盘 tooltip=Host 状态+待审数，菜单增「重启 Host/打开日志」；日志落 host-daemon.log。过程中实证修复四项：a)desktop.json port 数字形态静默回退 env-only（load 改数字兼容+失败落日志不再静默）b)RPC 引导连接 panic 打死连接任务（bounded retry）c)**陈旧 pidfile 在 Windows 永不接管**（process.kill(pid,0) 误报存活——RUNBOOK「陈旧自动接管」声明在 win32 落空，processAliveWin32 用 tasklist 修复，自愈实测通过）d)真产物在 ~/.cargo/shared-target（CARGO_TARGET_DIR 共享目录——target/release 下是陈旧硬链接，部署脚本/文档需用真身）。cargo test 3 绿+tsc 0+pidfile 5 绿。exe 真身=C:/Users/lome/.cargo/shared-target/release/approver.exe。控制台当前常驻运行中。
   - 2026-10-17 13:45:00 | create | by=lome | level=L1 | 主人指令立项
   - 2026-10-17 12:45:00 | report | by=digital-architect | 自报待主人 confirm（接手他 session 半成品收口）。提交 7f2624a：hostproc.rs（HostDeployment desktop.json port 双形态实测修正/spawn_host CREATE_NO_WINDOW/pump_stderr ready 探测/probe TCP/3 单测）+main.rs（HostProc 监督循环：拉起→探活 20s→退避重启→quit 停链；desktop.json 优先/env-only 回退；host-daemon.log 追加；托盘菜单「重启 Host」「打开日志」「退出（停 Host）」+refresh_tray_status）。证据：cargo build 0+cargo test 9/9（hostproc 3+deployment 1+golden 4+retry 1）+TS 全量 4 failed/100 passed（新基线口径：3 既有环境族+registry.test.ts——均本提交前既有状态，registry 失败待查登记）。验收 1-4 实现完整；H6 结构性关闭达成（桌面应用自启即 Host 在）。真机验证随主人运行 desktop 版。
