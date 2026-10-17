@@ -1,0 +1,18 @@
+id: T-22
+title: 主机管理（控制台配置远程 SSH 服务器：ip/端口/用户/密码/密钥）
+level: L1
+status: 待确认
+root: E:\Development\Code\nodejs\agent-ssh
+createdAt: 2026-10-17 18:40:00
+claimedBy: digital-architect
+reportedAt: 2026-10-17 19:10:00
+accept:
+  - Host 侧 profiles-edit.ts：smol-toml 结构化改写+写前备份+loadConfig 同源校验失败回滚
+  - 密码不入 config：auth=password → 写 OS 凭据管理器（keychainEntry=ssh-mcp/<name>），config 落 auth=keychain；密钥=keyRef 路径
+  - host.profiles.list/upsert/remove 三 RPC（operator-only+SPEC 同步）+ Rust 三命令
+  - 连接视图改造为主机管理：清单/添加/编辑（名称主键锁定，密码留空=不变）/删除（确认框）；保存后一键重启 Host 提示
+  - RPC 端到端冒烟：list（example,real）/upsert（备份有）/remove 全 PASS；测试凭据清理
+source: 主人指令 2026-10-17「还需要配置远程 ssh 服务器的 ip、端口、用户、密码/密钥的功能」
+events:
+  - 2026-10-17 19:10:00 | report | by=digital-architect | 自报待主人 confirm。全验收落地（RPC 端到端冒烟 PASS×3；example 占位可由本功能删除）。注意：编辑名称为主键锁定（改名=删旧建新）；TOML 序列化会丢手写注释（备份兜底，返回值明示）。
+  - 2026-10-17 18:40:00 | create | by=lome | level=L1 | 主人指令立项
