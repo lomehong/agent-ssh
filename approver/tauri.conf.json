@@ -7,6 +7,8 @@
     "frontendDist": "./ui"
   },
   "app": {
+    "withGlobalTauri": true,
+    "withGlobalTauri": true,
     "security": {
       "csp": "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost"
     },
