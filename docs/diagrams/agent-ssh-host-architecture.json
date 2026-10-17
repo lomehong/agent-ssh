@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "agent-ssh Host 分离架构（v2）",
+    "locale": "zh-CN",
+    "output": "agent-ssh-host-architecture.html",
+    "quality_profile": "showcase",
+    "views": [
+      { "id": "request-path", "label": "主请求链路", "focus": ["mcp-host", "stub", "host", "engine", "target"], "note": "MCP 宿主→stub→RPC→Host→SSH 的主链路：凭证只存在于 Host。" },
+      { "id": "approval-surfaces", "label": "三审批面", "focus": ["guard", "desktop", "im-bot", "lark"], "note": "破坏性命令经 desktop/im/queue 三面人工决定，携校验码与单次令牌。" },
+      { "id": "safety", "label": "安全边界", "focus": ["stub", "host", "audit", "opa"], "note": "stub 零凭证 fail-closed；审计三层脱敏；OPA 只收紧不放宽。" }
+    ]
+  },
+  "components": [
+    { "id": "mcp-host", "type": "external", "label": "MCP 宿主", "sublabel": "Claude Code / omp / Cursor", "pos": [40, 300], "size": [150, 64] },
+    { "id": "desktop", "type": "frontend", "label": "桌面审批端", "sublabel": "Tauri：托盘/toast/锁屏", "pos": [40, 560], "size": [160, 68], "tag": "T-17.5" },
+    { "id": "stub", "type": "frontend", "label": "agent-ssh stub", "sublabel": "纯单向 MCP 前端 · 零凭证", "pos": [290, 300], "size": [170, 64], "tag": "fail-closed" },
+    { "id": "host", "type": "backend", "label": "Host 守护", "sublabel": "host serve · pidfile 单实例", "pos": [560, 300], "size": [160, 68], "tag": "持 SSH 凭证" },
+    { "id": "policy", "type": "security", "label": "策略引擎", "sublabel": "分类 / 角色×组矩阵", "pos": [560, 130], "size": [160, 64] },
+    { "id": "guard", "type": "security", "label": "审批守卫", "sublabel": "三面 pending/decide + 校验码", "pos": [560, 480], "size": [160, 68] },
+    { "id": "audit", "type": "database", "label": "审计日志", "sublabel": "JSONL · 脱敏+熵扫+防篡改", "pos": [800, 130], "size": [160, 64] },
+    { "id": "engine", "type": "backend", "label": "SSH 引擎", "sublabel": "ssh2 连接池 / PTY / SFTP", "pos": [800, 300], "size": [160, 68] },
+    { "id": "target", "type": "external", "label": "目标主机", "sublabel": "Linux / Windows / 网络设备", "pos": [1040, 300], "size": [150, 68] },
+    { "id": "desktop-guard-link-note", "type": "external", "label": "approvals CLI", "sublabel": "queue 面人工决定", "pos": [290, 560], "size": [150, 60] },
+    { "id": "im-bot", "type": "external", "label": "飞书 bot", "sublabel": "交互卡片 + 单次决策令牌", "pos": [560, 640], "size": [160, 64], "tag": "T-17.6" },
+    { "id": "lark", "type": "external", "label": "飞书开放平台", "sublabel": "WS 长连接出站", "pos": [800, 640], "size": [150, 64] },
+    { "id": "opa", "type": "external", "label": "OPA sidecar", "sublabel": "Rego 评估（可选）", "pos": [800, 20], "size": [150, 56], "tag": "只收紧" }
+  ],
+  "boundaries": [
+    { "kind": "region", "label": "Host 守护进程（agent-ssh host serve）", "wraps": ["host", "policy", "guard", "audit", "engine"] },
+    { "kind": "security-group", "label": "凭证边界：SSH 凭证仅存在于此", "wraps": ["host", "engine"] }
+  ],
+  "connections": [
+    { "id": "host-spawn", "from": "mcp-host", "to": "stub", "label": "stdio spawn（MCP）" },
+    { "id": "stub-rpc", "from": "stub", "to": "host", "label": "RPC over TCP · JSON-RPC/TLS", "variant": "emphasis", "labelDy": 64 },
+    { "id": "host-policy", "from": "host", "to": "policy", "label": "命令分类与授权", "labelAt": [700, 262] },
+    { "id": "policy-opa", "from": "policy", "to": "opa", "label": "Rego 评估", "variant": "dashed", "labelAt": [900, 90] },
+    { "id": "host-guard", "from": "host", "to": "guard", "label": "破坏性拦截入队", "labelAt": [600, 460] },
+    { "id": "host-audit", "from": "host", "to": "audit", "label": "JSONL 留痕", "labelAt": [830, 212] },
+    { "id": "host-engine", "from": "host", "to": "engine", "label": "SSH 执行", "labelAt": [740, 388] },
+    { "id": "engine-target", "from": "engine", "to": "target", "label": "SSH（ssh2）", "variant": "emphasis" },
+    { "id": "guard-push-desktop", "from": "guard", "to": "desktop", "label": "approval.pending 推送", "labelAt": [235, 500] },
+    { "id": "desktop-decide", "from": "desktop", "to": "guard", "label": "decide 携校验码", "labelAt": [262, 648] },
+    { "id": "guard-push-im", "from": "guard", "to": "im-bot", "label": "交互卡片", "labelAt": [760, 575] },
+    { "id": "im-lark", "from": "im-bot", "to": "lark", "label": "WS 出站", "variant": "dashed" },
+    { "id": "im-decide", "from": "im-bot", "to": "guard", "label": "单次令牌 decide", "labelAt": [735, 606] },
+    { "id": "desktop-hosting", "from": "desktop", "to": "host", "label": "托管子进程（T-20）", "variant": "dashed", "fromSide": "top", "toSide": "bottom", "via": [[120, 430], [640, 430]], "labelAt": [370, 418] }
+  ],
+  "cards": [
+    { "dot": "cyan", "title": "主链路", "items": ["MCP 宿主 spawn stub（stdio）", "stub→Host 走 RPC over TCP（JSON-RPC/TLS）", "Host 持 SSH 凭证经 ssh2 执行"] },
+    { "dot": "emerald", "title": "三审批面（desktop/im/queue）", "items": ["桌面端：approval.pending 推送+托盘/toast/校验码", "飞书：交互卡片+单次决策令牌+open_id 绑定", "队列：approvals CLI 人工决定（文件 0700/0600）"] },
+    { "dot": "rose", "title": "安全红线", "items": ["Host 不在线=产品全灭（stub 零工具诚实态）", "审计三层脱敏+熵扫+防篡改链", "OPA 只收紧不放宽；策略未知键启动即拒"] }
+  ]
+}

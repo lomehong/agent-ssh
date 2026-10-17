@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "ok": false,
+  "command": "visual-check",
+  "evidenceKind": "automated-browser",
+  "status": "fail",
+  "visualReview": "pending",
+  "artifact": {
+    "path": "E:\\Development\\Code\\nodejs\\agent-ssh\\docs\\diagrams\\agent-ssh-host-architecture.html",
+    "sha256": "8751e5f224db89e6dcf9620990bf2b4e02645f898049a35fe07335fc8cc1ba1f",
+    "bytes": 821304
+  },
+  "state": {
+    "detail": "read",
+    "motion": "still"
+  },
+  "chrome": {
+    "status": "available",
+    "executable": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+  },
+  "diagnostics": [
+    {
+      "code": "viewer/visual-check-runtime",
+      "severity": "error",
+      "message": "visual-check could not complete its Chrome inspection.",
+      "subject": {
+        "artifact": "E:\\Development\\Code\\nodejs\\agent-ssh\\docs\\diagrams\\agent-ssh-host-architecture.html"
+      },
+      "evidence": {
+        "reason": "Chrome DevTools process exit failed: Chrome closed with exit code 0\nChrome process: exit code 0."
+      },
+      "supportedFixes": [
+        "resolve the reported Chrome inspection error, then rerun visual-check"
+      ]
+    }
+  ],
+  "containment": {
+    "status": "fail",
+    "viewports": []
+  },
+  "readability": {
+    "status": "fail",
+    "minimumProjectedNodeTextPx": 6,
+    "viewports": []
+  },
+  "viewerChrome": {
+    "status": "fail",
+    "viewports": []
+  },
+  "captures": {
+    "status": "fail",
+    "screenshots": [],
+    "contactSheet": null
+  },
+  "sidecars": {
+    "receipt": "agent-ssh-host-architecture.visual-check.json",
+    "contactSheet": "agent-ssh-host-architecture.visual-check.html"
+  },
+  "error": "Chrome DevTools process exit failed: Chrome closed with exit code 0\nChrome process: exit code 0."
+}
