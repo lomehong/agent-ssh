@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy"
+        content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src ipc: http://ipc.localhost" />
+  <title>agent-ssh 审批</title>
+  <link rel="stylesheet" href="./ui.css" />
+</head>
+<body class="approval-body">
+  <!-- 单卡审批窗（主人 2026-10-17 澄清：弹出的窗口就是审批信息本身，飞书单卡体验）。
+       渲染全部 textNode（K8-③）。 -->
+  <div id="approval-card" class="card approval-card">
+    <p class="meta">加载中…</p>
+  </div>
+  <script type="module" src="./approval.js"></script>
+</body>
+</html>

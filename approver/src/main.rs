@@ -109,7 +109,7 @@ async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
                 // 主人指令（2026-10-17 澄清）：每条审批请求弹**一个独立窗口**（飞书单卡体验），
                 // label=approval-<请求id>；决定/过期后由前端自行关窗。
                 if is_pending {
-                    if let Some(id) = frame.get("params").and_then(|p| p.get("id")).and_then(|v| v.as_str()) {
+                    if let Some(id) = frame.get("params").and_then(|p| p.get("id")).and_then(|v| v.as_str()).map(|v| v.to_string()) {
                         let app3 = emitter.clone();
                         let win_label = format!("approval-{}", id);
                         tauri::async_runtime::spawn(async move {
@@ -120,7 +120,7 @@ async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
                                 let _ = tauri::WebviewWindowBuilder::new(
                                     &app3,
                                     &win_label,
-                                    tauri::WebviewUrl::App("index.html".into()),
+                                    tauri::WebviewUrl::App(format!("approval.html?id={}", id).into()),
                                 )
                                 .title("agent-ssh 审批")
                                 .inner_size(380.0, 520.0)
@@ -376,7 +376,7 @@ async fn open_approval_window(app: AppHandle, id: String) -> Result<Value, Strin
     let _ = tauri::WebviewWindowBuilder::new(
         &app,
         &win_label,
-        tauri::WebviewUrl::App("index.html".into()),
+        tauri::WebviewUrl::App(format!("approval.html?id={}", id).into()),
     )
     .title("agent-ssh 审批")
     .inner_size(380.0, 520.0)
