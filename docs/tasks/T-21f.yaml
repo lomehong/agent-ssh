@@ -11,5 +11,5 @@ accept:
   - NSIS 安装包
 source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
 events:
-  - 2026-10-17 17:00:00 | progress | by=digital-architect | 收口：README 顶部架构通告补桌面控制台能力段（T-21f 验收的防漂移项）+RUNBOOK §六桌面控制台章节（含历史流水指引——评审 jc3）；NSIS 打包 cargo tauri build 后台执行中；全功能真机走查=自动化部分全绿（cargo 3+断言 4+matrix 11+全量 unit 1924/1 已知 ACL 环境项），视觉走查待主人窗口实测。
+  - 2026-10-17 17:00:00 | progress | by=digital-architect | 收口：README 顶部架构通告补桌面控制台能力段（T-21f 验收的防漂移项）+RUNBOOK §六桌面控制台章节（含历史流水指引——评审 jc3）；NSIS 打包完成：C:/Users/lome/.cargo/shared-target/release/bundle/nsis/agent-ssh approver_0.1.0_x64-setup.exe（2.2MB；注意 approver/target/release/bundle 下是 Oct-13 陈旧产物勿用——CARGO_TARGET_DIR 共享目录同 exe 教训）；全功能真机走查=自动化部分全绿（cargo 3+断言 4+matrix 11+全量 unit 1924/1 已知 ACL 环境项），视觉走查待主人窗口实测。
   - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a-g
