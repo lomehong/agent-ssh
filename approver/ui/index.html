@@ -9,6 +9,14 @@
   <link rel="stylesheet" href="./ui.css" />
 </head>
 <body>
+  <header id="titlebar" data-tauri-drag-region>
+    <span id="titlebar-title" data-tauri-drag-region>agent-ssh 控制台</span>
+    <div id="win-controls">
+      <button id="win-min" title="最小化">&#x2500;</button>
+      <button id="win-max" title="最大化/还原">&#x25A1;</button>
+      <button id="win-close" title="隐藏到托盘">&#x2715;</button>
+    </div>
+  </header>
   <div id="app">
     <nav id="nav" aria-label="主导航">
       <div id="nav-brand">agent-ssh</div>
@@ -22,14 +30,6 @@
       </div>
     </nav>
     <div id="shell">
-      <header id="titlebar" data-tauri-drag-region>
-        <span id="titlebar-title" data-tauri-drag-region>agent-ssh 控制台</span>
-        <div id="win-controls">
-          <button id="win-min" title="最小化">&#x2500;</button>
-          <button id="win-max" title="最大化/还原">&#x25A1;</button>
-          <button id="win-close" title="隐藏到托盘">&#x2715;</button>
-        </div>
-      </header>
       <main id="content">
       <section id="view-approvals" class="view">
         <h1>审批</h1>

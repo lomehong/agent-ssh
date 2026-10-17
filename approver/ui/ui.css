@@ -32,7 +32,7 @@ body {
   font-size: 13px;
   margin: 0; padding: 0;
   background: var(--bg0); color: var(--fg);
-  display: flex; flex-direction: row;
+  display: flex; flex-direction: column;
   overflow: hidden;
 }
 ::selection { background: var(--allow-deep); color: var(--fg); }
@@ -51,7 +51,7 @@ body {
 #shell {
   flex: 1; min-width: 0;
   display: flex; flex-direction: column;
-  margin: 8px 10px 8px 0;
+  margin: 0 10px 10px 0;
   background: var(--bg1);
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -59,12 +59,11 @@ body {
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
 }
 
-/* ── 标题栏（shell 顶条，随圆角裁切） ── */
+/* ── 标题栏（通栏，卡片外——参考图语言：窗控在最右上浮于底色） ── */
 #titlebar {
   display: flex; align-items: center;
   height: 38px; flex: none;
-  background: var(--bg2);
-  border-bottom: 1px solid var(--line);
+  background: transparent;
   user-select: none;
 }
 #titlebar-title {
@@ -72,6 +71,7 @@ body {
   color: var(--fg-faint); padding-left: 16px; flex: 1;
   letter-spacing: 0.4px;
 }
+#win-controls { margin-left: auto; }
 #win-controls { display: flex; height: 100%; }
 #win-controls button {
   width: 46px; height: 100%;
