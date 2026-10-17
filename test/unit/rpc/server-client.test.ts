@@ -13,6 +13,7 @@ interface Stack {
   server: RpcHostServer;
   port: number;
   token: string;
+  imToken: string;
   password: string;
   sessions: OperatorSessionStore;
   clientOpts: (overrides?: Partial<RpcClientOpts>) => RpcClientOpts;
@@ -20,13 +21,14 @@ interface Stack {
 
 async function startStack(): Promise<Stack> {
   const token = generateAgentToken();
+  const imToken = generateAgentToken();
   const password = 'slice-pass-9';
   const sessions = new OperatorSessionStore({ storedHash: hashPassword(password) });
   const server = new RpcHostServer({
     tables: {
       agentTokens: new Set([tokenDigest(token)]),
       sessions,
-      imDecisionTokens: new Set(),
+      imDecisionTokens: new Set([tokenDigest(imToken)]),
     },
     handlers: {
       'tool.call': (params) => ({ echoed: params }),
@@ -37,6 +39,7 @@ async function startStack(): Promise<Stack> {
     server,
     port,
     token,
+    imToken,
     password,
     sessions,
     clientOpts: (overrides) => ({ host: '127.0.0.1', port, token, ...overrides }),
@@ -72,14 +75,29 @@ describe('垂直切片：stub 客户端 ↔ Host 服务端 真链路（T-14.5）
     await expect(client.connect()).resolves.toBeUndefined();
   });
 
-  it('FORBIDDEN：agent 令牌调 approval.list → -32002 且审计留痕', async () => {
+  it('D15 单令牌：agent 令牌过矩阵——approval.list 到 handler 层（-32601 未实现，非 -32002 禁行）', async () => {
     const stack = await startStack();
     const client = new RpcClient(stack.clientOpts());
     cleanup.push(() => client.close());
     await client.connect();
-    await expect(client.call('approval.list')).rejects.toMatchObject({ code: RPC_ERROR.FORBIDDEN });
+    // 本裸 server 只注册 tool.call；approval.list 过矩阵后按「未实现」-32601 应答。
+    // 若此断言变为 -32002，说明矩阵半途改回——D15 红线漂移。
+    await expect(client.call('approval.list')).rejects.toMatchObject({
+      code: RPC_ERROR.METHOD_NOT_FOUND,
+    });
+  });
+
+  it('FORBIDDEN：im 令牌调非 decide 方法 → -32002 且审计留痕（D15 后唯一禁行组合）', async () => {
+    const stack = await startStack();
+    // im 令牌连 hello 都禁行（矩阵 im:false）——skipHello 直连后首调即撞矩阵。
+    const client = new RpcClient(stack.clientOpts({ token: stack.imToken, skipHello: true }));
+    cleanup.push(() => client.close());
+    await client.connect();
+    await expect(client.call('tool.call', { n: 1 })).rejects.toMatchObject({
+      code: RPC_ERROR.FORBIDDEN,
+    });
     expect(
-      stack.server.auditLog.some((e) => e.kind === 'forbidden' && e.method === 'approval.list'),
+      stack.server.auditLog.some((e) => e.kind === 'forbidden' && e.method === 'tool.call'),
     ).toBe(true);
   });
 

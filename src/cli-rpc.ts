@@ -198,6 +198,9 @@ export async function runApprovalsCli(args: string[]): Promise<number> {
         decision: verb === 'approve' ? 'approved' : 'rejected',
         // 面身份在写入方携带（T-17.6 前缀职责归位：回读不再补 cli: 前缀）。
         by: `cli:${cliUser()}`,
+        // face=cli：人已在 shell（敲出这条命令本身就是人的动作），破坏性
+        // 类的校验码兜底对 CLI 免验——缺此标记破坏性批准会被码拦死。
+        face: 'cli',
       })) as { decided: boolean; message: string };
       console.log(outcome.message);
       return outcome.decided ? 0 : 1;

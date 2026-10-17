@@ -6,16 +6,12 @@ import { randomBytes } from 'node:crypto';
 import { runDirectCli, runApprovalsCli, DIRECT_VERBS } from '../../src/cli-rpc.js';
 import { startHost, type RunningHost } from '../../src/host/main.js';
 import { createApprovalRequest } from '../../src/guard/approval-queue.js';
-import {  } from '../../src/rpc/auth.js';
-import { RpcClient } from '../../src/rpc/client.js';
 import { createAppConfig } from '../integration/fixtures.js';
 
 // T-17：CLI 经 RPC 的语义保持（旧 cli-direct.test 的继任）。
-// run/info 与 approvals 都 dial startHost 拉起的 Host；operator 会话经
-// AGENT_SSH_SESSION_TOKEN env 注入（免去 TTY 口令交互）；纯逻辑用例
+// run/info 与 approvals 都 dial startHost 拉起的 Host；凭据经 AGENT_SSH_TOKEN
+// env 注入（D15 单令牌：本机环回即信任，无口令引导）；纯逻辑用例
 // （usage/禁止名单）不拨号，红线优先于网络的语义由此钉死。
-
-const OPERATOR_PASSWORD = 'operator-test-password';
 
 let host: RunningHost | undefined;
 let dir: string | undefined;
@@ -41,9 +37,9 @@ function newAgentToken(): string {
   return randomBytes(32).toString('base64url');
 }
 
-async function startWithSession(
+async function startWithAgentToken(
   profileEndpoint?: { host: string; port: number },
-): Promise<{ queueDir: string; sessionToken: string }> {
+): Promise<{ queueDir: string; token: string }> {
   const queueDir = join(dir!, 'approvals');
   const token = newAgentToken();
   host = await startHost({
@@ -61,25 +57,11 @@ async function startWithSession(
     reaperIntervalMs: 60_000,
   });
 
-  const pre = new RpcClient({
-    host: '127.0.0.1',
-    port: host.port,
-    token: '',
-    skipHello: true,
-    reconnect: false,
-    requestTimeoutMs: 10_000,
-  });
-  await pre.connect();
-  const started = await pre.call<{ sessionToken: string }>('auth.session.start', {
-    password: OPERATOR_PASSWORD,
-  });
-  await pre.close();
-
   savedEnv.AGENT_SSH_HOST_ADDR = process.env.AGENT_SSH_HOST_ADDR;
-  savedEnv.AGENT_SSH_SESSION_TOKEN = process.env.AGENT_SSH_SESSION_TOKEN;
+  savedEnv.AGENT_SSH_TOKEN = process.env.AGENT_SSH_TOKEN;
   process.env.AGENT_SSH_HOST_ADDR = `127.0.0.1:${host.port}`;
-  process.env.AGENT_SSH_SESSION_TOKEN = started.sessionToken;
-  return { queueDir, sessionToken: started.sessionToken };
+  process.env.AGENT_SSH_TOKEN = token;
+  return { queueDir, token };
 }
 
 describe('cli-rpc 直连面（旧 cli-direct 继任）', () => {
@@ -106,7 +88,7 @@ describe('cli-rpc 直连面（旧 cli-direct 继任）', () => {
   });
 
   it('run 目标不可达 → cli-run failed + exit 1（Host 语义桥的 deny 审计在 Host 侧）', async () => {
-    await startWithSession({ host: '127.0.0.1', port: 1 });
+    await startWithAgentToken({ host: '127.0.0.1', port: 1 });
     const logs: string[] = [];
     const errSpy = vi.spyOn(console, 'error').mockImplementation((m) => logs.push(String(m)));
     const code = await runDirectCli('run', ['--profile=admin', 'echo', 'hi']);
@@ -116,7 +98,7 @@ describe('cli-rpc 直连面（旧 cli-direct 继任）', () => {
   });
 
   it('info 经 operator 会话返回 profile 行', async () => {
-    await startWithSession();
+    await startWithAgentToken();
     const logs: string[] = [];
     const logSpy = vi.spyOn(console, 'log').mockImplementation((m) => logs.push(String(m)));
     const code = await runDirectCli('info', ['--profile=admin']);
@@ -128,7 +110,7 @@ describe('cli-rpc 直连面（旧 cli-direct 继任）', () => {
 
 describe('cli-rpc approvals（队列在 Host 机）', () => {
   it('list：空队列 → No approval requests. + exit 0', async () => {
-    await startWithSession();
+    await startWithAgentToken();
     const logs: string[] = [];
     const logSpy = vi.spyOn(console, 'log').mockImplementation((m) => logs.push(String(m)));
     const code = await runApprovalsCli(['list']);
@@ -138,7 +120,7 @@ describe('cli-rpc approvals（队列在 Host 机）', () => {
   });
 
   it('approve：完整上下文打印 + 决定生效（approver=cli:<user> 语义）', async () => {
-    const { queueDir } = await startWithSession();
+    const { queueDir } = await startWithAgentToken();
     const req = await createApprovalRequest(
       {
         profile: 'admin',
@@ -166,7 +148,7 @@ describe('cli-rpc approvals（队列在 Host 机）', () => {
   });
 
   it('reject：拒绝生效', async () => {
-    const { queueDir } = await startWithSession();
+    const { queueDir } = await startWithAgentToken();
     const req = await createApprovalRequest(
       {
         profile: 'admin',

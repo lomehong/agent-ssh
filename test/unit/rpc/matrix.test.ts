@@ -22,6 +22,9 @@ const SPEC_ROWS: Record<string, { agent: boolean; operator: boolean; im: boolean
   'resource.read': { agent: true, operator: true, im: false },
   'approval.subscribe': { agent: true, operator: true, im: false },
   'approval.list': { agent: true, operator: true, im: false },
+  // T-23 弹窗补拉（未决清单附存活码）：D15 单令牌下行权与 approval.list 同类
+  // （码对本地 agent 本不保密——approval.pending 推送载荷明文带码）。
+  'list_pending': { agent: true, operator: true, im: false },
   'approval.history': { agent: true, operator: true, im: false },
   'audit.query': { agent: true, operator: true, im: false },
   'audit.stats': { agent: true, operator: true, im: false },

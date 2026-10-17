@@ -8,10 +8,20 @@
   <link rel="stylesheet" href="./ui.css" />
 </head>
 <body class="approval-body">
-  <!-- 单卡审批窗（主人 2026-10-17 澄清：弹出的窗口就是审批信息本身，飞书单卡体验）。
-       渲染全部 textNode（K8-③）。 -->
-  <div id="approval-card" class="card approval-card">
-    <p class="meta">加载中…</p>
+  <!-- 单卡审批窗（T-23）：组织形式学 coucou 审批卡——who 行 → 命令块（视觉中心）
+       → 操作行（拒绝/批准 + N/Y 快捷键）→ 底边倒计时条；头部可拖动，
+       × = 暂不处理（请求保留在队列，fold 语义）。皮肤沿用值守台 token。
+       卡体由 approval.js 以 textNode 渲染（K8-③）。 -->
+  <div id="approval-window">
+    <header id="approval-head" data-tauri-drag-region>
+      <span class="head-dot" data-tauri-drag-region></span>
+      <span class="head-title" data-tauri-drag-region>agent-ssh 审批</span>
+      <button id="approval-close" title="暂不处理（请求保留在队列）">&#x2715;</button>
+    </header>
+    <div id="approval-card">
+      <p class="meta">加载中…</p>
+    </div>
+    <div id="approval-countdown"></div>
   </div>
   <script type="module" src="./approval.js"></script>
 </body>

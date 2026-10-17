@@ -123,11 +123,11 @@ async fn attach_push(app: AppHandle, client: Arc<RpcClient>) {
                                     tauri::WebviewUrl::App(format!("approval.html?id={}", id).into()),
                                 )
                                 .title("agent-ssh 审批")
-                                .inner_size(380.0, 520.0)
-                                .min_inner_size(320.0, 420.0)
+                                .inner_size(420.0, 400.0)
                                 .always_on_top(true)
                                 .decorations(false)
                                 .resizable(true)
+                                .center()
                                 .build();
                             }
                         });
@@ -379,11 +379,11 @@ async fn open_approval_window(app: AppHandle, id: String) -> Result<Value, Strin
         tauri::WebviewUrl::App(format!("approval.html?id={}", id).into()),
     )
     .title("agent-ssh 审批")
-    .inner_size(380.0, 520.0)
-    .min_inner_size(320.0, 420.0)
+    .inner_size(420.0, 400.0)
     .always_on_top(true)
     .decorations(false)
     .resizable(true)
+    .center()
     .build()
     .map_err(err_str)?;
     Ok(serde_json::json!({ "opened": true }))
@@ -393,7 +393,9 @@ async fn open_approval_window(app: AppHandle, id: String) -> Result<Value, Strin
 async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     let guard = state.operator_client.lock().await;
     let client = guard.as_ref().ok_or_else(|| err_str("not unlocked"))?;
-    client.call("approval.list", Value::Null).await.map_err(err_str)
+    // T-23 弹窗补拉必须走 Host 的 list_pending（破坏性/特权附存活校验码）；
+    // approval.list 是无码清单（主窗列表用）——此前误调致弹窗永远拿不到码。
+    client.call("list_pending", Value::Null).await.map_err(err_str)
 }
 
 /// 托盘 tooltip 承载 Host 状态 + 待审数（T-20）。

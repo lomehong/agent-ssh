@@ -8,11 +8,8 @@
 const invoke = window.__TAURI__?.core?.invoke;
 const listen = window.__TAURI__?.event?.listen;
 
-// 独立审批弹窗（T-23 澄清）：**每条审批请求一个独立窗口**（飞书单卡体验）——
-// label=approval-<请求id>，窗口内只渲染该请求的单卡；决定或过期自动关窗。
-const winLabel = window.__TAURI__?.window?.getCurrentWindow?.()?.label ?? '';
-const isPopup = winLabel.startsWith('approval-');
-const popupId = isPopup ? winLabel.slice('approval-'.length) : null;
+// 独立审批卡窗（T-23）由 approval.html+approval.js 全权渲染（每请求一窗，
+// label=approval-<请求id>）；本文件只负责主控制台（label=main）。
 
 // 全局错误可见化：Webview console 不可见，未捕获错误必须让用户/运维看到。
 window.addEventListener('error', (e) => showFatal(`脚本错误: ${e.message}`));
@@ -85,28 +82,6 @@ async function refreshHostStatus() {
   hostStatusEl.appendChild(document.createTextNode(text));
 }
 setInterval(refreshHostStatus, 10_000);
-
-async function renderSingleCard(id) {
-  try {
-    const res = await invoke('list_pending');
-    const p = (res?.pending ?? []).find((x) => x.id === id && x.status === 'pending');
-    if (p === undefined) {
-      document.getElementById('queue')?.appendChild(textNode('p', 'meta', '该请求已决定或过期——本窗口即将关闭。'));
-      setTimeout(() => window.__TAURI__?.window?.getCurrentWindow?.()?.close?.(), 2500);
-      return;
-    }
-    const card = renderCard(p);
-    document.getElementById('queue')?.appendChild(card);
-    // 过期自动关窗：倒计时终点后 1 秒关（该请求已不可能再批）。
-    const expiresAt = Date.parse(p.expiresAt ?? '');
-    if (!Number.isNaN(expiresAt)) {
-      setTimeout(() => window.__TAURI__?.window?.getCurrentWindow?.()?.close?.(),
-        Math.max(0, expiresAt - Date.now() + 1000));
-    }
-  } catch (err) {
-    document.getElementById('queue')?.appendChild(textNode('p', 'meta', `拉取失败: ${typeof err === 'string' ? err : err?.message}`));
-  }
-}
 
 // ─── 审批列表（主人 2026-10-17 交互重构：待决+已决+过期统一列表，
 //      待决行点击弹独立审批窗；实时推送到达时 Rust 自动弹窗） ─────────────────
@@ -186,11 +161,6 @@ async function onApprovalEvent(payload) {
 async function main() {
   showView('approvals');
   refreshHostStatus();
-  if (isPopup) {
-    document.body.classList.add('popup-mode');
-    await renderSingleCard(popupId);
-    return;
-  }
   if (!invoke || !listen) {
     showFatal('Tauri 桥不可用（纯浏览模式，无审批功能）');
     return;

@@ -120,7 +120,9 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
     challenge?: string;
   }): Promise<{ decided: boolean; message: string }> => {
     const { id, decision } = input;
-    if (challenges.hasPendingChallenge(id)) {
+    // 校验码只拦批准（防误批/自批）；拒绝是安全方向操作必须永远可达——
+    // 否则卡上没码的人连「拒绝」都点不动（真机实测发现，2026-10-17）。
+    if (decision === 'approved' && challenges.hasPendingChallenge(id)) {
       const face = input.face ?? '';
       const code = input.challenge ?? '';
       if (face !== 'cli') {
