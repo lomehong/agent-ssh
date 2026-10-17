@@ -183,6 +183,7 @@ function removeCard(id) {
 }
 
 function showEmptyHint() {
+  hideEmptyHint(); // 幂等（孤儿 settled 连续到达时不叠加空态框——主人截图定性）
   const box = document.createElement('div');
   box.className = 'empty-state';
   box.id = 'empty-hint';
