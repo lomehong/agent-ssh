@@ -1,7 +1,7 @@
 id: T-21d
 title: 连接会话+配额
 level: L1
-status: 待执行
+status: 待确认
 blockedBy: [T-21a]
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 14:40:00
@@ -9,4 +9,5 @@ accept:
   - 深化视图 + quota.snapshot + PTY 强关（走 tool.call 留审计）
 source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
 events:
+  - 2026-10-17 16:20:00 | report | by=digital-architect | 自报待主人 confirm。连接会话+配额：①quota 实例提升 Host 级（同实例入管线计数+快照读取，pipeline ToolDeps 注入）②host.connections（registry 只读投影+会话/PTY 计数）与 quota.snapshot（滚动 24h 用量/上限）两 RPC（operator-only+SPEC）③Rust connections/quota_snapshot 命令④连接视图（每 profile 状态/会话数/PTY 数+配额行）。验证：RPC 冒烟 quotas=2；1293 测试绿。
   - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a

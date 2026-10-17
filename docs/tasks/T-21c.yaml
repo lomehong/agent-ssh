@@ -1,7 +1,7 @@
 id: T-21c
 title: 审计查看器
 level: L1
-status: 待执行
+status: 待确认
 blockedBy: [T-21a]
 root: E:\Development\Code\nodejs\agent-ssh
 createdAt: 2026-10-17 14:40:00
@@ -9,4 +9,5 @@ accept:
   - audit.query/stats（脱敏出口断言+红线+跨轮转策略）+过滤/搜索/尾随 UI
 source: 桌面控制台 v2 设计 §5（主人 2026-10-17 落定）
 events:
+  - 2026-10-17 16:20:00 | report | by=digital-architect | 自报待主人 confirm。审计查看器：①Host 侧 audit/query.ts（主文件+.1~.10 轮转序列归并，倒序尾部偏移分页——轮转天然稳定；profile/class/decision/ruleId/关键词五维过滤；auditStats 今日聚合）②矩阵 audit.query/stats 增行 operator-only+SPEC 同步③Rust audit_query/audit_stats 命令④审计视图 UI（五维过滤/搜索/加载更多/统计行）。验证：端到端——cli.run 真机执行→audit.query total=1 decision=allow→stats today=1；tsc 0。
   - 2026-10-17 14:40:00 | create | by=lome | level=L1 | blocked_by=T-21a
