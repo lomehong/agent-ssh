@@ -25,6 +25,25 @@ function processAlive(pid: number): boolean {
   }
 }
 
+/**
+ * Windows 专用活性判定：`process.kill(pid, 0)` 在 win32 对已退出 pid 存在
+ * 误报存活（uv_kill 的 OpenProcess 语义）——实测强杀 Host 后陈旧 pidfile
+ * 永远"活着"，陈旧接管永不触发（T-20 部署实测，与 RUNBOOK「陈旧自动接管」
+ * 的声明相悖）。tasklist 慢但真：acquire 只走一次，开销可接受。
+ */
+function processAliveWin32(pid: number): boolean {
+  try {
+    const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+    const out = execFileSync('tasklist', ['/FI', `PID eq ${pid}`, '/NH'], {
+      timeout: 5_000,
+      windowsHide: true,
+    });
+    return String(out).toLowerCase().includes('.exe');
+  } catch {
+    return false; // tasklist 查无此 pid 时以非零码退出
+  }
+}
+
 export function acquirePidfile(path: string): { release(): void } {
   if (existsSync(path)) {
     let pid = 0;
@@ -33,7 +52,7 @@ export function acquirePidfile(path: string): { release(): void } {
     } catch {
       pid = Number.NaN;
     }
-    if (Number.isInteger(pid) && pid > 0 && processAlive(pid)) {
+    if (Number.isInteger(pid) && pid > 0 && (process.platform === 'win32' ? processAliveWin32(pid) : processAlive(pid))) {
       throw new PidfileLockedError(pid, path);
     }
     // 陈旧文件（进程已死或内容不可读）：删旧后接管。先 unlink 再 O_EXCL
