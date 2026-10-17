@@ -5,3 +5,4 @@
 //! （test/fixtures/rpc/protocol-golden.json），本工程只消费（K6）。
 
 pub mod rpc;
+pub mod hostproc;

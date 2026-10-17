@@ -7,9 +7,12 @@
 //! operator 会话：UI 口令表单 → invoke('unlock') → 内部 start 换会话令牌
 //! （内存态，K8-⑦ Zeroizing）；agent 令牌连接仅用于只读面（ping/manifest）。
 
+use approver::hostproc::{self, HostDeployment, HostEvent};
 use approver::rpc::RpcClient;
 use serde_json::Value;
 use std::sync::Arc;
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use tauri::{AppHandle, Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use tokio::sync::Mutex;
@@ -19,6 +22,45 @@ use tokio::sync::Mutex;
 #[derive(Default)]
 struct PendingCounter(Mutex<usize>);
 
+/// Host 守护子进程 pid（T-20）：Some=本应用托管中；None=未托管（外部起）。
+struct HostProc(Mutex<Option<u32>>);
+
+/// Host 状态文案（supervisor 写，托盘/推送回调读）。
+struct HostStatusText(Mutex<String>);
+
+/// Host 日志文件路径（stderr 行追加；「打开日志」菜单目标）。
+fn host_log_path() -> std::path::PathBuf {
+    hostproc::appdata_ssh_mcp_base().join("ssh-mcp").join("host-daemon.log")
+}
+
+async fn append_host_log(line: &str) {
+    use std::io::Write;
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(host_log_path())
+    {
+        let _ = writeln!(f, "{}", line);
+    }
+}
+
+/// 托盘 tooltip 承载 Host 状态 + 待审数（T-20）。
+async fn refresh_tray(app: &AppHandle) {
+    let status = app.state::<HostStatusText>().0.lock().await.clone();
+    let n = *app.state::<PendingCounter>().0.lock().await;
+    let pending = if n == 0 { "无待审".to_string() } else { format!("{n} 条待审") };
+    let label = format!("agent-ssh（Host {status} · {pending}）");
+    if let Some(tray) = app.tray_by_id("main-tray") {
+        let _ = tray.set_tooltip(Some(label));
+    }
+}
+
+/// Host 状态写入 + 托盘刷新（单入口，避免文案漂移）。
+async fn set_host_status(app: &AppHandle, status: &str) {
+    *app.state::<HostStatusText>().0.lock().await = status.to_string();
+    refresh_tray(app).await;
+}
+
 struct HostState {
     addr: String,
     /// agent 只读连接（ping/manifest）。
@@ -27,15 +69,6 @@ struct HostState {
     operator_client: Mutex<Option<Arc<RpcClient>>>,
     token: Arc<String>,
     pin: Option<String>,
-}
-
-async fn refresh_tray(app: &AppHandle) {
-    let state = app.state::<PendingCounter>();
-    let n = *state.0.lock().await;
-    let label = if n == 0 { "agent-ssh 审批（无待审）".to_string() } else { format!("agent-ssh 审批（{n} 条待审）") };
-    if let Some(tray) = app.tray_by_id("main-tray") {
-        let _ = tray.set_tooltip(Some(label));
-    }
 }
 
 fn err_str(e: impl std::fmt::Display) -> String {
@@ -163,11 +196,92 @@ async fn list_pending(state: State<'_, HostState>) -> Result<Value, String> {
     client.call("approval.list", Value::Null).await.map_err(err_str)
 }
 
+/// 托盘 tooltip 承载 Host 状态 + 待审数（T-20）。
+async fn refresh_tray_status(app: &AppHandle, host_status: &str) {
+    *app.state::<HostStatusText>().0.lock().await = host_status.to_string();
+    refresh_tray(app).await;
+}
+
+/// Host 托管监督循环（T-20）：拉起→探活→等待退出→退避重启，直至 stop 信号。
+/// pid 记入 HostProc 供 quit 停机链使用。
+async fn run_host_supervisor(app: AppHandle, dep: HostDeployment, stop: Arc<std::sync::atomic::AtomicBool>) {
+    use std::sync::atomic::Ordering;
+    let backoff = [3u64, 6, 12, 24, 30];
+    let mut attempt = 0usize;
+    loop {
+        if stop.load(Ordering::SeqCst) { return; }
+        refresh_tray_status(&app, "启动中…").await;
+        let mut child = match hostproc::spawn_host(&dep).await {
+            Ok(c) => c,
+            Err(e) => {
+                refresh_tray_status(&app, "拉起失败").await;
+                append_host_log(&format!("[supervisor] spawn failed: {e}")).await;
+                tokio::time::sleep(std::time::Duration::from_secs(backoff[attempt.min(4)])).await;
+                attempt += 1;
+                continue;
+            }
+        };
+        *app.state::<HostProc>().0.lock().await = child.id();
+        if let Some(stderr) = child.stderr.take() {
+            let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+            tauri::async_runtime::spawn(hostproc::pump_stderr(stderr, tx));
+            let log_app = app.clone();
+            tauri::async_runtime::spawn(async move {
+                while let Some(ev) = rx.recv().await {
+                    if let HostEvent::Log(line) = ev { append_host_log(&line).await; }
+                    let _ = log_app; // 日志面只需落盘
+                }
+            });
+        }
+        // 就绪探测：TCP 最多 20s（就绪行解析留作 hostproc 单测口径）。
+        let mut ready = false;
+        for _ in 0..40 {
+            if hostproc::probe(&dep.addr()).await { ready = true; break; }
+            if stop.load(Ordering::SeqCst) { break; }
+            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+        }
+        if ready {
+            attempt = 0;
+            refresh_tray_status(&app, &format!("运行中 :{}", dep.port)).await;
+        }
+        let outcome = child.wait().await;
+        *app.state::<HostProc>().0.lock().await = None;
+        append_host_log(&format!("[supervisor] host exited: {:?}", outcome.map(|s| s.code()))).await;
+        if stop.load(Ordering::SeqCst) { return; }
+        refresh_tray_status(&app, if ready { "已停止（重启中）" } else { "无响应（重启中）" }).await;
+        tokio::time::sleep(std::time::Duration::from_secs(backoff[attempt.min(4)])).await;
+        if ready { attempt += 1; }
+    }
+}
+
 fn main() {
-    let host_addr =
-        std::env::var("AGENT_SSH_HOST_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string());
-    let token = std::env::var("AGENT_SSH_TOKEN").unwrap_or_default();
+    // 部署描述优先（desktop.json）；解析失败落日志再回退 env-only 模式
+    //（仅连接、不托管）——静默回退曾让"为什么没托管"无从诊断（T-20 实测）。
+    let deployment = match HostDeployment::load() {
+        Ok(d) => Some(d),
+        Err(e) => {
+            let line = format!("[desktop] deployment load failed, env-only fallback: {e}");
+            eprintln!("{line}");
+            let _ = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .open(host_log_path())
+                .and_then(|mut f| {
+                    use std::io::Write;
+                    writeln!(f, "{line}")
+                });
+            None
+        }
+    };
+    let (host_addr, token) = match &deployment {
+        Some(d) => (d.addr(), d.token.clone()),
+        None => (
+            std::env::var("AGENT_SSH_HOST_ADDR").unwrap_or_else(|_| "127.0.0.1:9443".to_string()),
+            std::env::var("AGENT_SSH_TOKEN").unwrap_or_default(),
+        ),
+    };
     let pin = std::env::var("AGENT_SSH_HOST_PIN").ok().filter(|s| !s.is_empty());
+    let stop_flag = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -176,6 +290,8 @@ fn main() {
             None,
         ))
         .manage(PendingCounter::default())
+        .manage(HostProc(Mutex::new(None)))
+        .manage(HostStatusText(Mutex::new("未托管".to_string())))
         .manage(HostState {
             addr: host_addr.clone(),
             agent_client: Mutex::new(None),
@@ -186,21 +302,52 @@ fn main() {
 .setup(move |app| {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;
-    // 托盘（T-17.5c 验收 1）：常驻图标+菜单。未决数/IM 面离线随 T-17.6 接线。
+    // 托盘（T-17.5c 验收 1 + T-20 控制台化）：审批窗/重启 Host/打开日志/退出。
     let show = MenuItem::with_id(app, "show", "显示审批窗", true, None::<&str>)?;
-    let quit = MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let restart = MenuItem::with_id(app, "restart-host", "重启 Host", true, None::<&str>)?;
+    let open_log = MenuItem::with_id(app, "open-log", "打开 Host 日志", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "退出（停 Host）", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &restart, &open_log, &quit])?;
     TrayIconBuilder::with_id("main-tray")
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .on_menu_event(|app, event| {
-            if event.id.as_ref() == "quit" {
-                app.exit(0);
-            } else if event.id.as_ref() == "show" {
+            let id = event.id.as_ref();
+            if id == "quit" {
+                // 停机链（T-20）：置 stop → 杀子进程树 → supervisor 归位 → 退出。
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let pid = *app.state::<HostProc>().0.lock().await;
+                    if let Some(pid) = pid {
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/T", "/F"])
+                            .creation_flags(0x0800_0000)
+                            .output();
+                    }
+                    app.exit(0);
+                });
+            } else if id == "show" {
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.show();
                     let _ = win.set_focus();
                 }
+            } else if id == "open-log" {
+                let _ = std::process::Command::new("notepad.exe")
+                    .arg(host_log_path())
+                    .creation_flags(0x0800_0000)
+                    .spawn();
+            } else if id == "restart-host" {
+                // 直接杀：supervisor 探到退出后按既定链重启（attempt 归零于就绪）。
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let pid = *app.state::<HostProc>().0.lock().await;
+                    if let Some(pid) = pid {
+                        let _ = std::process::Command::new("taskkill")
+                            .args(["/PID", &pid.to_string(), "/T", "/F"])
+                            .creation_flags(0x0800_0000)
+                            .output();
+                    }
+                });
             }
         })
         .build(app)?;
@@ -208,11 +355,25 @@ fn main() {
     let _ = tauri_plugin_autostart::ManagerExt::autolaunch(app).disable();
     let handle = app.handle().clone();
     let addr = host_addr.clone();
-    let token = approver::rpc::fresh_agent_token();
+    let rpc_token = token.clone();
+    // T-20：部署描述在场即托管拉起 Host（H6 结构性关闭——应用自启即 Host 在）。
+    if let Some(dep) = deployment.clone() {
+        let sup_app = handle.clone();
+        let sup_stop = stop_flag.clone();
+        tauri::async_runtime::spawn(async move {
+            run_host_supervisor(sup_app, dep, sup_stop).await;
+        });
+    } else {
+        let nh = handle.clone();
+        tauri::async_runtime::spawn(async move {
+            set_host_status(&nh, "未托管（desktop.json 缺席）").await;
+        });
+    }
     tauri::async_runtime::spawn(async move {
-        // agent 只读连接：断线 3s 重试（常驻语义）。
+        // agent 只读连接：断线 3s 重试（常驻语义）。Host 未就绪时 connect
+        // 失败由循环自然重试——日志噪音可接受（诊断面即托盘状态）。
         loop {
-            let c = RpcClient::connect(&addr, &token).await;
+            let c = RpcClient::connect(&addr, &rpc_token).await;
             *handle.state::<HostState>().agent_client.lock().await = Some(Arc::new(c));
             tokio::time::sleep(std::time::Duration::from_secs(3)).await;
         }

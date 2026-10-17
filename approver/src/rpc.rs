@@ -118,9 +118,21 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
+    /// 引导连接：Host 可能尚未就绪（supervisor 探活通过前）——有界退避
+    /// 而非 panic（T-20：panic 会打死整个连接任务，托盘永远"未连接"）。
     pub async fn connect(addr: &str, token: &str) -> RpcClient {
-        Self::connect_with_version(addr, token, RPC_PROTOCOL_VERSION).await
+        for i in 0..20u32 {
+            if let Ok(stream) = tokio::net::TcpStream::connect(addr).await {
+                return Self::from_stream_and_handshake(stream, token, RPC_PROTOCOL_VERSION).await;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(500 + 250 * u64::from(i))).await;
+        }
+        let stream = TcpStream::connect(addr)
+            .await
+            .unwrap_or_else(|e| panic!("tcp connect {addr}: {e}"));
+        Self::from_stream_and_handshake(stream, token, RPC_PROTOCOL_VERSION).await
     }
+
 
     /// 无凭据引导连接（跳过 hello）：start 为 pre-auth 方法（D1' operator 引导）。
     pub async fn connect_no_hello(addr: &str) -> RpcClient {
