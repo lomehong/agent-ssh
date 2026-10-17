@@ -145,7 +145,12 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
         }
       }
     }
-    const by = input.by && input.by !== '' ? input.by : 'unknown';
+    // 评审 T-21 实现 A4：by 前缀白名单（desktop:/cli:/im:/agent:）——
+    // 无前缀/未知前缀的自报一律落 'agent:unknown'。D15 单令牌模型下连接内
+    // 人/agent 不可区分（主人知情接受），白名单至少保证决定文件与审计的
+    // decidedBy 形态统一可解析，杜绝任意串污染追责链。
+    const rawBy = input.by && input.by !== '' ? input.by : '';
+    const by = /^(desktop|cli|im|agent):.+/.test(rawBy) ? rawBy : 'agent:unknown';
     const outcome = await decideApproval(id, decision, {
       ...(queueDir ? { dir: queueDir } : {}),
       by,
@@ -272,6 +277,8 @@ export async function startHost(opts: StartHostOpts): Promise<RunningHost> {
           ...(typeof f.decision === 'string' && f.decision !== '' ? { decision: f.decision } : {}),
           ...(typeof f.ruleId === 'string' && f.ruleId !== '' ? { ruleId: f.ruleId } : {}),
           ...(typeof f.keyword === 'string' && f.keyword !== '' ? { keyword: f.keyword } : {}),
+          ...(typeof f.timeFrom === 'string' && f.timeFrom !== '' ? { timeFrom: f.timeFrom } : {}),
+          ...(typeof f.timeTo === 'string' && f.timeTo !== '' ? { timeTo: f.timeTo } : {}),
         },
         ...(typeof p.offsetTail === 'number' ? { offsetTail: p.offsetTail } : {}),
         ...(typeof p.limit === 'number' ? { limit: p.limit } : {}),

@@ -20,6 +20,9 @@ export interface AuditFilter {
   decision?: string;
   ruleId?: string;
   keyword?: string;
+  /** ISO 时间下限/上限（评审 B3：时间范围过滤，按记录 time 字段字典序比较）。 */
+  timeFrom?: string;
+  timeTo?: string;
 }
 
 export interface AuditQueryOpts {
@@ -66,6 +69,14 @@ function matches(rec: Record<string, unknown>, f: AuditFilter | undefined): bool
   if (f.keyword !== undefined && f.keyword !== '') {
     const cmd = typeof rec.command === 'string' ? rec.command.toLowerCase() : '';
     if (!cmd.includes(f.keyword.toLowerCase())) return false;
+  }
+  if (f.timeFrom !== undefined && f.timeFrom !== '') {
+    const t = typeof rec.time === 'string' ? rec.time : '';
+    if (t < f.timeFrom) return false;
+  }
+  if (f.timeTo !== undefined && f.timeTo !== '') {
+    const t = typeof rec.time === 'string' ? rec.time : '';
+    if (t > f.timeTo) return false;
   }
   return true;
 }

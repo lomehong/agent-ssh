@@ -5,7 +5,6 @@ import { join } from 'node:path';
 import { startHost, type RunningHost } from '../../../src/host/main.js';
 import { RpcClient, type RpcClientOpts } from '../../../src/rpc/client.js';
 import { generateAgentToken } from '../../../src/rpc/auth.js';
-import { RPC_ERROR } from '../../../src/rpc/protocol.js';
 import { createAppConfig } from '../../integration/fixtures.js';
 
 // T-15 验收 1：引擎迁入——startHost 把真实管线（23 工具+resources+审计）

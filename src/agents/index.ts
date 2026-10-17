@@ -11,6 +11,7 @@
 import { existsSync, readFileSync, writeFileSync, copyFileSync, renameSync, mkdirSync } from 'node:fs';
 import { homedir } from 'node:os';
 import { join, dirname } from 'node:path';
+import { parse as tomlParse, stringify as tomlStringify } from 'smol-toml';
 
 export interface HostDescriptor {
   id: 'omp' | 'claude' | 'cursor' | 'opencode' | 'codex' | 'gemini';
@@ -94,8 +95,10 @@ export function scanHosts(): HostDescriptor[] {
 function hasEntry(configPath: string, id: HostDescriptor['id']): boolean {
   try {
     if (id === 'codex') {
-      const body = readFileSync(configPath, 'utf8');
-      return new RegExp(`\\[mcp_servers\\.${ENTRY_NAME}\\]`).test(body);
+      // 解析回读（评审 A2）：正则测头部不是结构化校验。
+      const doc = tomlParse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+      const servers = doc.mcp_servers as Record<string, unknown> | undefined;
+      return servers?.[ENTRY_NAME] !== undefined;
     }
     const json = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
     const root = id === 'opencode' ? (json.mcp as Record<string, unknown> | undefined) : (json.mcpServers as Record<string, unknown> | undefined);
@@ -129,19 +132,19 @@ function upsertJson(configPath: string, id: HostDescriptor['id'], entry: Record<
   writeVerified(configPath, JSON.stringify(json, null, 2) + '\n', backupPath, () => hasEntry(configPath, id), original);
 }
 
-/** Codex 的 TOML 最小结构化写：锚定插入/替换 `[mcp_servers.agent-ssh]` 块。 */
+/** Codex 的 TOML 结构化写（评审 A2）：smol-toml 解析→只 upsert `mcp_servers.agent-ssh`→stringify。
+ *  env 为内联表语义，stringify 以子表输出——TOML 语义等价，Codex 标准解析器可读。 */
 function upsertToml(configPath: string, dep: AgentDeployment, backupPath: string): void {
   const original = readFileSync(configPath, 'utf8');
-  const block = [
-    `[mcp_servers.${ENTRY_NAME}]`,
-    `command = "${dep.nodePath}"`,
-    `args = ["${dep.hostEntry}"]`,
-    `env = { AGENT_SSH_HOST_ADDR = "127.0.0.1:${dep.port}", AGENT_SSH_TOKEN = "${dep.token}" }`,
-    '',
-  ].join('\n');
-  const re = new RegExp(`\\[mcp_servers\\.${ENTRY_NAME}\\][\\s\\S]*?(?=\\n\\[|$)`);
-  const body = re.test(original) ? original.replace(re, block) : `${original.replace(/\n*$/, '\n\n')}${block}`;
-  writeVerified(configPath, body, backupPath, () => hasEntry(configPath, 'codex'), original);
+  const doc = original.trim() === '' ? {} : (tomlParse(original) as Record<string, unknown>);
+  const servers = (doc.mcp_servers as Record<string, unknown> | undefined) ?? {};
+  servers[ENTRY_NAME] = {
+    command: dep.nodePath,
+    args: [dep.hostEntry],
+    env: { AGENT_SSH_HOST_ADDR: `127.0.0.1:${dep.port}`, AGENT_SSH_TOKEN: dep.token },
+  };
+  doc.mcp_servers = servers;
+  writeVerified(configPath, tomlStringify(doc), backupPath, () => hasEntry(configPath, 'codex'), original);
 }
 
 /** 写 + 回读校验；失败回滚原内容（纪律⑤）。 */
@@ -174,24 +177,43 @@ export function configureHost(id: HostDescriptor['id'], dep: AgentDeployment): C
   return { configPath, backupPath: existsSync(backupPath) ? backupPath : null, created };
 }
 
-/** 移除：只删 agent-ssh 键（还原语义），其余内容不动。 */
+/** 移除：只删 agent-ssh 键（还原语义），其余内容不动。
+ *  纪律回补（评审 A1）：remove 路径与 configure 同套②备份⑤回读校验失败回滚——
+ *  校验=解析回读断言 agent-ssh 键已不存在（解析失败即校验失败，不误过）。 */
 export function removeHost(id: HostDescriptor['id']): { configPath: string; removed: boolean } {
   const spec = SPECS.find((s) => s.id === id);
   if (spec === undefined || !spec.supported) throw new Error(`unsupported host: ${id}`);
   const configPath = join(home(), spec.configPath);
   if (!existsSync(configPath)) return { configPath, removed: false };
+  const backupPath = `${configPath}.bak-agent-ssh-${new Date().toISOString().replace(/[:.]/g, '-')}`;
+  const original = readFileSync(configPath, 'utf8');
+  // 回读校验：结构化解析成功且 agent-ssh 键确认不存在（解析失败=校验失败）。
+  const verifyRemoved = (): boolean => {
+    try {
+      const doc = id === 'codex'
+        ? (tomlParse(readFileSync(configPath, 'utf8')) as Record<string, unknown>)
+        : (JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>);
+      const root = (id === 'opencode' ? doc.mcp : id === 'codex' ? doc.mcp_servers : doc.mcpServers) as
+        | Record<string, unknown>
+        | undefined;
+      return root?.[ENTRY_NAME] === undefined;
+    } catch {
+      return false;
+    }
+  };
   if (id === 'codex') {
-    const body = readFileSync(configPath, 'utf8');
-    const re = new RegExp(`\\n?\\[mcp_servers\\.${ENTRY_NAME}\\][\\s\\S]*?(?=\\n\\[|$)`);
-    if (!re.test(body)) return { configPath, removed: false };
-    writeFileSync(configPath, body.replace(re, ''), 'utf8');
+    const doc = tomlParse(original) as Record<string, unknown>;
+    const servers = doc.mcp_servers as Record<string, unknown> | undefined;
+    if (servers === undefined || servers[ENTRY_NAME] === undefined) return { configPath, removed: false };
+    delete servers[ENTRY_NAME];
+    writeVerified(configPath, tomlStringify(doc), backupPath, verifyRemoved, original);
     return { configPath, removed: true };
   }
-  const json = JSON.parse(readFileSync(configPath, 'utf8')) as Record<string, unknown>;
+  const json = JSON.parse(original) as Record<string, unknown>;
   const root = (id === 'opencode' ? json.mcp : json.mcpServers) as Record<string, unknown> | undefined;
   if (root?.[ENTRY_NAME] === undefined) return { configPath, removed: false };
   delete root[ENTRY_NAME];
-  writeFileSync(configPath, JSON.stringify(json, null, 2) + '\n', 'utf8');
+  writeVerified(configPath, JSON.stringify(json, null, 2) + '\n', backupPath, verifyRemoved, original);
   return { configPath, removed: true };
 }
 
