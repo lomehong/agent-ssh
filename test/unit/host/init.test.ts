@@ -23,10 +23,11 @@ describe('host init 生成器（T-15 验收 6；D15 后无口令产物）', () =
     expect(a.configToml).not.toContain('approvalChannel');
   });
 
-  it('两次生成：令牌不同（防重放），骨架随令牌注释变化', () => {
+  it('两次生成：令牌互异（防重放），骨架确定性（不含任何随机秘密）', () => {
     const a = buildHostInitArtifacts();
     const b = buildHostInitArtifacts();
     expect(a.agentToken).not.toBe(b.agentToken);
-    expect(a.configToml).not.toBe(b.configToml);
+    // 落盘最小化：骨架不含令牌/哈希 → 恒等（确定性），秘密只走 stdout 一次。
+    expect(a.configToml).toBe(b.configToml);
   });
 });
