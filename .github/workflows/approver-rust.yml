@@ -23,7 +23,7 @@ jobs:
       run:
         working-directory: approver
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
@@ -31,6 +31,6 @@ jobs:
       - name: cargo test（含 golden 契约对拍）
         run: cargo test --locked
       - name: cargo-deny（供应链：许可证/advisories/来源）
-        uses: EmbarkStudios/cargo-deny-action@v1
+        uses: EmbarkStudios/cargo-deny-action@v2
         with:
           manifest-path: approver/Cargo.toml
